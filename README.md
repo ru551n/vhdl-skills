@@ -123,9 +123,18 @@ development of this repository itself:
 ## Optional MCP servers
 
 The skills work without MCP but are designed around a recommended set of
-servers (vhdl-rag-mcp, vunit-mcp, waver-mcp, yosynth-mcp) including the
-intended failure-debug chain. Setup commands and the architecture are in
-`MCP_SETUP.md`.
+servers, including the intended failure-debug chain:
+
+| Server | Repo | Role in the flow |
+| --- | --- | --- |
+| **vhdl-rag-mcp** | [ru551n/vhdl-rag-mcp](https://github.com/ru551n/vhdl-rag-mcp) | RAG index over project sources/docs for cross-reference |
+| **vunit-mcp** | [ru551n/vunit-mcp](https://github.com/ru551n/vunit-mcp) | Run VUnit tests, collect reports/logs/waveforms |
+| **waver-mcp** | [ru551n/waver-mcp](https://github.com/ru551n/waver-mcp) | Waveform inspection for measured signal evidence |
+| **yosynth-mcp** | [ru551n/yosynth-mcp](https://github.com/ru551n/yosynth-mcp) | GHDL + Yosys synthesis and resource summary |
+
+Debug chain: `vunit-mcp` (fail + record) → `waver-mcp` (waveform evidence) →
+`vhdl-rag-mcp` (source cross-reference); synthesis via `yosynth-mcp`.
+Setup commands and the full architecture are in `MCP_SETUP.md`.
 
 ## Validate
 
