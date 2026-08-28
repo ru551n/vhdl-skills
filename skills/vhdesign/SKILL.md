@@ -62,6 +62,7 @@ The proposal must capture:
 - latency/throughput
 - corner cases
 - selected patterns from `shared/DesignPatterns.md`
+- AXI4/AXI4-Stream protocol decisions per `shared/Axi4.md` when the module exposes them
 - verification plan
 - `## Implementation Notes (vhfill)` section, initially empty
 

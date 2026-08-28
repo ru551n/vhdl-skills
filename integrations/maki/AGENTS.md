@@ -12,6 +12,7 @@ Core conventions:
 - prefer direct entity instantiation
 - preserve hand-owned requirement sections
 - `--@` marks unfinished design-direction code and must be removed once implemented
+- AXI4/AXI4-Stream interfaces follow `shared/Axi4.md` (handshake stability, 4 KiB burst boundary, same-ID ordering, no stream beat loss)
 
 Use the project skills under `.maki/skills/` for non-trivial RTL work.
 

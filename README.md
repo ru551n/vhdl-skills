@@ -34,6 +34,7 @@ target project.
 - Internal protocol records are encouraged where useful.
 - Portable inference first; explicit portability classification.
 - Strict separation between synthesizable RTL and simulation-only verification.
+- AXI4/AXI4-Lite/AXI4-Stream interfaces follow the `shared/Axi4.md` policy (handshake, burst/boundary, ordering, no-loss).
 - Generics only for real architectural parameters.
 
 ## CDC policy

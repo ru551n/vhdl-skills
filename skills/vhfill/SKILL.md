@@ -25,6 +25,7 @@ Read:
 2. `ddoc/<module>_proposal.md`
 3. `shared/CodingStyle.md`
 4. `shared/DesignPatterns.md`
+5. `shared/Axi4.md` when the module exposes an AXI4/AXI4-Stream interface
 
 ## Tool prerequisites and backend selection
 

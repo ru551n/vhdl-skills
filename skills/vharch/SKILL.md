@@ -53,6 +53,8 @@ Extract:
 
 Check `lib/` documentation before designing a new block. Reuse existing documented entities when appropriate.
 
+If the requirement includes AXI4/AXI4-Stream interfaces, `shared/Axi4.md` is authoritative for protocol selection and the mandatory rules.
+
 ### 3. Define architecture
 
 Write `ddoc/<ip>_arch.md` with:

@@ -80,6 +80,7 @@ Use local tools only when the corresponding MCP server/tool is unavailable, unhe
 11. Do not silently overwrite filled RTL or hand-owned functional specification sections.
 12. Prefer available MCP servers according to `shared/McpToolPolicy.md`.
 13. Never report compile, simulation, waveform, synthesis, timing, utilization, or power results unless the corresponding tool actually ran.
+14. AXI4/AXI4-Stream interfaces follow `shared/Axi4.md`.
 
 ## VHDL Design Workflow
 

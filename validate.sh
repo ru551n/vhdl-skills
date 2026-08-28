@@ -14,6 +14,7 @@ for f in \
   "$ROOT/shared/CdcPolicy.md" \
   "$ROOT/shared/TypeResolutionPolicy.md" \
   "$ROOT/shared/InterfaceRecords.md" \
+  "$ROOT/shared/Axi4.md" \
   "$ROOT/integrations/maki/AGENTS.md" \
   "$ROOT/integrations/maki/mcp.toml" \
   "$ROOT/integrations/claude/CLAUDE.md"
