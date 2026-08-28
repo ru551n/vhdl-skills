@@ -1,0 +1,8 @@
+name: vhdl-architect
+description: Decompose an IP requirement into VHDL submodules and generate architecture
+  artifacts ready for vhdesign using MCP-first VHDL tooling when available
+model: opus
+skills:
+- vhexplain
+- vharch
+maxTurns: 20

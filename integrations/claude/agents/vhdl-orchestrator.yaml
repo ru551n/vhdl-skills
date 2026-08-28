@@ -1,0 +1,16 @@
+name: vhdl-orchestrator
+description: Drive the complete VHDL RTL flow from architecture through verification,
+  synthesis, debug and documentation using MCP-first VHDL tooling when available
+model: opus
+skills:
+- vharch
+- vhdebug
+- vhdesign
+- vhdoc
+- vhexplain
+- vhfill
+- vhflow
+- vhsynth
+- vhtestgen
+- vhtestrun
+maxTurns: 60

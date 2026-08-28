@@ -1,0 +1,7 @@
+name: vhdl-synthesizer
+description: Synthesize VHDL modules or IPs with Vivado and produce structured reports
+  using MCP-first VHDL tooling when available
+model: sonnet
+skills:
+- vhsynth
+maxTurns: 20

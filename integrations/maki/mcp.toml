@@ -1,0 +1,33 @@
+# Maki project MCP configuration.
+#
+# Maki supports stdio and HTTP MCP servers here. These servers are enabled by
+# default. If one is not installed/configured correctly, Maki can continue
+# with the remaining servers and the VHDL skills will use documented fallbacks.
+#
+# Tool definitions are deferred by Maki when the total count is above
+# `defer_tools`; this keeps the VHDL toolchain context-efficient.
+
+defer_tools = 10
+
+[mcp.vhdl-rag-mcp]
+command = ["uvx", "--from", "git+https://github.com/ru551n/vhdl-rag-mcp.git", "vhdl-rag-mcp"]
+timeout = 30000
+enabled = true
+
+[mcp.vunit-mcp]
+command = ["uvx", "--from", "git+https://github.com/ru551n/vunit-mcp.git", "vunit-mcp"]
+# Set this to the directory containing the project's VUnit run.py.
+# A relative path is resolved by the server/runtime according to its environment.
+environment = { VUNIT_MCP_PROJECT_DIR = "." }
+timeout = 30000
+enabled = true
+
+[mcp.waver-mcp]
+command = ["uvx", "--from", "git+https://github.com/ru551n/waver-mcp.git", "waver-mcp"]
+timeout = 30000
+enabled = true
+
+[mcp.yosynth-mcp]
+command = ["uvx", "--from", "git+https://github.com/ru551n/yosynth-mcp.git", "yosynth-mcp"]
+timeout = 60000
+enabled = true

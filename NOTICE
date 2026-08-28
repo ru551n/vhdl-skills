@@ -1,0 +1,10 @@
+vhdl-skills
+
+This project is an independent VHDL adaptation inspired by:
+  rtl-skills by phamcuong21478
+  https://github.com/phamcuong21478/rtl-skills
+
+The upstream project is licensed under the Apache License, Version 2.0.
+
+The VHDL-specific text, conventions, tool flows, examples, and skill names in this
+adaptation have been rewritten for VHDL rather than copied verbatim.
