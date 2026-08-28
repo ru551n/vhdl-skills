@@ -105,7 +105,7 @@ ddoc/<ip>_req.md
 | `vhfill` | Implement VHDL, analyze/elaborate/simulate |
 | `vhexplain` | Generate documentation from VHDL source |
 | `vhdoc` | Aggregate module docs into an IP integration document |
-| `vhsynth` | Vivado synthesis, utilization, timing and power |
+| `vhsynth` | Synthesize with yosynth-mcp (GHDL + Yosys); local Yosys+GHDL fallback |
 | `vhtestgen` | Generate self-checking VHDL-2008 testbench project/testcases |
 | `vhtestrun` | Run regression and report failures |
 | `vhdebug` | Trace failed signals and diagnose root cause |

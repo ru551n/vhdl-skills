@@ -6,28 +6,39 @@
 #
 # Tool definitions are deferred by Maki when the total count is above
 # `defer_tools`; this keeps the VHDL toolchain context-efficient.
+#
+# `timeout` is the per-tool-call timeout in milliseconds (Maki allows
+# 1..=300000). Long operations must fit inside it:
+# - vunit-mcp's server-side run budget (VUNIT_MCP_TIMEOUT) is kept below the
+#   300000 ms call timeout.
+# - yosynth-mcp's default synthesis timeout is 300 s (YOSYNTH_MCP_TIMEOUT).
+# - vhdl-rag-mcp searches are fast, but a first sync/reindex of a repository
+#   can take minutes.
 
 defer_tools = 10
 
 [mcp.vhdl-rag-mcp]
 command = ["uvx", "--from", "git+https://github.com/ru551n/vhdl-rag-mcp.git", "vhdl-rag-mcp"]
-timeout = 30000
+timeout = 300000
 enabled = true
 
 [mcp.vunit-mcp]
 command = ["uvx", "--from", "git+https://github.com/ru551n/vunit-mcp.git", "vunit-mcp"]
 # Set this to the directory containing the project's VUnit run.py.
 # A relative path is resolved by the server/runtime according to its environment.
-environment = { VUNIT_MCP_PROJECT_DIR = "." }
-timeout = 30000
+# Keep the server-side run budget below the 300000 ms call timeout above.
+environment = { VUNIT_MCP_PROJECT_DIR = ".", VUNIT_MCP_TIMEOUT = "240" }
+timeout = 300000
 enabled = true
 
 [mcp.waver-mcp]
 command = ["uvx", "--from", "git+https://github.com/ru551n/waver-mcp.git", "waver-mcp"]
-timeout = 30000
+# Reads are usually fast; 300000 ms leaves headroom for very large waveforms.
+timeout = 300000
 enabled = true
 
 [mcp.yosynth-mcp]
 command = ["uvx", "--from", "git+https://github.com/ru551n/yosynth-mcp.git", "yosynth-mcp"]
-timeout = 60000
+# Its default synthesis timeout is 300 s; the call timeout must cover it.
+timeout = 300000
 enabled = true

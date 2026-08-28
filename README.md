@@ -18,7 +18,7 @@ target project.
 | `vhdebug` | Diagnose regression failures using VUnit logs, waveform analysis, and RAG-assisted tracing |
 | `vhtestgen` | Generate VUnit-first self-checking VHDL-2008 test projects (GHDL fallback) |
 | `vhtestrun` | Run regressions via vunit-mcp; collect reports, logs, and waveforms |
-| `vhsynth` | Synthesize with yosynth-mcp (GHDL + Yosys), with vendor/local fallback |
+| `vhsynth` | Synthesize with yosynth-mcp (GHDL + Yosys); local Yosys+GHDL fallback |
 | `vhdoc` | Aggregate module documentation into an IP-level integration document |
 | `vhexplain` | Generate or refresh module documentation from an entity/architecture |
 

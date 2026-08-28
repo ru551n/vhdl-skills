@@ -23,11 +23,11 @@ If a source-level compile check is needed first, use `vunit_compile`.
 
 ### 2. Run tests
 
-Use `vunit_run_tests`.
+Use `vunit_run_tests` with `waveform_format` (`vcd` on GHDL, `fst` on NVC) so failing tests can be diagnosed at signal level.
 
 Prefer the smallest requested test pattern; use full regression only when required.
 
-When failures may require signal-level debug, request waveform recording in the run.
+If the run is expected to be green and no debug is planned, `waveform_format` may be omitted to save compile/sim time.
 
 ### 3. Read result
 

@@ -10,7 +10,7 @@ https://github.com/ru551n/vhdl-rag-mcp
 Claude Code example from the upstream project:
 
 ```bash
-claude mcp add vhdl-rag-mcp -- uvx --from git+ssh://git@github.com/ru551n/vhdl-rag-mcp.git vhdl-rag-mcp
+claude mcp add vhdl-rag-mcp -- uvx --from git+https://github.com/ru551n/vhdl-rag-mcp.git vhdl-rag-mcp
 ```
 
 Configure its repository index in `~/.config/vhdl-rag/config.toml`.
@@ -21,6 +21,10 @@ Repository:
 https://github.com/ru551n/vunit-mcp
 
 Point the server at the VUnit project directory using its documented `VUNIT_MCP_PROJECT_DIR` configuration.
+Keep `VUNIT_MCP_TIMEOUT` below the per-call timeout of your MCP client (the
+shipped Maki config uses 240 s under a 300 s call timeout).
+Record waveforms for waver-mcp by passing `waveform_format` to
+`vunit_run_tests` (`vcd` on GHDL, `fst` on NVC).
 Install the upstream `skills/vunit-mcp` skill beside this project's skills when desired.
 
 ## waver-mcp
@@ -33,6 +37,10 @@ Typical stdio command:
 ```bash
 uvx --from "git+https://github.com/ru551n/waver-mcp.git" waver-mcp
 ```
+
+Reads FST (NVC's default) and VCD (GHDL's default) waveforms directly, so
+waveforms recorded by vunit-mcp work without conversion. Linux/macOS only
+(pywellen ships no Windows wheels).
 
 ## yosynth-mcp
 
@@ -79,4 +87,5 @@ VHDL sources
     └── yosynth-mcp -> GHDL + Yosys synthesis/resource summary
 ```
 
-Vendor implementation/timing/power remains a vendor-tool task, e.g. Vivado.
+Vendor implementation/timing/power remains a vendor-tool task and is outside
+the scope of these skills.

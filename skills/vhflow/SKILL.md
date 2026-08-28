@@ -33,8 +33,7 @@ Inspect the project, detect available MCP backends, and maintain a resumable `fl
 | Architecture/design/docs | `vhdl-rag-mcp` | Read/Grep |
 | Compile/test | `vunit-mcp` | VUnit run.py / GHDL |
 | Waveform debug | `waver-mcp` | GTKWave/manual |
-| Synthesis | `yosynth-mcp` | Vivado / local Yosys+GHDL |
-| Vendor timing/power | vendor tool | none equivalent |
+| Synthesis | `yosynth-mcp` | local Yosys+GHDL |
 
 ## Availability probing
 

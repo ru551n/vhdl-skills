@@ -55,6 +55,7 @@ Project-specific structures may differ; follow the existing VUnit project.
 - self-checking VUnit checks
 - deterministic timeout
 - named test cases via `run("...")`
+- `run.py` in the VUnit-5 style when `vunit-mcp` is the backend (register HDL builtins with `add_vhdl_builtins()`; vunit-mcp is built against VUnit 5)
 - reusable procedures/packages when helpful
 - no requirement for a custom `[FINISH]` token
 

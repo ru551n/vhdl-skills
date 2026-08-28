@@ -24,7 +24,7 @@ When available:
 2. `vunit_get_test_log` for the failing test
 3. `vunit_get_test_waveform` if a waveform was recorded
 
-If the prior run did not record a waveform and signal-level evidence is necessary, re-run the smallest failing test with waveform recording using `vunit_run_tests`.
+If the prior run did not record a waveform and signal-level evidence is necessary, re-run the smallest failing test with `vunit_run_tests` and `waveform_format` (`vcd` on GHDL, `fst` on NVC) — runs without `waveform_format` record no waveform.
 
 ### 2. Waveform evidence — waver-mcp
 

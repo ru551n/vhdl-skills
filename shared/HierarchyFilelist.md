@@ -51,13 +51,6 @@ Then elaborate the top:
 ghdl -e --std=08 <top_entity>
 ```
 
-## Vivado
-
-Use `read_vhdl -vhdl2008` in dependency order.
-
-Do not rely on alphabetical file ordering.
-
-
 ## MCP-first dependency discovery
 
 If `vunit-mcp` is available and the project has a VUnit `run.py`:

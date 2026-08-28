@@ -80,7 +80,7 @@ Usage rule:
 2. Prefer `vunit_list_files` over manually guessing compile order.
 3. Prefer `vunit_compile` over direct compiler commands when a VUnit project exists.
 4. Prefer `vunit_run_tests` for regressions.
-5. Ask for a waveform during the run when waveform-debug may be required.
+5. Pass `waveform_format` to `vunit_run_tests` when waveform debug may be required (`vcd` on GHDL, `fst` on NVC); a run without it records no waveform. Skip it only when the run is expected green and no debug is planned.
 6. Use `vunit_get_report` before fetching detailed failure logs.
 7. Use `vunit_get_test_waveform` to obtain the waveform path and pass it to `waver-mcp`.
 
@@ -95,6 +95,9 @@ Do not silently replace an existing VUnit project with a custom GHDL harness.
 
 Repository:
 `https://github.com/ru551n/waver-mcp`
+
+Reads both FST (NVC's default) and VCD (GHDL's default) waveforms directly —
+no conversion step is needed for waveforms recorded by `vunit-mcp`.
 
 Preferred for:
 - waveform inspection
@@ -153,14 +156,19 @@ Usage rule:
 2. Use `yosynth_inspect` when top/architecture/generics are uncertain.
 3. Use `yosynth_targets` before choosing a chip/family unless the user already supplied it.
 4. Never infer required top-level architecture, chip/family, or generic overrides.
-5. Pass the complete source dependency set to `yosynth_synthesize`.
+5. Pass `architecture` explicitly for a VHDL top — it is required (find candidate names with `yosynth_inspect` or by reading the sources).
+6. Pass the complete source dependency set to `yosynth_synthesize`.
 
 Fallback:
-1. Vivado for Xilinx-specific synthesis/timing/power.
-2. Yosys + GHDL plugin locally for generic/open-source synthesis.
-3. Vendor tools for vendor-specific implementation requirements.
+Yosys + GHDL plugin locally for generic/open-source synthesis.
 
 `yosynth-mcp` provides synthesis/resource reporting, not a substitute for vendor place-and-route timing or vendor power analysis.
+
+## Tool argument conventions
+
+- `vunit-mcp` tools that take arguments wrap them in a top-level `input` object, e.g. `vunit_get_test_log` with `{"input": {"test_name": "..."}}`.
+- `yosynth-mcp` `yosynth_synthesize`/`yosynth_inspect` take an `input` object with `sources` (required), `top`, `architecture`, `chip`, `family`, `generics`, `std`.
+- `vhdl-rag-mcp` and `waver-mcp` take flat arguments (e.g. `waver_open` with `{"file": "..."}`).
 
 ## Availability decision
 
@@ -174,7 +182,6 @@ For each phase:
    - `backend: vunit-mcp`
    - `backend: ghdl`
    - `backend: yosynth-mcp`
-   - `backend: vivado`
    - etc.
 
 ## Evidence rule

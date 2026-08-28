@@ -35,7 +35,7 @@ If `vunit-mcp` tools are exposed:
 2. Use `vunit_list_files` / `vunit_test_dependencies` as appropriate.
 3. Compile with `vunit_compile`.
 4. Run the relevant unit test with `vunit_run_tests`.
-5. Request waveform recording when failure diagnosis may need it.
+5. Pass `waveform_format` (`vcd` on GHDL, `fst` on NVC) to `vunit_run_tests` when failure diagnosis may need it; without it, no waveform is recorded.
 6. Read results with `vunit_get_report` and `vunit_get_test_log`.
 7. On waveform-debug, resolve it with `vunit_get_test_waveform` and analyze via `waver-mcp`.
 
@@ -99,7 +99,7 @@ Never claim success unless the actual backend reports success.
 
 ### Preferred: vunit-mcp
 
-Run the smallest relevant test pattern with `vunit_run_tests`.
+Run the smallest relevant test pattern with `vunit_run_tests`, passing `waveform_format` (`vcd` on GHDL, `fst` on NVC) so a failure can be diagnosed at signal level.
 
 Then:
 1. `vunit_get_report`

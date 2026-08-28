@@ -1,6 +1,6 @@
 ---
 name: vhsynth
-description: Synthesize a VHDL module or full IP using yosynth-mcp when available, with vendor/local fallback
+description: Synthesize a VHDL module or full IP using yosynth-mcp when available, with local Yosys+GHDL fallback
 allowed-tools: Read, Write, Bash, Grep, Glob
 ---
 
@@ -14,9 +14,7 @@ Read `shared/McpToolPolicy.md`.
 ## Backend priority
 
 1. **`yosynth-mcp`** for portable VHDL synthesis/resource summaries.
-2. **Vivado** when Xilinx vendor timing, implementation or power data is required.
-3. **local Yosys + GHDL plugin** when MCP is unavailable.
-4. Other vendor tool when explicitly required by the target.
+2. **local Yosys + GHDL plugin** when MCP is unavailable.
 
 Do not describe `yosynth-mcp` resource synthesis as vendor timing closure.
 
@@ -78,19 +76,12 @@ Record the returned:
 - resource counts
 - synthesis diagnostics
 
-## Vendor analysis
+## Scope
 
-If the request includes any of:
-- post-synthesis or post-route timing
-- WNS/TNS
-- vendor Fmax
-- utilization by FPGA primitive/site
-- power estimate
-- implementation/place-and-route
-
-then use the appropriate vendor tool, e.g. Vivado for Xilinx.
-
-For Vivado, generate dependency-ordered `read_vhdl -vhdl2008` commands and real constraints.
+`yosynth-mcp` and local Yosys+GHDL produce portable synthesis/resource feedback.
+Post-route timing, vendor Fmax, site utilization, power estimation, and
+place-and-route are out of scope; state that in the report instead of
+fabricating results.
 
 ## Outputs
 
@@ -102,7 +93,6 @@ Write `synth/<module>/synth_report.md` containing:
 - synthesis result
 - resources
 - diagnostics
-- vendor timing/power only when those tools actually ran
 
 Backend-specific raw artifacts may be stored beside the report.
 
