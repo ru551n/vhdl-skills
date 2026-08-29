@@ -4,5 +4,6 @@ description: Generate and run self-checking VHDL-2008 testbenches and regression
 model: opus
 skills:
 - vhtestgen
+- vhunit
 - vhtestrun
 maxTurns: 30

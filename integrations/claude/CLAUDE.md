@@ -81,6 +81,7 @@ Use local tools only when the corresponding MCP server/tool is unavailable, unhe
 12. Prefer available MCP servers according to `shared/McpToolPolicy.md`.
 13. Never report compile, simulation, waveform, synthesis, timing, utilization, or power results unless the corresponding tool actually ran.
 14. AXI4/AXI4-Stream interfaces follow `shared/Axi4.md`.
+15. Verification is VUnit-5 by default; VUnit API rules (phases, gate locks, seeds, `check_pkg`) are authoritative in `shared/Vunit.md`.
 
 ## VHDL Design Workflow
 
@@ -92,6 +93,7 @@ ddoc/<ip>_req.md
   ├─[vhflow]────► flow_status.md
   ├─[vhsynth]───► synth/<module>/
   ├─[vhtestgen]─► tb/<ip>/
+  ├─[vhunit]────► tb/<ip>/ run.py + testbenches (authoring/migration)
   ├─[vhtestrun]─► issue/<ip>/
   ├─[vhdebug]───► issue/<ip>/debug_*.md
   └─[vhdoc]─────► doc/<ip>.md
@@ -108,6 +110,7 @@ ddoc/<ip>_req.md
 | `vhdoc` | Aggregate module docs into an IP integration document |
 | `vhsynth` | Synthesize with yosynth-mcp (GHDL + Yosys); local Yosys+GHDL fallback |
 | `vhtestgen` | Generate self-checking VHDL-2008 testbench project/testcases |
+| `vhunit` | Author, repair, migrate VUnit runners (`run.py`) and testbenches (VUnit 4→5) |
 | `vhtestrun` | Run regression and report failures |
 | `vhdebug` | Trace failed signals and diagnose root cause |
 | `vhflow` | Scan and orchestrate the full flow |

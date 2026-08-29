@@ -9,11 +9,11 @@ allowed-tools: Read, Write, Bash, Grep, Glob
 Read `shared/ModernVHDL.md` and `shared/CodingStyle.md`; they are authoritative for language revision and modern RTL practice.
 
 
-Read `shared/McpToolPolicy.md`.
+Read `shared/Vunit.md` (VUnit-5 API: runner, phases, gate locks, checks, seeds, verification components) and `shared/McpToolPolicy.md`.
 
 ## Preferred verification architecture
 
-If the project uses VUnit (a VUnit `run.py` exists, or `vunit_status`/`vunit_list_tests` succeed), always generate VUnit testbenches — never standalone ones.
+If the project uses VUnit (a VUnit `run.py` exists, or `vunit_status`/`vunit_list_tests` succeed), always generate VUnit testbenches — never standalone ones. Authoring rules for generated runners/testbenches come from `shared/Vunit.md` (see the `vhunit` skill).
 
 Infer the project's test conventions from the existing project:
 - `run.py` registration style (VUnit-5 builtins, library dependencies)
@@ -56,49 +56,16 @@ Project-specific structures may differ; follow the existing VUnit project.
 
 ## VUnit testbench rules
 
-- VHDL-2008
-- `library vunit_lib; context vunit_lib.vunit_context;`
-- `runner_cfg` generic
-- `test_runner_setup` and `test_runner_cleanup`
-- self-checking VUnit checks
-- deterministic timeout
-- named test cases via `run("...")`
-- `run.py` in the VUnit-5 style when `vunit-mcp` is the backend (register HDL builtins with `add_vhdl_builtins()`; vunit-mcp is built against VUnit 5)
-- reusable procedures/packages when helpful
-- no requirement for a custom `[FINISH]` token
+Authoring is delegated to `shared/Vunit.md` (authoritative VUnit-5 API) and
+the `vhunit` skill: VHDL-2008, `vunit_context` + `runner_cfg`, named
+`run("test_*")` cases, self-checking via `check_pkg`, a watchdog with a real
+budget, seeded RNG, `run.py` in the VUnit-5 style with
+`add_vhdl_builtins()`, and checker processes that respect the test phases
+(gate locks / `runner_phase` events per `shared/Vunit.md` §7).
 
-Example skeleton:
-
-```vhdl
-library ieee;
-use ieee.std_logic_1164.all;
-
-library vunit_lib;
-context vunit_lib.vunit_context;
-
-entity tb_foo is
-  generic (runner_cfg : string);
-end entity;
-
-architecture tb of tb_foo is
-begin
-  main : process
-  begin
-    test_runner_setup(runner, runner_cfg);
-
-    while test_suite loop
-      if run("reset") then
-        check_equal(1, 1);
-      elsif run("nominal") then
-        check_equal(1, 1);
-      end if;
-    end loop;
-
-    test_runner_cleanup(runner);
-    wait;
-  end process;
-end architecture;
-```
+The testbench skeleton, `check_pkg` reference, randomization/queue/VC
+references, and VUnit 4 vs 5 deltas live in `shared/Vunit.md` — do not
+duplicate them here.
 
 ## Test plan
 

@@ -13,11 +13,13 @@ Core conventions:
 - preserve hand-owned requirement sections
 - `--@` marks unfinished design-direction code and must be removed once implemented
 - AXI4/AXI4-Stream interfaces follow `shared/Axi4.md` (handshake stability, 4 KiB burst boundary, same-ID ordering, no stream beat loss)
+- VUnit-5 is the default verification framework; VUnit API rules (phases, gate locks, seeds, `check_pkg`) are authoritative in `shared/Vunit.md`
 
 Use the project skills under `.maki/skills/` for non-trivial RTL work.
 
 Preferred workflow:
 `vharch` → `vhdesign` → `vhfill` → `vhtestgen` → `vhtestrun` → `vhdebug` as needed → `vhsynth` → `vhdoc`.
+Direct VUnit authoring/repair/migration (`run.py`, testbenches, VUnit 4→5) uses the `vhunit` skill with `shared/Vunit.md`.
 
 Tool policy:
 - prefer `vhdl-rag-mcp` for semantic VHDL/docs/source retrieval

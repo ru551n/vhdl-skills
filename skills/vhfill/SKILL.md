@@ -72,6 +72,8 @@ True up `doc/<module>.md` if actual latency, reset values, interfaces, or behavi
 
 When the project already uses VUnit, the unit testbench must be VUnit — infer the project's existing VUnit style (`run.py` registration, `tb/` layout, check style) from the current tests. If the conventions cannot be inferred, ask the user; do not guess.
 
+VUnit-5 API rules (phases and gate locks, seeded RNG, `check_pkg`, watchdog, `run.py` style) are authoritative in `shared/Vunit.md`; the `vhunit` skill covers direct authoring and VUnit 4→5 migration.
+
 When creating new VUnit tests:
 - use VHDL-2008
 - use `vunit_lib`

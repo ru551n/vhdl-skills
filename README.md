@@ -17,6 +17,7 @@ target project.
 | `vhfill` | Implement VHDL-2008 from an approved proposal; elaborate and simulate with GHDL |
 | `vhdebug` | Diagnose regression failures using VUnit logs, waveform analysis, and RAG-assisted tracing |
 | `vhtestgen` | Generate VUnit-first self-checking VHDL-2008 test projects (GHDL fallback) |
+| `vhunit` | Author, repair, and migrate VUnit runners (`run.py`) and VHDL-2008 testbenches (VUnit 4→5) |
 | `vhtestrun` | Run regressions via vunit-mcp; collect reports, logs, and waveforms |
 | `vhsynth` | Synthesize with yosynth-mcp (GHDL + Yosys); local Yosys+GHDL fallback |
 | `vhdoc` | Aggregate module documentation into an IP-level integration document |
@@ -35,6 +36,7 @@ target project.
 - Portable inference first; explicit portability classification.
 - Strict separation between synthesizable RTL and simulation-only verification.
 - AXI4/AXI4-Lite/AXI4-Stream interfaces follow the `shared/Axi4.md` policy (handshake, burst/boundary, ordering, no-loss).
+- VUnit-5 is the default verification framework (`run.py` + self-checking testbenches); the VUnit API is authoritative in `shared/Vunit.md` (phases and gate locks, seeds, checker processes).
 - Generics only for real architectural parameters.
 
 ## CDC policy

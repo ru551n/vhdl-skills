@@ -15,6 +15,7 @@ for f in \
   "$ROOT/shared/TypeResolutionPolicy.md" \
   "$ROOT/shared/InterfaceRecords.md" \
   "$ROOT/shared/Axi4.md" \
+  "$ROOT/shared/Vunit.md" \
   "$ROOT/integrations/maki/AGENTS.md" \
   "$ROOT/integrations/maki/mcp.toml" \
   "$ROOT/integrations/claude/CLAUDE.md"
