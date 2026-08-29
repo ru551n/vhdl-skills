@@ -13,7 +13,15 @@ Read `shared/McpToolPolicy.md`.
 
 ## Preferred verification architecture
 
-Use **VUnit** by default.
+If the project uses VUnit (a VUnit `run.py` exists, or `vunit_status`/`vunit_list_tests` succeed), always generate VUnit testbenches — never standalone ones.
+
+Infer the project's test conventions from the existing project:
+- `run.py` registration style (VUnit-5 builtins, library dependencies)
+- existing testbench structure under `tb/`
+- test case naming, check style, and shared helpers
+- simulator and output settings
+
+If the conventions cannot be inferred (no existing tests to copy from, ambiguous or mixed structure, missing or broken `run.py`), ask the user which conventions to follow. Do not guess and do not invent a new structure silently.
 
 If `vunit-mcp` is available:
 1. call `vunit_status`
@@ -22,7 +30,7 @@ If `vunit-mcp` is available:
 4. add tests in the same project style
 5. validate discovery with `vunit_list_tests`
 
-If VUnit is not present in the project and `vunit-mcp` is unavailable, a standalone GHDL testbench may be generated instead.
+If VUnit is not present in the project, a standalone GHDL testbench may be generated instead (see Fallback standalone tests).
 
 ## Inputs
 
@@ -113,7 +121,7 @@ For tests likely to need signal-level debug, design them so `vunit_run_tests` ca
 
 ## Fallback standalone tests
 
-Only when VUnit is unsuitable/unavailable:
+Only when the project does not use VUnit, or the user explicitly requests standalone tests:
 - generate standalone VHDL-2008 TB
 - use assertions
 - emit exactly one `[FINISH] PASS` or `[FINISH] FAIL`

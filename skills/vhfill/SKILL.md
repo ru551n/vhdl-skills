@@ -70,7 +70,7 @@ True up `doc/<module>.md` if actual latency, reset values, interfaces, or behavi
 
 ## Step 2 — Unit testbench
 
-Prefer a VUnit testbench/project when the project already uses VUnit.
+When the project already uses VUnit, the unit testbench must be VUnit — infer the project's existing VUnit style (`run.py` registration, `tb/` layout, check style) from the current tests. If the conventions cannot be inferred, ask the user; do not guess.
 
 When creating new VUnit tests:
 - use VHDL-2008
@@ -79,7 +79,7 @@ When creating new VUnit tests:
 - use VUnit check procedures rather than a custom final verdict protocol
 - register the source/test in the project's `run.py`
 
-Only create a standalone `<module>_tb.vhd` with `[FINISH] PASS/FAIL` when VUnit is unavailable or the project explicitly uses standalone GHDL tests.
+Only create a standalone `<module>_tb.vhd` with `[FINISH] PASS/FAIL` when VUnit is unavailable, the project explicitly uses standalone GHDL tests, or the user explicitly asks for a standalone testbench.
 
 ## Step 3 — Compile
 
