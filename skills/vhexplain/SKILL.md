@@ -3,6 +3,7 @@ name: vhexplain
 description: Generate or refresh module documentation by analyzing a VHDL entity and architecture
 allowed-tools: Read, Write, Bash, Grep, Glob
 ---
+> **Path note:** `shared/*.md` files live in the skills' `shared/` directory — a *sibling* of this skill's directory (resolve against the skills root, e.g. `<skills-root>/shared/CodingStyle.md`), not inside the skill directory.
 
 
 # VHDL Explainer

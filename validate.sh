@@ -27,5 +27,14 @@ if grep -R -n -E 'Preferred source order:' "$ROOT/shared/CdcPolicy.md" >/dev/nul
   grep -A5 -n 'Preferred source order:' "$ROOT/shared/CdcPolicy.md"
 fi
 
+# Every shared/<file>.md referenced from a skill must exist in shared/
+# (third-party installs that drop the shared/ directory break these refs).
+while IFS= read -r ref; do
+  if [[ ! -f "$ROOT/shared/$ref" ]]; then
+    echo "Dangling shared/ reference in skills/: $ref"
+    fail=1
+  fi
+done < <(grep -rhoE 'shared/[A-Za-z0-9_.-]+\.md' "$ROOT"/skills/ | sort -u | sed 's|^shared/||')
+
 [[ "$fail" -eq 0 ]] || exit 1
 echo "Validation OK"

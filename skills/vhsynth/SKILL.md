@@ -3,6 +3,7 @@ name: vhsynth
 description: Synthesize a VHDL module or full IP using yosynth-mcp when available, with local Yosys+GHDL fallback
 allowed-tools: Read, Write, Bash, Grep, Glob
 ---
+> **Path note:** `shared/*.md` files live in the skills' `shared/` directory — a *sibling* of this skill's directory (resolve against the skills root, e.g. `<skills-root>/shared/CodingStyle.md`), not inside the skill directory.
 
 # VHDL Synthesizer
 

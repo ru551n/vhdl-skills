@@ -666,9 +666,12 @@ back-pressure by construction.
 ## 13. Good practices (tsfpga + hdl-modules)
 
 1. **Watchdog in every testbench**:
-   `test_runner_watchdog(runner, <budget>);` right after
-   `test_runner_setup` — use a real budget (a few × the expected
-   worst-case runtime, e.g. `1 ms` in hdl-modules TBs), never `100 s`.
+   `test_runner_watchdog(runner, <budget>);` as a **concurrent statement at
+   architecture level** (outside the test process, after `end process;`) —
+   a sequential call inside the test process blocks the test body and every
+   test "fails" with the watchdog timeout. Use a real budget (a few × the
+   expected worst-case runtime, e.g. `1 ms` in hdl-modules TBs), never
+   `100 s`.
 2. **One `run("test_*")` per scenario**; test names describe the
    scenario, not the procedure.
 3. **Seeds**: `rnd.InitSeed(get_string_seed(runner_cfg))` once in the

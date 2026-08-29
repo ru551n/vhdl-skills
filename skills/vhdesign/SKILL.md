@@ -3,6 +3,8 @@ name: vhdesign
 description: Generate a VHDL design proposal, module documentation, and entity/architecture backbone from a module requirement
 allowed-tools: Read, Write, Bash, Grep, Glob
 ---
+> **Path note:** `shared/*.md` files live in the skills' `shared/` directory — a *sibling* of this skill's directory (resolve against the skills root, e.g. `<skills-root>/shared/CodingStyle.md`), not inside the skill directory.
+> **Layout note:** `ddoc/`, `rtl/`, `doc/`, `lib/` are the conventional tsfpga layout. When the project uses a different layout (e.g. `modules/<name>/{src,test,doc}`), follow the project's layout and keep the same file-naming conventions (`<ip>_arch.md`, `<module>_req.md`, `<module>.md`, `<module>.vhd`).
 
 
 # VHDL Designer

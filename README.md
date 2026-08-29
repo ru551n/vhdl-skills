@@ -123,6 +123,20 @@ development of this repository itself:
 
 `link` symlinks back to this repository so edits are immediately visible.
 
+### Third-party installers (npx `skills`, ...)
+
+Generic skill installers copy only directories that contain a `SKILL.md`,
+so the `shared/` policies are NOT installed and every `shared/*.md`
+reference dangles. Either use `install.sh` above, or fetch `shared/`
+separately next to the skills:
+
+```bash
+npx degit ru551n/vhdl-skills/shared .claude/skills/shared   # or ~/.claude/skills/shared
+```
+
+`validate.sh` fails on dangling `shared/` references, so a broken
+third-party install is caught by it.
+
 ## Optional MCP servers
 
 The skills work without MCP but are designed around a recommended set of

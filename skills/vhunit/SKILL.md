@@ -3,6 +3,7 @@ name: vhunit
 description: Author, repair, and migrate VUnit runners (run.py) and VHDL-2008 testbenches — direct VUnit work, VUnit 4 to 5 migration
 allowed-tools: Read, Write, Bash, Grep, Glob
 ---
+> **Path note:** `shared/*.md` files live in the skills' `shared/` directory — a *sibling* of this skill's directory (resolve against the skills root, e.g. `<skills-root>/shared/CodingStyle.md`), not inside the skill directory.
 
 # VUnit Authoring & Migration
 
@@ -57,9 +58,11 @@ tool usage. This skill owns the VHDL + Python.
 - VHDL-2008; `library vunit_lib; context vunit_lib.vunit_context;`
 - `runner_cfg` generic; `test_runner_setup(runner, runner_cfg)` as the
   first statement of the test process.
-- **Watchdog always**: `test_runner_watchdog(runner, <real budget>);`
-  immediately after setup — a few × expected worst-case runtime, never a
-  placeholder like `100 s` (`shared/Vunit.md` §13).
+- **Watchdog always**: `test_runner_watchdog(runner, <real budget>);` as a
+  **concurrent statement at architecture level** (after `end process;`,
+  outside the test process — a sequential call inside the test process
+  blocks the test body; `shared/Vunit.md` §2/§13). Real budget: a few ×
+  expected worst-case runtime, never a placeholder like `100 s`.
 - Named test cases: `while test_suite loop` + `run("test_*")`, one per
   functional scenario; cover the test-plan scenarios (reset, nominal,
   min/max, backpressure, boundaries, errors).
