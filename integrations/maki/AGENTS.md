@@ -27,4 +27,9 @@ Tool policy:
 - fall back to local tools only when the relevant MCP server is unavailable, unhealthy, or unsuitable
 - never claim compile/test/waveform/synthesis/timing/power success without a real tool result
 
+Subagent use:
+- for long multi-module flows (e.g. a full IP through `vhflow`), delegate self-contained phases to subagents
+- `flow_status.md` is the handoff contract; the main agent owns it and the final report
+- a subagent's summary is not evidence — verify the real artifacts and tool results before treating a phase as done
+
 Maki defers large MCP toolsets behind `tool_search`; search for the relevant server/tool rather than assuming every MCP tool is already loaded.

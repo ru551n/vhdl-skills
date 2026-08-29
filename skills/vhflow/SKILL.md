@@ -47,6 +47,32 @@ If exposed in the current host:
 
 If an MCP server is not exposed, use fallback without treating that as a project failure.
 
+## Subagent delegation
+
+Delegate only when the host provides a subagent/task tool; otherwise run phases inline.
+
+Delegate self-contained phases:
+- `vhfill` for one module
+- `vhtestgen` for one module/IP test project
+- `vhsynth` for one module
+- `vhdoc` for the IP doc
+
+Delegate independent modules in parallel. Never run two regressions against the same VUnit project at the same time (the vunit-mcp server serializes runs per project).
+
+Each delegation prompt must contain:
+- IP and module name
+- the phase and its completion criteria from below
+- input paths to read (`ddoc/...`, `rtl/...`, current `flow_status.md`)
+- the expected outputs and the `backend:` record per tool phase
+- the instruction to use real tools, MCP-first per `shared/McpToolPolicy.md`
+
+Do not delegate:
+- `flow_status.md` updates — the orchestrator verifies artifacts and records status
+- cross-module or architecture decisions
+- the debug loop while the failure is not yet localized
+
+A subagent's summary is not evidence. Before marking a phase `COMPLETE`, verify the artifacts exist and the recorded tool results (reports, `backend:` lines) are real.
+
 ## Completion signals
 
 Architecture:
