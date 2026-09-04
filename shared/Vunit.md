@@ -18,6 +18,13 @@ Conventions proven by tsfpga and hdl-modules:
 
 ## 2. Python test runner (`run.py`)
 
+This section covers a plain VUnit project (hand-added libraries/files). If
+`run.py` instead discovers modules via `tsfpga.module.get_modules()` (a
+`modules/<name>/{src,test,doc}` folder-per-library layout), see
+`shared/TsfpgaModules.md` for that framework's own conventions
+(`BaseModule`/`module_<name>.py`, `names_avoid`, cross-module-library
+instantiation) — it builds on top of everything below, not instead of it.
+
 ### Canonical minimal run.py (VUnit 5)
 
 ```python

@@ -13,6 +13,13 @@ queues, verification components, good practices, VUnit 4 vs 5 deltas).
 Do not rely on memory for VUnit API details; verify against
 `shared/Vunit.md` (and the installed VUnit source when in doubt).
 
+If `run.py` discovers modules via `tsfpga.module.get_modules()` (a
+`modules/<name>/{src,test,doc}` layout, one VUnit library per module
+folder) rather than plain hand-added libraries, read
+`shared/TsfpgaModules.md` too — it covers `BaseModule`/`module_<name>.py`,
+`names_avoid`, cross-module-library instantiation, and the framework-level
+gotchas on top of what `Vunit.md` already covers.
+
 Read `shared/McpToolPolicy.md` for tool fallbacks.
 
 ## When this skill applies
