@@ -7,6 +7,12 @@ The VHDL flow is **MCP-first, local-tool fallback**.
 When an MCP server/tool is available in the current agent environment, prefer it for the task it was designed to perform.
 If it is unavailable, misconfigured, or cannot perform the requested operation, fall back to the local alternative listed below.
 
+This is not a soft preference: reaching for local `grep`/`find` on a repository
+that `vhdl-rag-mcp` already has configured/indexed is a policy violation, not
+a stylistic choice, even when it "would also work". See the `vhdl-rag-mcp`
+section below for the exact boundary of what still legitimately falls back
+to local tools.
+
 Never invent MCP availability or tool results. If the host exposes no corresponding MCP tool, treat it as unavailable.
 
 ## Preferred servers
@@ -41,7 +47,25 @@ Usage rule:
 3. Use `get_source` for exact source before copying or relying on an implementation detail.
 4. Do not assume indexed material is current if status reports sync/index errors.
 
-Fallback:
+**ALWAYS prefer `vhdl-rag-mcp` over local `grep`/`find`/`git grep` for any code,
+docs, or knowledge that lives in a repository the server has configured/indexed**
+(check `repository_status` for the configured repository list). This applies
+even when the local checkout is also present on disk and grep "would work" —
+searching it locally anyway is exactly the anti-pattern this policy exists to
+prevent: it bypasses the semantic index, skips commit attribution, and
+duplicates work the MCP server already does better. Reach for local
+`Read`/`Glob`/`Grep` only for:
+- material the server does not index at all for this project (e.g. Python
+  build/config scripts like `run.py`/`module_*.py`, non-HDL project files),
+- the current in-progress, uncommitted working tree of the project actively
+  being authored (not yet sync-able into the index),
+- confirmed server unavailability/unhealth (per the Availability decision
+  below) or a `repository_status` sync error for the repository in question.
+When in doubt whether something is covered, call `repository_status`/
+`search_hdl`/`search_docs`/`search_code`/`search_knowledge` first rather than
+defaulting to grep.
+
+Fallback (only per the exclusions above):
 - project-local `Read`, `Glob`, `Grep`
 - `git grep`
 - `find`
