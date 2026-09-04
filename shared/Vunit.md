@@ -95,6 +95,68 @@ test.add_config(name="cfg_small", generics=dict(width=8, depth=16),
 - `vhdl_configuration_name`: select a specific VHDL `configuration` unit.
 - Multiple configs per test = multiple runs of the same testcase with
   different generics — the standard generic-matrix pattern.
+
+#### `pre_config` / `post_check` exact signatures (VUnit 5, verified from source)
+
+`vunit/configuration.py`: both are called with `inspect.getfullargspec` —
+only the parameter names present in the callable's own signature are
+supplied, so declare only what is needed.
+
+```python
+def pre_config(output_path=None, simulator_output_path=None, seed=None):
+    ...
+    return True   # anything else (None, False) fails the test before sim runs
+
+def post_check(output_path=None, output=None):
+    # output_path: str, the test's own output directory
+    # output: str, the captured simulation stdout/log text
+    ...
+    return True   # anything else (None, False) fails the test even if all
+                   # VHDL asserts passed
+```
+
+Both **must explicitly `return True`**; a bare fall-off-the-end (`None`)
+is treated as failure.
+
+### Python reference models (golden models)
+
+When a DUT implements a specifiable numeric/algorithmic transform (DSP,
+image/pixel processing, codec, protocol datapath, fixed-point
+approximation) with a precise enough functional spec to re-implement in
+plain Python, prefer a **Python reference model** as the single source of
+expected-behavior truth over hand-computing expected values inside the
+testbench or re-deriving them ad hoc per test case.
+
+Pattern:
+
+- `<module>_model.py` (or `<ip>_model.py` for a full-pipeline/integration
+  test) next to `run.py`, implementing the same integer/fixed-point
+  approximations documented in the module's requirement/architecture doc
+  (e.g. the same truncation, rounding, and saturation behavior — not a
+  higher-precision "more correct" version that would produce mismatches
+  against a deliberately-approximate DUT).
+- Keep the model importable both from `run.py`/test configs and
+  standalone (e.g. from a plain `pytest` unit test of the model itself) —
+  do not embed it only as inline closures inside `run.py`.
+- `pre_config(output_path, ...)`: call the model with the same
+  generics/seed the VUnit `add_config` uses, to generate stimulus and the
+  model's precomputed expected-output file(s) into `output_path` before
+  the simulation runs. The testbench reads the stimulus file back
+  (typically via `integer_array_pkg.load_csv`/`load_raw`, or plain
+  `std.textio`) and drives it in, generic-matched, cycle-accurate or
+  randomized-backpressure order.
+- `post_check(output_path, output)`: load whatever the testbench itself
+  dumped during simulation (typically via `integer_array_pkg.save_csv`)
+  and compare it value-for-value against the model's precomputed expected
+  file from `pre_config`. Return `True` only on an exact match; otherwise
+  return `False` (or raise) with a useful diff (index, expected, actual)
+  printed for triage.
+- One model instance, parameterized identically to the DUT's generics for
+  that `add_config`, covers exactly one test run — do not share mutable
+  model state across configs in the same `run.py` process.
+- The model is not a replacement for in-VHDL protocol assertions
+  (handshake stability, no beat loss/duplication) — those stay as VHDL
+  checks; the model only owns "is the computed value correct."
 - `tb.get_tests(pattern="*")`.
 - `test.set_generic(...)` / `test.set_attribute(".name", value)`.
 
@@ -640,6 +702,112 @@ wait_until_idle(net, bus, wait_time => 1 us);
 - `ram_master` entity: simple `bus_handle`-driven RAM read/write.
 - `std_logic_checker` entity: flags X/Z on observed signals.
 
+### Blocking vs. non-blocking VC calls (prefer non-blocking for stimulus/checks)
+
+Every VUnit VC procedure that sends a message via `net` and does not wait
+for a reply returns immediately ("non-blocking"/fire-and-forget); a
+procedure that waits for a reply message blocks the calling process until
+that reply arrives. **Default to the non-blocking form when generating
+stimulus or queuing expected-result checks** — it lets the driving/checking
+process issue a whole frame/packet's worth of transactions up front without
+stalling cycle-by-cycle on the DUT's actual backpressure timing; the VC's
+internal message queue (and, on the DUT side, its `tready`/`tvalid`
+handshake) absorbs the timing, which is exactly the "no bubble/no loss by
+construction" property already noted above for the `axi_*_bfm` queue-driven
+variants. Reserve the blocking form for the (rare) case where the test
+process genuinely needs a value back before deciding its next action.
+
+Verified from `axi_stream_pkg.vhd` (VUnit 5, this stack) — exact
+blocking/non-blocking status per procedure/overload:
+
+| Procedure | Blocking? | Notes |
+|---|---|---|
+| `push_axi_stream(net, master, tdata, tlast, ..., tuser)` | **Non-blocking** | Only form that exists; always queues the beat and returns immediately. Use this for all stimulus generation. |
+| `pop_axi_stream(net, slave, tdata, tlast, tkeep, tstrb, tid, tdest, tuser)` (7-out-param form) | Blocking | Waits for the popped beat before returning. |
+| `pop_axi_stream(net, slave, tdata, tlast)` (2-out-param form) | Blocking | Short form of the same blocking pop. |
+| `pop_axi_stream(net, slave, reference)` | **Non-blocking** | Queues the pop request, returns a `axi_stream_reference_t` handle immediately. Redeem later with `await_pop_axi_stream_reply` (blocking) once the value is actually needed — lets the test process issue many pops back-to-back, then drain replies in a second pass or a separate checker process. |
+| `await_pop_axi_stream_reply(net, reference, tdata, tlast, ...)` | Blocking | Companion to the non-blocking `pop_axi_stream(..., reference)` above. |
+| `check_axi_stream(net, slave, expected, ..., blocking => true\|false)` | **Either, via `blocking` generic** (default `true`) | Set `blocking => false` to queue an expected-value check without stalling the checking process — **prefer this for verification data**: queue every expected beat for a frame up front (mirrors how `push_axi_stream` queues stimulus), and let the VC report mismatches asynchronously as they're popped from the DUT, rather than hand-writing a wait-per-beat loop. |
+
+Practical pattern for this project's per-module testbenches: in the
+stimulus process, `push_axi_stream` every beat of a frame (including the
+`tuser`/`tlast` passenger bits) back-to-back with no explicit `wait`
+between beats; in the checking process, `check_axi_stream(..., blocking =>
+false)` every expected beat back-to-back the same way, sourced from the
+Python golden model's precomputed expected file (see "Python reference
+models" above). Only fall back to the blocking forms for a targeted
+directed test that must inspect one value before deciding what to drive
+next (e.g. a reset-recovery or error-injection sequence).
+
+### Randomized backpressure via `stall_config` (mandatory default)
+
+Per `shared/Axi4.md`'s mandatory-backpressure design rule, a testbench must
+actually **exercise** backpressure, not just assume the DUT implements it
+correctly. **Every VUnit `axi_stream_master`/`axi_stream_slave` (and the
+other queue/handshake-based VCs — `bus_master_t`, `bfm.handshake_master`/
+`handshake_slave`, etc.) instantiated against a link with real
+`tready`/`tvalid` handshaking must be given a non-zero randomized
+`stall_config` by default**, on both sides of the link:
+
+- On the **master** (driving stimulus into the DUT's slave/input port):
+  randomized stalls simulate an upstream producer that doesn't always have
+  a beat ready — exercises the DUT's tolerance for `tvalid` gaps.
+- On the **slave** (checking the DUT's master/output port): randomized
+  stalls simulate a downstream consumer that isn't always ready — exercises
+  the DUT's actual `tready`-driven backpressure path (line buffers/FIFOs
+  holding state, no bubble insertion/drop/duplication), which is the entire
+  point of the Option-B "full per-stage AXI-Stream" design decision. A
+  testbench that only ever holds `tready`/`m_axis_tready` high cannot
+  distinguish a correct elastic implementation from a free-running one that
+  merely happens to work when nothing ever stalls.
+
+API (verified from `axi_stream_pkg.vhd`, VUnit 5, this stack):
+
+```vhdl
+function new_stall_config(
+  stall_probability : real range 0.0 to 1.0;
+  min_stall_cycles  : natural;
+  max_stall_cycles  : natural
+) return stall_config_t;
+```
+
+Pass it either at construction:
+
+```vhdl
+constant master_stall : stall_config_t := new_stall_config(
+  stall_probability => 0.5, min_stall_cycles => 1, max_stall_cycles => 4
+);
+constant m : axi_stream_master_t := new_axi_stream_master(
+  data_length => ..., user_length => ..., stall_config => master_stall
+);
+constant s : axi_stream_slave_t := new_axi_stream_slave(
+  data_length => ..., user_length => ..., stall_config => master_stall  -- independent instance per side
+);
+```
+
+or change it mid-test via `set_stall_config(net, master_or_slave,
+stall_config)` (readable back with `get_stall_config`) — useful for a test
+case that wants an initial no-stall "sanity" pass before switching to a
+randomized-backpressure pass in the same run.
+
+- **Seed `stall_probability`/`min_stall_cycles`/`max_stall_cycles` from the
+  test's own seeded RNG** (`get_string_seed(runner_cfg)`, see §10), not a
+  fixed literal, so different seeded runs exercise different stall
+  patterns and a failure is reproducible via `--seed`. hdl-modules'
+  `tb_axi_stream_bfm` pattern (`rnd.Uniform(0, 90)` percent, `min=1,
+  max=3` cycles) is a reasonable default shape to copy.
+- **Always include at least one directed, zero-stall configuration/test
+  case too** (`null_stall_config`) as the simplest possible sanity check
+  before the randomized-backpressure cases — if that fails, debug that
+  first rather than a randomized run.
+- This applies independently of the blocking-vs-non-blocking call style
+  above: a non-blocking `push_axi_stream`/`check_axi_stream(...,
+  blocking => false)` still stalls exactly as configured at the actual
+  bus signals; the non-blocking call style only affects when the *test
+  process* is released, not the VC's own drive/sample timing.
+- Skip this for a link that is provably unable to stall (documented
+  exception per `shared/Axi4.md`), not by default omission.
+
 ### BFM wrapper pattern (hdl-modules)
 
 hdl-modules wraps the VUnit entities in the `bfm` library with clean
@@ -662,6 +830,138 @@ Ready wrappers: `bfm.axi_master`, `bfm.axi_lite_master`
 take `job_queue`/`data_queue` generics — drive transactions by pushing
 into queues; "no loss / no bubble" properties fall out of the queue
 back-pressure by construction.
+
+**Caveat, verified this session**: `bfm.axi_stream_master`/`bfm.axi_stream_slave`
+(hdl-modules' own wrapper, `modules/bfm/sim/axi_stream_{master,slave}.vhd`)
+enforce `user_width mod 8 = 0` ("This entity works on a byte-by-byte basis")
+— they assume any `tuser` payload is byte-aligned auxiliary data, not a
+narrow passenger-bit field. **Do not use this wrapper for a `tuser` field
+narrower than 8 bits and not a multiple of 8** (e.g. a 1-2 bit
+SOF/border/sideband field, as in a raster-image AXI4-Stream pipeline) —
+the entity's own assertion will fail at elaboration. In that case, use
+VUnit's raw `vunit_lib.axi_stream_master`/`axi_stream_slave` entities and
+`axi_stream_pkg.new_axi_stream_master`/`new_axi_stream_slave` directly
+(arbitrary `user_length`, no alignment constraint) instead of the
+hdl-modules wrapper, and add the protocol-checker instance yourself
+(`common.axi_stream_protocol_checker`, generic-mapped to the link's actual
+`data_width`/`user_width`) if per-channel checking is still wanted. This is
+the general rule, not just a one-off workaround: **before reusing any
+higher-level BFM/VC wrapper, check its generic-range assertions against
+the actual interface width being tested** — a wrapper built for a common
+case (byte-aligned buses) can silently be the wrong tool for a
+deliberately narrow project-specific field.
+
+### Writing a custom VC (only when no adequate built-in/wrapper exists)
+
+Per the VC-preference rule above, only write a custom VC after confirming no
+built-in VC/VCI (§12 lists) and no thin wrapper around one covers the
+interface — for this project's AXI4-Stream links, that bar is essentially
+never met (raw `vunit_lib.axi_stream_master`/`axi_stream_slave` already
+handle arbitrary `user_length`, see the BFM-wrapper caveat above), so expect
+this to stay unused unless a genuinely new, non-AXI4-Stream, non-bus
+interface shows up. Verified this session against VUnit's own docs
+(`docs/verification_components/user_guide.rst`, `vci.rst`) and real source
+(`uart_pkg.vhd` / `uart_master.vhd` / `vc_pkg.vhd`, `verification_components/src`).
+
+**Concepts** (from VUnit's own docs):
+- A **Verification Component (VC)** is a simulation-only entity wired to the
+  DUT via a real bus/protocol interface, controlled by a **handle record**
+  (a generic on the entity, e.g. `uart_master_t`) and driven by test code via
+  **procedures that send messages** over `com`/`net` to the handle's actor —
+  not by writing to signals directly from the test process.
+- A **Verification Component Interface (VCI)** is a *generic* procedural API
+  (e.g. `stream_master_pkg`'s push/pop, `sync_pkg`'s
+  `wait_until_idle`/`is_idle`) that several different VCs can implement by
+  providing an `as_stream`/`as_sync`-style adapter function from their own
+  handle type to the VCI's handle type — this lets generic testbench code
+  (e.g. a scoreboard driver) work unmodified against a UART, Avalon-ST, or
+  AXI-Stream VC. Implement the relevant `as_*` adapter(s) for a new VC
+  whenever an existing VCI already covers part of its behavior (see
+  `uart_pkg.as_stream`/`as_sync` below) instead of inventing new procedures.
+
+**Minimal skeleton** (mirrors `uart_pkg.vhd` + `uart_master.vhd`, the
+smallest complete built-in VC):
+
+```vhdl
+-- 1. Handle type + constructor + message types, in a package
+package my_vc_pkg is
+  type my_vc_t is record
+    p_actor : actor_t;      -- required: the VC's message-passing identity
+    p_cfg   : natural;      -- any config fields the VC needs
+  end record;
+
+  impure function new_my_vc(cfg : natural := 0) return my_vc_t;
+
+  -- One procedure per command; each just builds and sends a msg (non-blocking
+  -- by default, matching the project's blocking/non-blocking preference above)
+  procedure my_vc_do_thing(signal net : inout network_t; vc : my_vc_t; arg : integer);
+
+  constant my_vc_do_thing_msg : msg_type_t := new_msg_type("my_vc do thing");
+end package;
+
+package body my_vc_pkg is
+  impure function new_my_vc(cfg : natural := 0) return my_vc_t is
+  begin
+    return (p_actor => new_actor, p_cfg => cfg);
+  end;
+
+  procedure my_vc_do_thing(signal net : inout network_t; vc : my_vc_t; arg : integer) is
+    variable msg : msg_t := new_msg(my_vc_do_thing_msg);
+  begin
+    push(msg, arg);
+    send(net, vc.p_actor, msg);   -- non-blocking: returns once queued
+  end;
+end package body;
+```
+
+```vhdl
+-- 2. Entity: handle is a generic; one process receives and dispatches
+entity my_vc is
+  generic (vc : my_vc_t);
+  port (some_signal : out std_logic);
+end entity;
+
+architecture a of my_vc is
+begin
+  main : process
+    variable msg : msg_t;
+    variable msg_type : msg_type_t;
+  begin
+    receive(net, vc.p_actor, msg);
+    msg_type := message_type(msg);
+    if msg_type = my_vc_do_thing_msg then
+      -- pop(msg) the pushed fields, drive some_signal over time
+    else
+      unexpected_msg_type(msg_type);   -- or std_cfg-based variant, see below
+    end if;
+  end process;
+end architecture;
+```
+
+**Prefer `vc_pkg.create_std_cfg`/`std_cfg_t` over a bare `p_actor`** for
+anything beyond a one-off/local VC: it bundles an `id_t` (for
+enumerated/discoverable instance naming), a dedicated `logger_t`, a
+`checker_t`, and an `unexpected_msg_type_policy_t` (`fail`/`ignore`) in one
+opaque record, with `get_id`/`get_actor`/`get_logger`/`get_checker`/
+`unexpected_msg_type` accessors and a ready-made `unexpected_msg_type(msg_type,
+std_cfg)` procedure to call in the dispatch `else` branch — this is the
+pattern the more full-featured built-in VCs (AXI, Avalon, Wishbone) use, and
+gives consistent logging/failure reporting for free instead of a bespoke
+`report`/`assert`.
+
+**Request/reply (non-blocking-first)**: if a command needs to return data,
+prefer the same non-blocking-then-redeem shape already established for
+`pop_axi_stream`/`await_pop_axi_stream_reply` (§ above) — send a request
+`msg` and immediately return a reference/handle to the caller; provide a
+separate blocking `await_<x>_reply` procedure to redeem it only when the
+value is actually needed, rather than making every query block the calling
+process by default.
+
+**Register with `vc_context`**: built-in VCs are exposed via
+`vc_context.vhd` (a single `context` aggregating all VC packages) — do the
+equivalent for a set of project-local custom VCs (one `context` declaration
+in a shared package) so testbenches pull them in with one `context work.*`
+line instead of per-package `use` clauses.
 
 ## 13. Good practices (tsfpga + hdl-modules)
 
@@ -718,3 +1018,56 @@ When migrating a VUnit-4 TB: replace `add_vhdl` with `add_source_file`,
 add `add_vhdl_builtins()`, convert `vunit_attr` comments to
 `-- vunit: .name`, and re-implement removed `check_*` helpers with
 `check_equal`/`check_robust` or plain `assert`.
+
+## 15. Test-driven development (TDD) for RTL modules
+
+Default workflow for a new module (project-wide policy, not just a
+suggestion): **write the VUnit testbench from the requirement doc before
+the module's RTL body exists**, confirm it is red (fails, or the DUT
+doesn't even exist yet so the testbench can't elaborate against real
+logic), then implement the RTL until the same testbench goes green. Do not
+write the testbench after the implementation "to confirm it works" as the
+default order — that verifies the implementation against itself in the
+implementer's own mental model, not against the independently-derived
+requirement.
+
+Per-module loop:
+1. From `<module>_req.md` (ports/generics/protocol above the marker,
+   behavior below it), author `tb_<module>.vhd` and register it in
+   `run.py` — this is `vhtestgen`'s job, run *before* `vhfill` for that
+   module.
+2. Compile/run it once against either a `--@`-stub entity or no entity at
+   all, and confirm it fails for the *expected* reason (missing
+   implementation), not a testbench authoring bug. Record this red result.
+3. `vhfill` implements the module until the same, unmodified testbench
+   passes (green). Do not relax or rewrite the testbench to make it pass
+   unless the requirement doc itself was wrong — if so, fix the req doc
+   first, then the testbench, then continue implementing.
+4. Move to the next module in pipeline order. Integration-level testing
+   (e.g. a full-IP golden-model comparison, see §"Python reference
+   models" above) happens after the individual modules it depends on are
+   green, as its own later step — it is not a substitute for per-module
+   TDD.
+
+This changes the phase order documented in the `vhflow` skill: unit test
+generation for a given module precedes that module's implementation, not
+the other way around; `vhtestgen` and `vhfill` alternate per module rather
+than running as two separate whole-project passes.
+
+Combine with the rest of this document by default for every generated
+testbench under this policy:
+- prefer built-in VUnit verification components over a hand-rolled
+  driver/checker (§12); write a custom VC only when no built-in one fits,
+  and verify a candidate wrapper's generic-range assertions against the
+  actual interface width before reusing it (see the `bfm.axi_stream_*`
+  byte-alignment caveat in §12) — do not discover a mismatched assertion
+  only after wiring the whole testbench around it.
+- prefer non-blocking VC calls (`push_axi_stream`, `check_axi_stream(...,
+  blocking => false)`, non-blocking `pop_axi_stream(..., reference)`) for
+  generating stimulus/verification data (§12).
+- give every VC instance driving or checking a real `tready`/`tvalid`
+  link a non-zero randomized `stall_config` by default, seeded from the
+  test's own RNG (§12).
+- use a Python reference model via `pre_config`/`post_check` instead of
+  hand-computed expected values whenever the module implements a
+  specifiable numeric/algorithmic transform (§"Python reference models").

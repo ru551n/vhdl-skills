@@ -24,6 +24,10 @@ Use `vhdl-rag-mcp` when available to ground design decisions:
 
 Local project files and the requirement/proposal remain authoritative for the module being designed.
 
+Before designing new logic, check `shared/ReusableRTL.md` ("Reuse before authoring new RTL"): search `lib/`/`modules/*/src/`/vendored dependencies for an existing module first. A thin wrapper around an existing module is allowed and preferred over a fork or a rewrite.
+
+If the module being designed is a top-level (`<ip>_top`) or otherwise bundles more than one distinct responsibility, prefer splitting it into smaller single-responsibility submodules per `shared/ReusableRTL.md` ("Prefer modular decomposition") rather than implementing a monolithic entity — flag this back to `vharch` (a new architecture/submodule-table decision) rather than silently absorbing extra responsibility into one module's VHDL backbone.
+
 ## Input
 
 `ddoc/<module>_req.md`
@@ -64,7 +68,7 @@ The proposal must capture:
 - latency/throughput
 - corner cases
 - selected patterns from `shared/DesignPatterns.md`
-- AXI4/AXI4-Stream protocol decisions per `shared/Axi4.md` when the module exposes them
+- AXI4/AXI4-Stream protocol decisions per `shared/Axi4.md` — any streaming interface defaults to AXI4-Stream with backpressure (`TREADY`) unless the architecture doc explicitly justifies omitting it
 - verification plan
 - `## Implementation Notes (vhfill)` section, initially empty
 

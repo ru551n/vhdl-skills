@@ -53,9 +53,14 @@ Extract:
 - performance requirements
 - functional blocks
 
-Check `lib/` documentation before designing a new block. Reuse existing documented entities when appropriate.
+Check `lib/` documentation (and any vendored dependency, e.g. `hdl-modules`) before designing a new block. Reuse existing documented entities when appropriate; see `shared/ReusableRTL.md` ("Reuse before authoring new RTL") — a thin wrapper around an existing module is allowed and preferred over a fork or a rewrite.
 
-If the requirement includes AXI4/AXI4-Stream interfaces, `shared/Axi4.md` is authoritative for protocol selection and the mandatory rules.
+Prefer a modular decomposition over a monolithic block, including for newly
+authored (non-reused) functionality: see `shared/ReusableRTL.md` ("Prefer
+modular decomposition") for the single-responsibility, testable-unit
+criteria and the `<ip>_top` structural-only rule.
+
+`shared/Axi4.md` is authoritative for protocol selection and the mandatory rules. Any streaming data interface (samples, pixels, symbols, words with no addressing) defaults to AXI4-Stream with backpressure (`TREADY`) implemented at every inter-stage link unless the source is provably unable to stall (see `shared/Axi4.md`, "Mandatory default for streaming data") — decide and record this explicitly in the architecture doc, do not leave it implicit.
 
 ### 3. Define architecture
 
@@ -63,7 +68,9 @@ Write `ddoc/<ip>_arch.md` with:
 - intent
 - top-level generic table
 - top-level port table
-- submodule table (`name | responsibility | new/lib-reuse | source`)
+- submodule table (`name | responsibility | new/lib-reuse | source`) — apply
+  `shared/ReusableRTL.md`'s modular-decomposition criteria when drawing
+  submodule boundaries, not just its reuse criteria
 - Mermaid block diagram
 - inter-module interface table
 - generic propagation map

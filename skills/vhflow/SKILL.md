@@ -21,8 +21,13 @@ Inspect the project, detect available MCP backends, and maintain a resumable `fl
 
 1. Architecture — `vharch`
 2. Module design — `vhdesign`
-3. Implementation/unit verification — `vhfill`
-4. IP test generation — `vhtestgen`
+3. Per-module TDD loop (`vhtestgen` → `vhfill`, repeated per module) —
+   per `shared/Vunit.md` §15, generate the module's unit testbench from
+   its `<module>_req.md` first (red), then implement with `vhfill` until
+   that same testbench passes (green). `vhtestgen` and `vhfill` alternate
+   per module here; they are not two separate whole-project passes.
+4. IP-level test generation — `vhtestgen`, integration test(s) across
+   already-green modules (e.g. a full-pipeline golden-model comparison)
 5. Regression — `vhtestrun`
 6. Debug loop — `vhdebug` → requested fix via `vhfill` → `vhtestrun`
 7. Synthesis — `vhsynth`

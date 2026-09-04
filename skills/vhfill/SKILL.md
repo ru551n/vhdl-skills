@@ -28,6 +28,11 @@ Read:
 3. `shared/CodingStyle.md`
 4. `shared/DesignPatterns.md`
 5. `shared/Axi4.md` when the module exposes an AXI4/AXI4-Stream interface
+6. **Under the TDD policy (`shared/Vunit.md` §15, default)**: the module's
+   testbench already exists and is currently failing/red — it was written
+   by `vhtestgen` *before* this skill ran. Read it before implementing;
+   treat it as an executable spec alongside the proposal, not as something
+   this skill still needs to author from scratch.
 
 ## Tool prerequisites and backend selection
 
@@ -57,6 +62,15 @@ If no verification backend is available, implementation may proceed but compile/
 
 Resolve every `--@` marker using the approved proposal.
 
+**Under the TDD policy (default)**: a red testbench from `vhtestgen`
+already exists for this module. Implement, then compile/simulate (Steps
+3-4) iteratively against that existing testbench until it goes green;
+do not wait until the whole module is "done" to run it for the first time.
+If the red testbench reveals the proposal itself is wrong/incomplete
+(missing case, wrong latency, ...), fix the proposal/architecture doc first
+and say so in the implementation notes, rather than quietly changing the
+RTL to match a flawed spec.
+
 Requirements:
 - synthesizable VHDL-2008
 - `numeric_std`
@@ -71,6 +85,20 @@ Update `## Implementation Notes (vhfill)` in the proposal with meaningful as-bui
 True up `doc/<module>.md` if actual latency, reset values, interfaces, or behavior differ from proposal intent.
 
 ## Step 2 — Unit testbench
+
+**Under the TDD policy (default, `shared/Vunit.md` §15)**: the unit
+testbench for this module was already created by `vhtestgen` before this
+skill ran (red-first). This step is normally a no-op — do not regenerate or
+duplicate it. Only add to it here if implementation surfaces a gap
+`vhtestgen` missed (an untested corner case discovered while implementing);
+in that case, extend the existing testbench in place rather than writing a
+parallel one, and prefer feeding the gap back into `vhtestgen`'s test plan
+for future modules.
+
+The rest of this step (style/registration rules) still applies to any
+standalone-GHDL fallback project, or to the rare case where no pre-existing
+testbench was found and one must be authored here instead (non-TDD
+fallback, e.g. `vhtestgen` unavailable).
 
 When the project already uses VUnit, the unit testbench must be VUnit — infer the project's existing VUnit style (`run.py` registration, `tb/` layout, check style) from the current tests. If the conventions cannot be inferred, ask the user; do not guess.
 

@@ -16,6 +16,29 @@ packaging and `shared/CdcPolicy.md` before crossing clock domains.
 Do not over-select: a single-beat register block is AXI4-Lite, not full
 AXI4.
 
+### Mandatory default for streaming data
+
+Any interface that carries a sequence of data words with no addressing
+(samples, pixels, symbols, packet bytes, ...) **must** use AXI4-Stream
+semantics (`TVALID`/`TREADY`/`TDATA`, `TLAST` framing when packets exist) —
+internally as `*_m2s`/`*_s2m` records per `shared/InterfaceRecords.md`, or
+flat `t*` ports at boundaries that require it. Do not invent an ad-hoc
+valid-only, valid/data-without-ready, or enable-only streaming interface
+when AXI4-Stream applies; reuse an existing AXI4-Stream primitive (e.g.
+hdl-modules' `axi_stream_pkg`/`axi_stream_fifo`) before hand-rolling one.
+
+**Always implement backpressure (`TREADY`) when at all possible.** Every
+inter-stage link in a pipeline needs its own working ready/valid handshake
+satisfying rules 20-22 and 26 below (elastic stage: no loss, no
+duplication, stable payload while `VALID='1'`/`READY='0'`) — do not
+collapse a multi-stage pipeline onto a single global stall/clock-enable
+derived from the final consumer unless the requirement or the user
+explicitly accepts that simplification and its long-combinational-path
+tradeoff. Omit `READY` only when the source is provably unable to ever
+stall (e.g. a fixed-rate ADC dump with no way to pause the source) —
+document that justification explicitly in the module's architecture/
+proposal doc when it applies.
+
 ## Memory-mapped rules (AXI4 / AXI4-Lite)
 
 Five channels: `AW`/`W`/`B` for writes, `AR`/`R` for reads.
