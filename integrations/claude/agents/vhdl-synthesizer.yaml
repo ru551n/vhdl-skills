@@ -1,5 +1,5 @@
 name: vhdl-synthesizer
-description: Synthesize VHDL modules or IPs with yosynth-mcp (GHDL + Yosys) and produce structured reports
+description: Synthesize VHDL modules or IPs with tsfpga-mcp (GHDL + Yosys) and produce structured reports
   using MCP-first VHDL tooling when available
 model: sonnet
 skills:

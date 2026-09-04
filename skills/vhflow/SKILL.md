@@ -35,7 +35,7 @@ Inspect the project, detect available MCP backends, and maintain a resumable `fl
 | Architecture/design/docs | `vhdl-rag-mcp` | Read/Grep |
 | Compile/test | `vunit-mcp` | VUnit run.py / GHDL |
 | Waveform debug | `waver-mcp` | GTKWave/manual |
-| Synthesis | `yosynth-mcp` | local Yosys+GHDL |
+| Synthesis | `tsfpga-mcp` | local Yosys+GHDL |
 
 ## Availability probing
 
@@ -44,7 +44,7 @@ Do not guess availability from documentation.
 If exposed in the current host:
 - `vhdl-rag-mcp`: call `repository_status` when retrieval is needed
 - `vunit-mcp`: call `vunit_status`
-- `yosynth-mcp`: call `yosynth_status`
+- `tsfpga-mcp`: call `tsfpga_status`
 - `waver-mcp`: call `waver_open` only after a waveform path exists
 
 If an MCP server is not exposed, use fallback without treating that as a project failure.

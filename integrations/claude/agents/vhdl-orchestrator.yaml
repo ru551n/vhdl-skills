@@ -13,4 +13,5 @@ skills:
 - vhsynth
 - vhtestgen
 - vhtestrun
+- vhunit
 maxTurns: 60

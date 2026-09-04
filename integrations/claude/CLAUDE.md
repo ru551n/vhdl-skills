@@ -61,7 +61,7 @@ Preferred:
 - `vhdl-rag-mcp` for semantic VHDL/docs/code retrieval
 - `vunit-mcp` for VUnit project discovery, compilation, tests and logs
 - `waver-mcp` for waveform measurements and plots
-- `yosynth-mcp` for GHDL+Yosys synthesis/resource summaries
+- `tsfpga-mcp` for GHDL+Yosys synthesis/resource summaries
 
 Use local tools only when the corresponding MCP server/tool is unavailable, unhealthy, or unsuitable for the specific requested result.
 
@@ -108,7 +108,7 @@ ddoc/<ip>_req.md
 | `vhfill` | Implement VHDL, analyze/elaborate/simulate |
 | `vhexplain` | Generate documentation from VHDL source |
 | `vhdoc` | Aggregate module docs into an IP integration document |
-| `vhsynth` | Synthesize with yosynth-mcp (GHDL + Yosys); local Yosys+GHDL fallback |
+| `vhsynth` | Synthesize with tsfpga-mcp (GHDL + Yosys); local Yosys+GHDL fallback |
 | `vhtestgen` | Generate self-checking VHDL-2008 testbench project/testcases |
 | `vhunit` | Author, repair, migrate VUnit runners (`run.py`) and testbenches (VUnit 4→5) |
 | `vhtestrun` | Run regression and report failures |

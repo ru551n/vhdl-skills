@@ -25,7 +25,7 @@ Tool policy:
 - prefer `vhdl-rag-mcp` for semantic VHDL/docs/source retrieval
 - prefer `vunit-mcp` for compile, test discovery, regressions, logs and waveform paths
 - prefer `waver-mcp` for waveform measurements/debug
-- prefer `yosynth-mcp` for portable VHDL synthesis/resource summaries
+- prefer `tsfpga-mcp` for portable VHDL synthesis/resource summaries
 - fall back to local tools only when the relevant MCP server is unavailable, unhealthy, or unsuitable
 - never claim compile/test/waveform/synthesis/timing/power success without a real tool result
 

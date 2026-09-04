@@ -134,40 +134,40 @@ Fallback:
 
 Do not parse huge waveforms manually if Waver is available.
 
-### 4. `yosynth-mcp`
+### 4. `tsfpga-mcp`
 
 Repository:
-`https://github.com/ru551n/yosynth-mcp`
+`https://github.com/ru551n/tsfpga-mcp`
 
 Preferred for:
-- VHDL hierarchy/source inspection before synthesis
-- supported synthesis-target discovery
-- synthesis through GHDL + Yosys
-- concise top-port and resource summaries
+- VHDL/Verilog hierarchy/source inspection before synthesis
+- supported synthesis-target discovery (which chips/flows the installed Yosys provides)
+- synthesis through `tsfpga.yosys.project` (GHDL + Yosys)
+- aggregated resource-count summaries (no per-port netlist)
 
 Relevant tools when exposed:
-- `yosynth_status`
-- `yosynth_targets`
-- `yosynth_inspect`
-- `yosynth_synthesize`
+- `tsfpga_status`
+- `tsfpga_targets`
+- `tsfpga_inspect`
+- `tsfpga_synthesize`
 
 Usage rule:
-1. Call `yosynth_status` first.
-2. Use `yosynth_inspect` when top/architecture/generics are uncertain.
-3. Use `yosynth_targets` before choosing a chip/family unless the user already supplied it.
-4. Never infer required top-level architecture, chip/family, or generic overrides.
-5. Pass `architecture` explicitly for a VHDL top — it is required (find candidate names with `yosynth_inspect` or by reading the sources).
-6. Pass the complete source dependency set to `yosynth_synthesize`.
+1. Call `tsfpga_status` first.
+2. Use `tsfpga_inspect` when top/generics are uncertain, or multiple architectures may exist.
+3. Use `tsfpga_targets` before choosing a chip/family unless the user already supplied it.
+4. Never infer required top level, chip/family, or generic overrides.
+5. There is no architecture-selection parameter. If `tsfpga_inspect` reports more than one architecture for the top, ask the user which one, then include only that architecture's source file in the source set passed to `tsfpga_synthesize`.
+6. Pass the complete source dependency set to `tsfpga_synthesize`; when `top` is not a VHDL entity, also pass the VHDL entity names it instantiates via `vhdl_entities`.
 
 Fallback:
 Yosys + GHDL plugin locally for generic/open-source synthesis.
 
-`yosynth-mcp` provides synthesis/resource reporting, not a substitute for vendor place-and-route timing or vendor power analysis.
+`tsfpga-mcp` provides synthesis/resource reporting, not a substitute for vendor place-and-route timing or vendor power analysis.
 
 ## Tool argument conventions
 
 - `vunit-mcp` tools that take arguments wrap them in a top-level `input` object, e.g. `vunit_get_test_log` with `{"input": {"test_name": "..."}}`.
-- `yosynth-mcp` `yosynth_synthesize`/`yosynth_inspect` take an `input` object with `sources` (required), `top`, `architecture`, `chip`, `family`, `generics`, `std`.
+- `tsfpga-mcp` `tsfpga_synthesize`/`tsfpga_inspect` take an `input` object with `sources` (required), `top`, `chip`, `family`, `vhdl_entities`, `generics`, `vhdl_standard`, `discard_ffinit`.
 - `vhdl-rag-mcp` and `waver-mcp` take flat arguments (e.g. `waver_open` with `{"file": "..."}`).
 
 ## Availability decision
@@ -181,7 +181,7 @@ For each phase:
 5. Record which backend produced a result:
    - `backend: vunit-mcp`
    - `backend: ghdl`
-   - `backend: yosynth-mcp`
+   - `backend: tsfpga-mcp`
    - etc.
 
 ## Evidence rule

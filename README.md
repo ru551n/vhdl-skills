@@ -19,7 +19,7 @@ target project.
 | `vhtestgen` | Generate VUnit-first self-checking VHDL-2008 test projects (GHDL fallback) |
 | `vhunit` | Author, repair, and migrate VUnit runners (`run.py`) and VHDL-2008 testbenches (VUnit 4→5) |
 | `vhtestrun` | Run regressions via vunit-mcp; collect reports, logs, and waveforms |
-| `vhsynth` | Synthesize with yosynth-mcp (GHDL + Yosys); local Yosys+GHDL fallback |
+| `vhsynth` | Synthesize with tsfpga-mcp (GHDL + Yosys); local Yosys+GHDL fallback |
 | `vhdoc` | Aggregate module documentation into an IP-level integration document |
 | `vhexplain` | Generate or refresh module documentation from an entity/architecture |
 
@@ -147,10 +147,10 @@ servers, including the intended failure-debug chain:
 | **vhdl-rag-mcp** | [ru551n/vhdl-rag-mcp](https://github.com/ru551n/vhdl-rag-mcp) | RAG index over project sources/docs for cross-reference |
 | **vunit-mcp** | [ru551n/vunit-mcp](https://github.com/ru551n/vunit-mcp) | Run VUnit tests, collect reports/logs/waveforms |
 | **waver-mcp** | [ru551n/waver-mcp](https://github.com/ru551n/waver-mcp) | Waveform inspection for measured signal evidence |
-| **yosynth-mcp** | [ru551n/yosynth-mcp](https://github.com/ru551n/yosynth-mcp) | GHDL + Yosys synthesis and resource summary |
+| **tsfpga-mcp** | [ru551n/tsfpga-mcp](https://github.com/ru551n/tsfpga-mcp) | GHDL + Yosys synthesis and resource summary |
 
 Debug chain: `vunit-mcp` (fail + record) → `waver-mcp` (waveform evidence) →
-`vhdl-rag-mcp` (source cross-reference); synthesis via `yosynth-mcp`.
+`vhdl-rag-mcp` (source cross-reference); synthesis via `tsfpga-mcp`.
 Setup commands and the full architecture are in `MCP_SETUP.md`.
 
 ## Validate

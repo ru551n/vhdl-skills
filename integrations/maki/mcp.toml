@@ -11,7 +11,7 @@
 # 1..=300000). Long operations must fit inside it:
 # - vunit-mcp's server-side run budget (VUNIT_MCP_TIMEOUT) is kept below the
 #   300000 ms call timeout.
-# - yosynth-mcp's default synthesis timeout is 300 s (YOSYNTH_MCP_TIMEOUT).
+# - tsfpga-mcp's default synthesis timeout is 300 s (TSFPGA_MCP_TIMEOUT).
 # - vhdl-rag-mcp searches are fast, but a first sync/reindex of a repository
 #   can take minutes.
 
@@ -37,8 +37,8 @@ command = ["uvx", "--from", "git+https://github.com/ru551n/waver-mcp.git", "wave
 timeout = 300000
 enabled = true
 
-[mcp.yosynth-mcp]
-command = ["uvx", "--from", "git+https://github.com/ru551n/yosynth-mcp.git", "yosynth-mcp"]
+[mcp.tsfpga-mcp]
+command = ["uvx", "--from", "git+https://github.com/ru551n/tsfpga-mcp.git", "tsfpga-mcp"]
 # Its default synthesis timeout is 300 s; the call timeout must cover it.
 timeout = 300000
 enabled = true
