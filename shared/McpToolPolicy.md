@@ -43,16 +43,21 @@ Relevant tools when exposed:
 
 Usage rule:
 1. Call `repository_status` when repository/index health matters.
-2. Search narrowly first: prefer several small, fine-grained queries over one
-   broad one. Target the specific fragment actually needed (entity/port list,
-   a specific process, an architecture body, a function/procedure signature,
-   a generic's usage) rather than a single query for "the whole module" —
-   fine-grained queries are cheap, and the chunked index rewards precision
-   (e.g. `search_hdl` with `query="entity axi_stream_master ports"` then a
-   separate `query="push_axi_stream procedure signature"` beats one query
-   trying to cover both). Issue the fine-grained searches in parallel
-   (`batch`/concurrent tool calls) rather than one broad query followed by
-   guessed follow-ups.
+2. Search at topic granularity, not module granularity and not item
+   granularity. Neither extreme works well: one query for "the whole
+   module" returns a diffuse mix of unrelated chunks, but one query per
+   individual port/signal/constant over-fragments a coherent unit and wastes
+   calls on pieces that belong together. Group each query around one
+   coherent topic/concern of the thing you're studying — e.g. "entity ports
+   and generics", "the arbitration process", "a specific procedure's
+   signature", "the reset/clock handling" — each as its own query, run
+   several of these topic-scoped queries in parallel (`batch`/concurrent
+   tool calls) rather than one broad query or a flood of single-item ones.
+   Example for a VC like `axi_stream_master`: one query for its entity
+   ports/generics, a separate query for `axi_stream_pkg`'s constructor
+   functions (`new_axi_stream_master`/`new_axi_stream_slave`), a third for
+   its push/check procedures — not one query per port, and not one query
+   trying to cover the whole file.
 3. Use `get_source` for exact source before copying or relying on an implementation detail.
 4. Do not assume indexed material is current if status reports sync/index errors.
 
