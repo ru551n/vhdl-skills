@@ -43,7 +43,16 @@ Relevant tools when exposed:
 
 Usage rule:
 1. Call `repository_status` when repository/index health matters.
-2. Search narrowly first.
+2. Search narrowly first: prefer several small, fine-grained queries over one
+   broad one. Target the specific fragment actually needed (entity/port list,
+   a specific process, an architecture body, a function/procedure signature,
+   a generic's usage) rather than a single query for "the whole module" —
+   fine-grained queries are cheap, and the chunked index rewards precision
+   (e.g. `search_hdl` with `query="entity axi_stream_master ports"` then a
+   separate `query="push_axi_stream procedure signature"` beats one query
+   trying to cover both). Issue the fine-grained searches in parallel
+   (`batch`/concurrent tool calls) rather than one broad query followed by
+   guessed follow-ups.
 3. Use `get_source` for exact source before copying or relying on an implementation detail.
 4. Do not assume indexed material is current if status reports sync/index errors.
 
