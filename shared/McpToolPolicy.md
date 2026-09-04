@@ -202,10 +202,52 @@ Yosys + GHDL plugin locally for generic/open-source synthesis.
 
 `tsfpga-mcp` provides synthesis/resource reporting, not a substitute for vendor place-and-route timing or vendor power analysis.
 
+### Multi-library designs
+
+When the design under synthesis spans more than one VHDL library — e.g. a
+top level using `library <name>; entity <name>.<entity>` to cross into a
+sibling library, as produced by tsfpga's own per-module-folder convention
+(`tsfpga.module.get_modules()`, see `shared/TsfpgaModules.md` §1) — pass
+each library's files under `tsfpga_synthesize`'s `libraries` parameter
+(one dict entry per library, keyed by library name), not flattened into
+`sources`. Use `vhdl-rag-mcp` to trace the full transitive dependency
+closure first (own modules + any vendored dependency's modules) so no
+library is missed; a design that only fails to *resolve* a cross-library
+reference (GHDL: `cannot find resource library "..."` / `failed to find
+library '...'`) rather than reporting a real syntax/semantic error is the
+tell that a library was flattened into `sources` instead of given its own
+`libraries` entry.
+
+### Backend-limitation workaround protocol
+
+A synthesis failure is not automatically a `tsfpga-mcp` bug or a design
+bug — it can be a genuine limitation of the underlying open-source GHDL/
+Yosys backend hit by otherwise-correct, already-simulated-passing RTL
+(e.g. GHDL's synth backend rejecting a dynamic-width slice construct that
+GHDL's simulator accepts fine — a known, still-open GHDL issue). Before
+assuming the RTL or the MCP tool is wrong:
+
+1. Isolate the exact failing construct/statement from the diagnostics
+   (don't just retry blindly).
+2. Check whether it matches a known upstream GHDL/Yosys issue (web search
+   the exact error wording) rather than assuming it's project-specific.
+3. If it is a genuine backend limitation and a workaround is warranted,
+   apply it to a **local, synth-only scratch copy** of the affected
+   file(s) only — never edit a vendored/reused module in place (per
+   `shared/ReusableRTL.md`'s reuse-unmodified policy) without the user's
+   explicit sign-off first.
+4. Prove the scratch copy is behaviorally equivalent to the original
+   (e.g. a standalone GHDL testbench comparing both across a
+   representative input matrix) before trusting any resource count
+   produced with it.
+5. Record the workaround's scope and expiry condition (e.g. "drop once
+   GHDL issue #NNNN is fixed, or once the vendored module is patched
+   upstream") so it isn't mistaken for a permanent part of the design.
+
 ## Tool argument conventions
 
 - `vunit-mcp` tools that take arguments wrap them in a top-level `input` object, e.g. `vunit_get_test_log` with `{"input": {"test_name": "..."}}`.
-- `tsfpga-mcp` `tsfpga_synthesize`/`tsfpga_inspect` take an `input` object with `sources` (required), `top`, `chip`, `family`, `vhdl_entities`, `generics`, `vhdl_standard`, `discard_ffinit`.
+- `tsfpga-mcp` `tsfpga_synthesize`/`tsfpga_inspect` take an `input` object with `sources`, `libraries`, `top`, `chip`, `family`, `vhdl_entities`, `generics`, `vhdl_standard`, `discard_ffinit`. At least one of `sources`/`libraries` is required; `libraries` is a `{library_name: [file, ...]}` map for designs spanning more than one VHDL library (see "Multi-library designs" above).
 - `vhdl-rag-mcp` and `waver-mcp` take flat arguments (e.g. `waver_open` with `{"file": "..."}`).
 
 ## Availability decision
@@ -236,3 +278,12 @@ Never claim:
 - repository match
 
 unless it came from an actual tool invocation or a user-provided artifact.
+
+Absence of an error is not the same as evidence: a diagnostics tail can be
+truncated (line-count-limited) and bury the actual root-cause error under
+later, unrelated, benign warnings/notes (e.g. a tool repeating one note
+per elaborated instance after the real fatal error already occurred).
+Treat a failure message that looks suspiciously short, generic, or
+templated as potentially truncated rather than accepting it as the full
+root cause; prefer a tool/log view that surfaces every error-containing
+line (not just a blind tail) when available.

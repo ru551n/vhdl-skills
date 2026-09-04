@@ -185,7 +185,21 @@ Key points, each a real gotcha hit while building this project:
   §"Python reference models" for the general `pre_config`/`post_check`
   pattern this applies to.
 
-## 5. Known MCP-toolchain limitation (as of this project)
+## 5. Bridging to `tsfpga-mcp` synthesis
+
+`tsfpga_synthesize` (the `tsfpga-mcp` skill) has no awareness of this
+document's `modules/` layout or `get_modules()` — it only takes flat file
+lists. To synthesize a design built from this module layout, map each
+module folder this project uses to one `tsfpga_synthesize` `libraries`
+entry (`{library_name: [file, ...]}`, keyed by the same `module.
+library_name` / folder name §1 defines), and include every module in the
+top's full transitive dependency closure, not just the ones it directly
+instantiates. Use `vhdl-rag-mcp` to trace that closure (cross-library
+`entity <name>.<entity>` references per §3 don't show up in a single
+module's own file list). See `shared/McpToolPolicy.md`'s "Multi-library
+designs" for the `tsfpga_synthesize` side of this.
+
+## 6. Known MCP-toolchain limitation (as of this project)
 
 `vunit-mcp` cannot currently drive a `tsfpga`-module-based `run.py`: its
 own Python subprocess does not have `tsfpga` importable
