@@ -50,7 +50,7 @@ For every failing test, use `vunit_get_test_log`.
 
 When waveform debug is useful:
 1. `vunit_get_test_waveform`
-2. pass returned path to `waver-mcp`
+2. pass returned path to `peeper-mcp`
 
 ### 4. Report
 

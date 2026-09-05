@@ -142,7 +142,7 @@ Maintain `tb/<ip>/tc_list.md` if the project uses that artifact, mapping test na
 
 ## Waveform readiness
 
-For tests likely to need signal-level debug, design them so `vunit_run_tests` can be invoked with waveform recording. Waveform files are consumed by `waver-mcp`.
+For tests likely to need signal-level debug, design them so `vunit_run_tests` can be invoked with waveform recording. Waveform files are consumed by `peeper-mcp`.
 
 ## Fallback standalone tests
 

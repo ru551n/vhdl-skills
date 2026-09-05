@@ -31,8 +31,8 @@ environment = { VUNIT_MCP_PROJECT_DIR = ".", VUNIT_MCP_TIMEOUT = "240" }
 timeout = 300000
 enabled = true
 
-[mcp.waver-mcp]
-command = ["uvx", "--from", "git+https://github.com/ru551n/waver-mcp.git", "waver-mcp"]
+[mcp.peeper-mcp]
+command = ["uvx", "--from", "git+https://github.com/ru551n/peeper-mcp.git", "peeper-mcp"]
 # Reads are usually fast; 300000 ms leaves headroom for very large waveforms.
 timeout = 300000
 enabled = true

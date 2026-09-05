@@ -18,7 +18,7 @@ Read `shared/McpToolPolicy.md`.
 
 - Use `vhdl-rag-mcp` for precedent/convention lookup when implementation details need grounding.
 - Use `vunit-mcp` for compile and unit-test execution when a VUnit project exists.
-- Use `waver-mcp` for waveform-based failure analysis when a recorded waveform is available.
+- Use `peeper-mcp` for waveform-based failure analysis when a recorded waveform is available.
 
 ## Inputs
 
@@ -45,7 +45,7 @@ If `vunit-mcp` tools are exposed:
 4. Run the relevant unit test with `vunit_run_tests`.
 5. Pass `waveform_format` (`vcd` on GHDL, `fst` on NVC) to `vunit_run_tests` when failure diagnosis may need it; without it, no waveform is recorded.
 6. Read results with `vunit_get_report` and `vunit_get_test_log`.
-7. On waveform-debug, resolve it with `vunit_get_test_waveform` and analyze via `waver-mcp`.
+7. On waveform-debug, resolve it with `vunit_get_test_waveform` and analyze via `peeper-mcp`.
 
 Fallback:
 1. existing project VUnit `run.py`
@@ -139,9 +139,9 @@ Then:
 2. on failure, `vunit_get_test_log`
 3. if signal-level diagnosis is needed and waveform was recorded:
    - `vunit_get_test_waveform`
-   - `waver_open`
-   - `waver_search`
-   - `waver_value_at` / `waver_values` / `waver_find` / `waver_latency` as needed
+   - `peeper_open`
+   - `peeper_search`
+   - `peeper_value_at` / `peeper_values` / `peeper_find` / `peeper_latency` as needed
 
 ### Fallback
 

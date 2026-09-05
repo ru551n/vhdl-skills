@@ -23,19 +23,19 @@ https://github.com/ru551n/vunit-mcp
 Point the server at the VUnit project directory using its documented `VUNIT_MCP_PROJECT_DIR` configuration.
 Keep `VUNIT_MCP_TIMEOUT` below the per-call timeout of your MCP client (the
 shipped Maki config uses 240 s under a 300 s call timeout).
-Record waveforms for waver-mcp by passing `waveform_format` to
+Record waveforms for peeper-mcp by passing `waveform_format` to
 `vunit_run_tests` (`vcd` on GHDL, `fst` on NVC).
 Install the upstream `skills/vunit-mcp` skill beside this project's skills when desired.
 
-## waver-mcp
+## peeper-mcp
 
 Repository:
-https://github.com/ru551n/waver-mcp
+https://github.com/ru551n/peeper-mcp
 
 Typical stdio command:
 
 ```bash
-uvx --from "git+https://github.com/ru551n/waver-mcp.git" waver-mcp
+uvx --from "git+https://github.com/ru551n/peeper-mcp.git" peeper-mcp
 ```
 
 Reads FST (NVC's default) and VCD (GHDL's default) waveforms directly, so
@@ -70,7 +70,7 @@ vunit-mcp
        └── get waveform path
                │
                ▼
-            waver-mcp
+            peeper-mcp
                │
                ▼
         measured signal evidence

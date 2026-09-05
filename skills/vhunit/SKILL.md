@@ -110,7 +110,7 @@ must respect the test phases — pick one, per `shared/Vunit.md` §7.1/§7.2:
    `waveform_format` (`vcd` on GHDL, `fst` on NVC) so failures can be
    diagnosed at signal level — without it no waveform is recorded.
 3. `vunit_get_report` → on failure `vunit_get_test_log` → waveform
-   (`vunit_get_test_waveform` + `waver-mcp`) when signal-level diagnosis
+   (`vunit_get_test_waveform` + `peeper-mcp`) when signal-level diagnosis
    is needed.
 4. Fallback per `shared/McpToolPolicy.md`: run the project's `run.py`
    directly (note: `--waves`/`--wave --viewer-fmt` for waveforms on the

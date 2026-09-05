@@ -120,7 +120,7 @@ Usage rule:
 4. Prefer `vunit_run_tests` for regressions.
 5. Pass `waveform_format` to `vunit_run_tests` when waveform debug may be required (`vcd` on GHDL, `fst` on NVC); a run without it records no waveform. Skip it only when the run is expected green and no debug is planned.
 6. Use `vunit_get_report` before fetching detailed failure logs.
-7. Use `vunit_get_test_waveform` to obtain the waveform path and pass it to `waver-mcp`.
+7. Use `vunit_get_test_waveform` to obtain the waveform path and pass it to `peeper-mcp`.
 
 Fallback:
 1. Project `run.py` directly, using VUnit.
@@ -129,10 +129,10 @@ Fallback:
 
 Do not silently replace an existing VUnit project with a custom GHDL harness.
 
-### 3. `waver-mcp`
+### 3. `peeper-mcp`
 
 Repository:
-`https://github.com/ru551n/waver-mcp`
+`https://github.com/ru551n/peeper-mcp`
 
 Reads both FST (NVC's default) and VCD (GHDL's default) waveforms directly —
 no conversion step is needed for waveforms recorded by `vunit-mcp`.
@@ -148,22 +148,22 @@ Preferred for:
 - rendering waveform plots
 
 Relevant tools when exposed:
-- `waver_open` — call first for a new waveform
-- `waver_search`
-- `waver_values`
-- `waver_value_at`
-- `waver_analyze`
-- `waver_latency`
-- `waver_find`
-- `waver_plot`
+- `peeper_open` — call first for a new waveform
+- `peeper_search`
+- `peeper_values`
+- `peeper_value_at`
+- `peeper_analyze`
+- `peeper_latency`
+- `peeper_find`
+- `peeper_plot`
 
 Usage rule:
 1. Obtain a waveform path, preferably through `vunit_get_test_waveform`.
-2. Call `waver_open`.
-3. Locate exact signal names with `waver_search`.
+2. Call `peeper_open`.
+3. Locate exact signal names with `peeper_search`.
 4. Query the smallest useful time window around the failure.
 5. Use measured values/latencies in debug reports.
-6. Use `waver_plot` only when visual inspection materially helps.
+6. Use `peeper_plot` only when visual inspection materially helps.
 
 Fallback:
 - GTKWave for manual inspection
@@ -248,7 +248,7 @@ assuming the RTL or the MCP tool is wrong:
 
 - `vunit-mcp` tools that take arguments wrap them in a top-level `input` object, e.g. `vunit_get_test_log` with `{"input": {"test_name": "..."}}`.
 - `tsfpga-mcp` `tsfpga_synthesize`/`tsfpga_inspect` take an `input` object with `sources`, `libraries`, `top`, `chip`, `family`, `vhdl_entities`, `generics`, `vhdl_standard`, `discard_ffinit`. At least one of `sources`/`libraries` is required; `libraries` is a `{library_name: [file, ...]}` map for designs spanning more than one VHDL library (see "Multi-library designs" above).
-- `vhdl-rag-mcp` and `waver-mcp` take flat arguments (e.g. `waver_open` with `{"file": "..."}`).
+- `vhdl-rag-mcp` and `peeper-mcp` take flat arguments (e.g. `peeper_open` with `{"file": "..."}`).
 
 ## Availability decision
 

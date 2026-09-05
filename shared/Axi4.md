@@ -154,6 +154,6 @@ plus optional `TID`/`TUSER`.
 - 4 KiB boundary handling verified, including unaligned first/last beats.
 - `WSTRB`/`TKEEP` lane coverage verified for every data width.
 - Reset outputs deterministic on the whole fabric.
-- On failure, use `waver-mcp` to measure `VALID`/`READY` alignment, beat
+- On failure, use `peeper-mcp` to measure `VALID`/`READY` alignment, beat
   counts, and `TLAST`/`WLAST` placement at the failing time rather than
   dumping raw waveform text.

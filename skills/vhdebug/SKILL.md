@@ -27,19 +27,19 @@ When available:
 
 If the prior run did not record a waveform and signal-level evidence is necessary, re-run the smallest failing test with `vunit_run_tests` and `waveform_format` (`vcd` on GHDL, `fst` on NVC) — runs without `waveform_format` record no waveform.
 
-### 2. Waveform evidence — waver-mcp
+### 2. Waveform evidence — peeper-mcp
 
 Given the waveform path:
-1. `waver_open`
-2. `waver_search` for exact hierarchical signal names
+1. `peeper_open`
+2. `peeper_search` for exact hierarchical signal names
 3. focus around the failing-check simulation time
 4. use:
-   - `waver_value_at` for exact values at a timestamp
-   - `waver_values` for transitions in a small window
-   - `waver_find` for state/value occupancy
-   - `waver_latency` for event-to-event cycle/time relationships
-   - `waver_analyze` for clocks, pulses, X/Z and distributions
-   - `waver_plot` only when visual context adds value
+   - `peeper_value_at` for exact values at a timestamp
+   - `peeper_values` for transitions in a small window
+   - `peeper_find` for state/value occupancy
+   - `peeper_latency` for event-to-event cycle/time relationships
+   - `peeper_analyze` for clocks, pulses, X/Z and distributions
+   - `peeper_plot` only when visual context adds value
 
 ### 3. Source/context evidence — vhdl-rag-mcp
 

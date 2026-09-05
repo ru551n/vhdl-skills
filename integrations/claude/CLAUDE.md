@@ -60,7 +60,7 @@ Read `shared/McpToolPolicy.md` before tool-dependent phases.
 Preferred:
 - `vhdl-rag-mcp` for semantic VHDL/docs/code retrieval
 - `vunit-mcp` for VUnit project discovery, compilation, tests and logs
-- `waver-mcp` for waveform measurements and plots
+- `peeper-mcp` for waveform measurements and plots
 - `tsfpga-mcp` for GHDL+Yosys synthesis/resource summaries
 
 Use local tools only when the corresponding MCP server/tool is unavailable, unhealthy, or unsuitable for the specific requested result.
