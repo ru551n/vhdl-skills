@@ -14,7 +14,7 @@ Read `shared/ModernVHDL.md` and `shared/CodingStyle.md`; they are authoritative 
 
 Read `shared/McpToolPolicy.md`.
 
-Use `vhdl-rag-mcp` when available to cross-check architecture, module docs, VHDL symbols and related source. Exact current project artifacts remain authoritative. Use `get_source` before quoting or relying on exact implementation behavior.
+Use `corvidex-mcp` when available to cross-check architecture, module docs, VHDL symbols and related source. Exact current project artifacts remain authoritative. Use `get_source` before quoting or relying on exact implementation behavior.
 
 ## Goal
 

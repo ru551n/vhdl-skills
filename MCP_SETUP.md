@@ -2,18 +2,18 @@
 
 These servers are optional but preferred by the skills.
 
-## vhdl-rag-mcp
+## corvidex-mcp
 
 Repository:
-https://github.com/ru551n/vhdl-rag-mcp
+https://github.com/ru551n/corvidex-mcp
 
 Claude Code example from the upstream project:
 
 ```bash
-claude mcp add vhdl-rag-mcp -- uvx --from git+https://github.com/ru551n/vhdl-rag-mcp.git vhdl-rag-mcp
+claude mcp add corvidex-mcp -- uvx --from git+https://github.com/ru551n/corvidex-mcp.git corvidex-mcp
 ```
 
-Configure its repository index in `~/.config/vhdl-rag/config.toml`.
+Configure its repository index in `~/.config/corvidex/config.toml`.
 
 ## vunit-mcp
 
@@ -75,7 +75,7 @@ vunit-mcp
                ▼
         measured signal evidence
                │
-               +── vhdl-rag-mcp
+               +── corvidex-mcp
                    source/docs cross-reference
 ```
 

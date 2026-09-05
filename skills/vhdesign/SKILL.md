@@ -16,7 +16,7 @@ Read `shared/McpToolPolicy.md`.
 
 ## MCP preference
 
-Use `vhdl-rag-mcp` when available to ground design decisions:
+Use `corvidex-mcp` when available to ground design decisions:
 - search docs for coding/architecture conventions
 - search VHDL for analogous entities/processes/packages
 - cross-reference key interface symbols

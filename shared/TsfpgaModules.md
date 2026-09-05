@@ -194,7 +194,7 @@ module folder this project uses to one `tsfpga_synthesize` `libraries`
 entry (`{library_name: [file, ...]}`, keyed by the same `module.
 library_name` / folder name §1 defines), and include every module in the
 top's full transitive dependency closure, not just the ones it directly
-instantiates. Use `vhdl-rag-mcp` to trace that closure (cross-library
+instantiates. Use `corvidex-mcp` to trace that closure (cross-library
 `entity <name>.<entity>` references per §3 don't show up in a single
 module's own file list). See `shared/McpToolPolicy.md`'s "Multi-library
 designs" for the `tsfpga_synthesize` side of this.

@@ -58,7 +58,7 @@ simulation artifacts, issue/debug reports, and synthesis outputs.
 Read `shared/McpToolPolicy.md` before tool-dependent phases.
 
 Preferred:
-- `vhdl-rag-mcp` for semantic VHDL/docs/code retrieval
+- `corvidex-mcp` for semantic VHDL/docs/code retrieval
 - `vunit-mcp` for VUnit project discovery, compilation, tests and logs
 - `peeper-mcp` for waveform measurements and plots
 - `tsfpga-mcp` for GHDL+Yosys synthesis/resource summaries

@@ -16,7 +16,7 @@ Read `shared/McpToolPolicy.md`.
 
 ## MCP preference
 
-Before inventing a new block, use `vhdl-rag-mcp` when available:
+Before inventing a new block, use `corvidex-mcp` when available:
 1. `repository_status`
 2. `search_knowledge` for relevant standards/design guidance
 3. `search_vhdl` / `search_hdl` for reusable or precedent entities

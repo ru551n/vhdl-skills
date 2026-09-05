@@ -60,4 +60,4 @@ If `vunit-mcp` is available and the project has a VUnit `run.py`:
 3. For one testcase, use `vunit_test_dependencies` for the minimal ordered dependency set.
 4. Only use the manual dependency procedure above when VUnit is unavailable or the sources are not registered in the project.
 
-If `vhdl-rag-mcp` is available, it may be used to locate package/entity sources, but the authoritative VUnit compile order should still come from `vunit_list_files` for a VUnit project.
+If `corvidex-mcp` is available, it may be used to locate package/entity sources, but the authoritative VUnit compile order should still come from `vunit_list_files` for a VUnit project.

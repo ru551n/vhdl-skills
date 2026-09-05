@@ -41,7 +41,7 @@ Given the waveform path:
    - `peeper_analyze` for clocks, pulses, X/Z and distributions
    - `peeper_plot` only when visual context adds value
 
-### 3. Source/context evidence — vhdl-rag-mcp
+### 3. Source/context evidence — corvidex-mcp
 
 When available:
 - `search_vhdl` / `search_hdl` for driving logic and symbol references

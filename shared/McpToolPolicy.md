@@ -8,8 +8,8 @@ When an MCP server/tool is available in the current agent environment, prefer it
 If it is unavailable, misconfigured, or cannot perform the requested operation, fall back to the local alternative listed below.
 
 This is not a soft preference: reaching for local `grep`/`find` on a repository
-that `vhdl-rag-mcp` already has configured/indexed is a policy violation, not
-a stylistic choice, even when it "would also work". See the `vhdl-rag-mcp`
+that `corvidex-mcp` already has configured/indexed is a policy violation, not
+a stylistic choice, even when it "would also work". See the `corvidex-mcp`
 section below for the exact boundary of what still legitimately falls back
 to local tools.
 
@@ -17,10 +17,10 @@ Never invent MCP availability or tool results. If the host exposes no correspond
 
 ## Preferred servers
 
-### 1. `vhdl-rag-mcp`
+### 1. `corvidex-mcp`
 
 Repository:
-`https://github.com/ru551n/vhdl-rag-mcp`
+`https://github.com/ru551n/corvidex-mcp`
 
 Preferred for:
 - semantic search across VHDL, documentation, and related source code
@@ -61,7 +61,7 @@ Usage rule:
 3. Use `get_source` for exact source before copying or relying on an implementation detail.
 4. Do not assume indexed material is current if status reports sync/index errors.
 
-**ALWAYS prefer `vhdl-rag-mcp` over local `grep`/`find`/`git grep` for any code,
+**ALWAYS prefer `corvidex-mcp` over local `grep`/`find`/`git grep` for any code,
 docs, or knowledge that lives in a repository the server has configured/indexed**
 (check `repository_status` for the configured repository list). This applies
 even when the local checkout is also present on disk and grep "would work" —
@@ -210,7 +210,7 @@ sibling library, as produced by tsfpga's own per-module-folder convention
 (`tsfpga.module.get_modules()`, see `shared/TsfpgaModules.md` §1) — pass
 each library's files under `tsfpga_synthesize`'s `libraries` parameter
 (one dict entry per library, keyed by library name), not flattened into
-`sources`. Use `vhdl-rag-mcp` to trace the full transitive dependency
+`sources`. Use `corvidex-mcp` to trace the full transitive dependency
 closure first (own modules + any vendored dependency's modules) so no
 library is missed; a design that only fails to *resolve* a cross-library
 reference (GHDL: `cannot find resource library "..."` / `failed to find
@@ -248,7 +248,7 @@ assuming the RTL or the MCP tool is wrong:
 
 - `vunit-mcp` tools that take arguments wrap them in a top-level `input` object, e.g. `vunit_get_test_log` with `{"input": {"test_name": "..."}}`.
 - `tsfpga-mcp` `tsfpga_synthesize`/`tsfpga_inspect` take an `input` object with `sources`, `libraries`, `top`, `chip`, `family`, `vhdl_entities`, `generics`, `vhdl_standard`, `discard_ffinit`. At least one of `sources`/`libraries` is required; `libraries` is a `{library_name: [file, ...]}` map for designs spanning more than one VHDL library (see "Multi-library designs" above).
-- `vhdl-rag-mcp` and `peeper-mcp` take flat arguments (e.g. `peeper_open` with `{"file": "..."}`).
+- `corvidex-mcp` and `peeper-mcp` take flat arguments (e.g. `peeper_open` with `{"file": "..."}`).
 
 ## Availability decision
 

@@ -13,7 +13,7 @@ Read `shared/ModernVHDL.md` and `shared/CodingStyle.md`; they are authoritative 
 
 Read `shared/McpToolPolicy.md`.
 
-When `vhdl-rag-mcp` is available, prefer it to locate the entity, architecture, dependent packages, matching documentation and related code. Use `get_source` for the exact source ranges being documented. Fall back to local Read/Glob/Grep.
+When `corvidex-mcp` is available, prefer it to locate the entity, architecture, dependent packages, matching documentation and related code. Use `get_source` for the exact source ranges being documented. Fall back to local Read/Glob/Grep.
 
 ## Input
 

@@ -22,7 +22,7 @@ Preferred workflow:
 Direct VUnit authoring/repair/migration (`run.py`, testbenches, VUnit 4→5) uses the `vhunit` skill with `shared/Vunit.md`.
 
 Tool policy:
-- prefer `vhdl-rag-mcp` for semantic VHDL/docs/source retrieval
+- prefer `corvidex-mcp` for semantic VHDL/docs/source retrieval
 - prefer `vunit-mcp` for compile, test discovery, regressions, logs and waveform paths
 - prefer `peeper-mcp` for waveform measurements/debug
 - prefer `tsfpga-mcp` for portable VHDL synthesis/resource summaries

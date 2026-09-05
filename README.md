@@ -144,13 +144,13 @@ servers, including the intended failure-debug chain:
 
 | Server | Repo | Role in the flow |
 | --- | --- | --- |
-| **vhdl-rag-mcp** | [ru551n/vhdl-rag-mcp](https://github.com/ru551n/vhdl-rag-mcp) | RAG index over project sources/docs for cross-reference |
+| **corvidex-mcp** | [ru551n/corvidex-mcp](https://github.com/ru551n/corvidex-mcp) | RAG index over project sources/docs for cross-reference |
 | **vunit-mcp** | [ru551n/vunit-mcp](https://github.com/ru551n/vunit-mcp) | Run VUnit tests, collect reports/logs/waveforms |
 | **peeper-mcp** | [ru551n/peeper-mcp](https://github.com/ru551n/peeper-mcp) | Waveform inspection for measured signal evidence |
 | **tsfpga-mcp** | [ru551n/tsfpga-mcp](https://github.com/ru551n/tsfpga-mcp) | GHDL + Yosys synthesis and resource summary |
 
 Debug chain: `vunit-mcp` (fail + record) → `peeper-mcp` (waveform evidence) →
-`vhdl-rag-mcp` (source cross-reference); synthesis via `tsfpga-mcp`.
+`corvidex-mcp` (source cross-reference); synthesis via `tsfpga-mcp`.
 Setup commands and the full architecture are in `MCP_SETUP.md`.
 
 ## Validate

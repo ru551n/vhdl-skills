@@ -16,7 +16,7 @@ Read `shared/McpToolPolicy.md`.
 
 ## MCP preference
 
-- Use `vhdl-rag-mcp` for precedent/convention lookup when implementation details need grounding.
+- Use `corvidex-mcp` for precedent/convention lookup when implementation details need grounding.
 - Use `vunit-mcp` for compile and unit-test execution when a VUnit project exists.
 - Use `peeper-mcp` for waveform-based failure analysis when a recorded waveform is available.
 

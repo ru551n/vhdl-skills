@@ -12,13 +12,13 @@
 # - vunit-mcp's server-side run budget (VUNIT_MCP_TIMEOUT) is kept below the
 #   300000 ms call timeout.
 # - tsfpga-mcp's default synthesis timeout is 300 s (TSFPGA_MCP_TIMEOUT).
-# - vhdl-rag-mcp searches are fast, but a first sync/reindex of a repository
+# - corvidex-mcp searches are fast, but a first sync/reindex of a repository
 #   can take minutes.
 
 defer_tools = 10
 
-[mcp.vhdl-rag-mcp]
-command = ["uvx", "--from", "git+https://github.com/ru551n/vhdl-rag-mcp.git", "vhdl-rag-mcp"]
+[mcp.corvidex-mcp]
+command = ["uvx", "--from", "git+https://github.com/ru551n/corvidex-mcp.git", "corvidex-mcp"]
 timeout = 300000
 enabled = true
 

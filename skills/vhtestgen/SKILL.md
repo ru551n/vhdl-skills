@@ -55,7 +55,7 @@ Use:
 - top entity
 - requirements
 - register/protocol docs
-- relevant precedent from `vhdl-rag-mcp` when available
+- relevant precedent from `corvidex-mcp` when available
 
 ## Recommended VUnit structure
 

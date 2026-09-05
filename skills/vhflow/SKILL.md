@@ -37,7 +37,7 @@ Inspect the project, detect available MCP backends, and maintain a resumable `fl
 
 | Phase | Preferred MCP | Fallback |
 |---|---|---|
-| Architecture/design/docs | `vhdl-rag-mcp` | Read/Grep |
+| Architecture/design/docs | `corvidex-mcp` | Read/Grep |
 | Compile/test | `vunit-mcp` | VUnit run.py / GHDL |
 | Waveform debug | `peeper-mcp` | GTKWave/manual |
 | Synthesis | `tsfpga-mcp` | local Yosys+GHDL |
@@ -47,7 +47,7 @@ Inspect the project, detect available MCP backends, and maintain a resumable `fl
 Do not guess availability from documentation.
 
 If exposed in the current host:
-- `vhdl-rag-mcp`: call `repository_status` when retrieval is needed
+- `corvidex-mcp`: call `repository_status` when retrieval is needed
 - `vunit-mcp`: call `vunit_status`
 - `tsfpga-mcp`: call `tsfpga_status`
 - `peeper-mcp`: call `peeper_open` only after a waveform path exists
