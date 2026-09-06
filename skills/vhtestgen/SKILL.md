@@ -169,7 +169,13 @@ Only when the project does not use VUnit, or the user explicitly requests standa
   reference models (golden models)", for the exact `pre_config`/
   `post_check` signatures (both must explicitly `return True`) and the
   stimulus/expected file-exchange pattern. Do not hand-compute expected
-  values inline in the testbench when a reference model is warranted.
+  values inline in the testbench when a reference model is warranted. A
+  VHDL-side reimplementation of the same golden model is not a substitute
+  for this exchange — see `shared/Vunit.md`'s "Two independent golden
+  models are not a cross-check" for a real case where that gap (a
+  transposed weight-packing index) survived 68/68 VHDL and 205/205 Python
+  tests, all green, because neither suite ever consumed an artifact from
+  the other.
 - Test protocol invariants: stability under stall, ordering, no loss/duplication.
 - Test reset during relevant traffic/state when allowed by the requirement.
 - Test min/max/boundary generic configurations when practical.

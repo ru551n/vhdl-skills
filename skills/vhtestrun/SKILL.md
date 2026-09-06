@@ -82,3 +82,17 @@ If `vunit-mcp` is unavailable:
 For standalone tests, process exit status plus the final `[FINISH] PASS/FAIL` token determine verdict.
 
 Never fabricate a regression result.
+
+## Re-verify after deliberately breaking something
+
+Deliberately breaking the design to confirm a new test actually fails
+without the fix is good practice — a guard never seen to fail is not known
+to guard anything. But it leaves the tree in a knowingly-broken state, so
+it must be bracketed: restore the fix, then re-run the full suite, and only
+then report completion. Real case: a fix was reverted to confirm a guard
+test caught its absence, and never restored; the work was reported
+complete and green, but a real run showed 98 of 190 Python tests failing.
+The narrative and the tool output disagreed, and only the tool output was
+true. Never report a state that has not just been measured — this applies
+with particular force across a session/agent handoff, where a summary is
+all that survives and cannot be trusted over a real run.

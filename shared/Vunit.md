@@ -167,6 +167,29 @@ Pattern:
 - `tb.get_tests(pattern="*")`.
 - `test.set_generic(...)` / `test.set_attribute(".name", value)`.
 
+**Two independent golden models are not a cross-check.** A VHDL testbench
+that reimplements the reference algorithm itself (rather than reading
+`pre_config`-generated stimulus/expected files from the Python model) only
+proves the RTL agrees with a second, independently-written specification —
+it never exercises the actual cross-language contract. Any convention that
+must match across the language boundary (weight/data packing order,
+fixed-point scaling, field ordering, endianness) is untested until an
+artifact the model generated is consumed unmodified by the testbench, or
+vice versa. Real case: a Python weight packer placed PE row `r`, column `c`
+at lane `c*pe_rows + r`; the VHDL RTL read that weight at `r*pe_cols + c` —
+a transpose, wrong for every `r /= c`. 68/68 VHDL tests and 205/205 Python
+tests were green, because the VHDL testbench checked the RTL against a
+golden model written in VHDL, and pytest checked the packer against a
+reference model written in Python — neither side ever consumed an artifact
+from the other. The bug was found by reading both files by hand, not by any
+test. Require at least one bit-exact cross-language test per shared
+convention: the reference model emits checked-in vectors (stimulus and
+expected results), `pre_config`/`post_check` read those exact files and
+drive the real DUT — no VHDL reimplementation of the model in between.
+Two green suites that never exchange an artifact can both be green while
+disagreeing, and the more independently they were written, the more
+convincing and wrong that agreement looks.
+
 ### Bulk options (scope warning)
 
 `set_generic`, `set_parameter`, `set_sim_option`, `set_compile_option`,
