@@ -528,6 +528,14 @@ VUnit 5 (this fork):
   `-- vunit: .requirement-117`.
 - Legacy file-global pragma: `vunit_pragma <name>`.
 - Values are not supported in this fork (presence only); duplicates raise.
+- Pitfall: the scanner matches the literal `vunit:` substring anywhere in
+  a comment, not just on a real pragma line. An ordinary prose comment
+  that happens to contain that substring is misparsed as a pragma and
+  aborts the scan. Real case: a comment spelling out the Python hook name
+  as `setup_vunit:` made VUnit fail with `Invalid attribute 'default'` —
+  an attribute that appears nowhere in the file. Reword prose so `vunit:`
+  never appears standalone: `setup_vunit()` or "the setup_vunit hook",
+  not `setup_vunit:`.
 
 VUnit 4 (stable releases): the older syntax `-- vunit_attr -- key: value`
 (e.g. `-- vunit_attr -- requirement: "id"`) and `-- vunit_pragma

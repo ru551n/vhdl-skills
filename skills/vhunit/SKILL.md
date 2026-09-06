@@ -47,6 +47,11 @@ tool usage. This skill owns the VHDL + Python.
    `shared/Vunit.md` §14 deltas) and state which version the code targets.
 3. If `vunit-mcp` is the backend, target VUnit 5 (`ru551n/vunit` fork):
    `add_vhdl_builtins()` is required, `-- vunit: .name` attribute syntax.
+   Pitfall: the attribute scanner matches the `vunit:` substring in any
+   comment, not just real pragmas — prose naming a Python hook as
+   `setup_vunit:` gets misparsed as an attribute and fails with an
+   `Invalid attribute` error for a name that appears nowhere in the file
+   (`shared/Vunit.md` §9). Write `setup_vunit()` instead.
 
 ## run.py rules (VUnit 5)
 
