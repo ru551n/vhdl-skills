@@ -86,6 +86,13 @@ Good candidates:
 - grouped configuration/status signals
 - testbench BFMs
 
+Records group *heterogeneous* signals that belong to one interface. For
+*homogeneous* repetition — N identical lanes, taps, columns or channels — use an
+array of the element type instead of a wide packed `std_logic_vector`, and an
+array of records for N identical interfaces. See "Aggregate representation" in
+`ModernVHDL.md`; packing lanes into a flat vector makes runtime-indexed access a
+dynamic slice, which GHDL synthesis rejects even though simulation passes.
+
 ## Where flat ports may be better
 
 Prefer scalar/vector ports when:

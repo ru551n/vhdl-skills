@@ -9,7 +9,7 @@ allowed-tools: Read, Write, Bash, Grep, Glob
 
 # VHDL Architect
 
-Read `shared/ModernVHDL.md` and `shared/CodingStyle.md`; they are authoritative for language revision and modern RTL practice.
+Read `shared/ModernVHDL.md`, `shared/CodingStyle.md`, and `shared/TsfpgaCodingConventions.md`; they are authoritative for language revision, modern RTL practice, and concrete naming/style conventions.
 
 
 Read `shared/McpToolPolicy.md`.
@@ -107,9 +107,9 @@ Create `rtl/<ip>_top.vhd`.
 Requirements:
 - VHDL-2008 context clauses
 - entity with architecture-defined generics/ports
-- `architecture rtl`
+- `architecture a` (see `shared/TsfpgaCodingConventions.md`)
 - internal `signal` declarations
-- direct entity instantiations using `entity work.<module>(rtl)`
+- direct entity instantiations using `entity work.<module>(a)`
 - `generic map` and `port map`
 - `--@` comments for unresolved integration adaptations
 - no functional implementation beyond structural wiring
@@ -126,45 +126,45 @@ entity foo_top is
     data_w : positive := 8
   );
   port (
-    clk     : in  std_logic;
-    rst_n   : in  std_logic;
-    s_data  : in  std_logic_vector(data_w-1 downto 0);
-    s_valid : in  std_logic;
-    m_data  : out std_logic_vector(data_w-1 downto 0);
-    m_valid : out std_logic
+    clk     : in  std_ulogic;
+    reset   : in  std_ulogic := '0';
+    s_data  : in  std_ulogic_vector(data_w-1 downto 0);
+    s_valid : in  std_ulogic;
+    m_data  : out std_ulogic_vector(data_w-1 downto 0);
+    m_valid : out std_ulogic
   );
 end entity foo_top;
 
-architecture rtl of foo_top is
-  signal ctrl2proc_data  : std_logic_vector(data_w-1 downto 0);
-  signal ctrl2proc_valid : std_logic;
+architecture a of foo_top is
+  signal ctrl2proc_data  : std_ulogic_vector(data_w-1 downto 0);
+  signal ctrl2proc_valid : std_ulogic;
 begin
-  u_ctrl : entity work.foo_ctrl(rtl)
+  foo_ctrl_inst : entity work.foo_ctrl(a)
     generic map (
       data_w => data_w
     )
     port map (
       clk     => clk,
-      rst_n   => rst_n,
+      reset   => reset,
       s_data  => s_data,
       s_valid => s_valid,
       m_data  => ctrl2proc_data,
       m_valid => ctrl2proc_valid
     );
 
-  u_proc : entity work.foo_proc(rtl)
+  foo_proc_inst : entity work.foo_proc(a)
     generic map (
       data_w => data_w
     )
     port map (
       clk     => clk,
-      rst_n   => rst_n,
+      reset   => reset,
       s_data  => ctrl2proc_data,
       s_valid => ctrl2proc_valid,
       m_data  => m_data,
       m_valid => m_valid
     );
-end architecture rtl;
+end architecture a;
 ```
 
 ### 6. Structural self-check
@@ -215,6 +215,31 @@ Record:
 - state that still requires runtime reset
 
 If target/family is not known, do not assume initialization support.
+
+## Reset policy decision
+
+Resetless-by-default (`shared/TsfpgaCodingConventions.md`) only applies when
+the architecture actually supports it — it is not a blanket default to apply
+without checking. Per module/clock-domain, determine whether:
+- every register's declaration initial value already gives the correct
+  power-up/idle state (resetless fits), or
+- some state genuinely needs a runtime-restorable reset — soft
+  reset/watchdog semantics, re-arming after a fault, an externally
+  supplied reset that must clear live state mid-operation, or integrating
+  third-party IP that mandates a specific reset port/polarity (resetless
+  does not fit).
+
+If this is not already known or evident from the requirement, ask the user
+which reset strategy the architecture should use before locking it in:
+- resetless (declaration initial values only), or
+- synchronous active-high runtime `reset`, or
+- a documented exception (e.g. active-low `rst_n` to match mandated
+  third-party IP).
+
+Do not silently default to resetless when a module has state that a reset
+would need to clear at runtime (that state stays reset-bearing regardless of
+the project-wide default). Record the decision and rationale per module in
+the architecture document.
 
 ## Type policy decision
 

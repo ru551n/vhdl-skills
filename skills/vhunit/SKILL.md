@@ -20,6 +20,9 @@ folder) rather than plain hand-added libraries, read
 `names_avoid`, cross-module-library instantiation, and the framework-level
 gotchas on top of what `Vunit.md` already covers.
 
+Testbench VHDL (architecture name `tb`, process/signal naming, etc.) still
+follows `shared/CodingStyle.md` and `shared/TsfpgaCodingConventions.md`.
+
 Read `shared/McpToolPolicy.md` for tool fallbacks.
 
 ## When this skill applies

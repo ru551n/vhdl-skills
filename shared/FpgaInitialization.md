@@ -39,11 +39,11 @@ reset strategy.
 When power-up initialization is verified:
 
 ```vhdl
-signal count : natural range 0 to C_MAX_COUNT := 0;
-signal state : t_state := IDLE;
-signal valid : std_logic := '0';
+signal count : natural range 0 to max_count := 0;
+signal state : state_t := idle;
+signal valid : std_ulogic := '0';
 
-p_regs : process(clk)
+regs : process(clk)
 begin
   if rising_edge(clk) then
     ...
@@ -55,12 +55,12 @@ This is preferred over adding reset solely to obtain the same configuration-time
 initial state:
 
 ```vhdl
-p_regs : process(clk)
+regs : process(clk)
 begin
   if rising_edge(clk) then
-    if rst_n = '0' then
+    if reset = '1' then
       count <= 0;
-      state <= IDLE;
+      state <= idle;
       valid <= '0';
     else
       ...

@@ -56,6 +56,56 @@ Never use vector arithmetic through implicit or legacy packages.
 Prefer explicit conversions at domain boundaries rather than spreading casts
 through the implementation.
 
+## Aggregate representation
+
+When a signal carries several same-shaped elements — MAC lanes, PE columns,
+convolution taps, channel accumulators, line-buffer rows — declare it as an
+**array of the element type**, not as one wide `std_logic_vector` with the
+elements packed side by side.
+
+```vhdl
+-- Preferred: the lane index is a real index.
+type accumulator_vec_t is array (natural range <>) of signed(31 downto 0);
+signal accumulator : accumulator_vec_t(0 to g_num_lanes - 1);
+...
+accumulator(lane) <= accumulator(lane) + product;
+```
+
+```vhdl
+-- Avoid: the lane index becomes slice arithmetic.
+signal accumulator : std_logic_vector(32 * g_num_lanes - 1 downto 0);
+...
+accumulator(32 * (lane + 1) - 1 downto 32 * lane) <= ...;
+```
+
+Reasons, in order of how much they cost when ignored:
+
+- **Runtime-indexed slices of a flat vector are not portably synthesizable.**
+  When the index is a signal or variable rather than a static elaboration
+  constant, GHDL's synthesis backend rejects the expression with
+  `cannot extract same variable part for dynamic slice`. Indexing an array with
+  the same runtime value is fine, because the array index is a first-class
+  index and the tool infers the multiplexer directly. This class of failure is
+  invisible in simulation — the testbench passes and only synthesis fails —
+  so it tends to surface late.
+- The `w * (i + 1) - 1 downto w * i` idiom encodes the element width in every
+  access. Change the width and every access site is a potential off-by-one.
+- Array element types carry meaning (`signed`, `unsigned`, an enumerated type,
+  a record); a flat vector reduces everything to opaque bits and pushes the
+  conversion into each read.
+- Aggregates, slices of the array (`accumulator(0 to 3)`), and per-element
+  attributes stay available.
+
+Use records when the grouped elements are *heterogeneous* and belong to one
+interface (see `InterfaceRecords.md`), and arrays when they are *homogeneous*
+and indexed. Arrays of records are the normal representation for N identical
+interfaces, e.g. one ready/valid stream per PE column.
+
+Flattening remains legitimate at boundaries that require it: vendor IP ports,
+IP-packaged interfaces, external tooling that cannot consume composite types.
+Convert in a thin wrapper at that boundary rather than propagating flat vectors
+inward.
+
 ## Interfaces
 
 Prefer strongly typed records for internal interfaces when they improve
@@ -81,10 +131,10 @@ For ready/valid style streaming interfaces:
 Use canonical synchronous processes:
 
 ```vhdl
-p_regs : process(clk)
+regs : process(clk)
 begin
   if rising_edge(clk) then
-    if rst_n = '0' then
+    if reset = '1' then
       ...
     elsif ce = '1' then
       ...
@@ -112,8 +162,12 @@ Reset behavior must be explicit per clock domain:
 - required reset duration
 - post-reset protocol behavior
 
-Default project convention may be synchronous active-low `rst_n`, but a
-requirement or target-library constraint overrides that default.
+Default project convention is resetless (declaration initial values, see
+"Initialization versus reset" / `FpgaInitialization.md`); when a
+runtime-restorable reset is genuinely needed, use active-high synchronous
+`reset` (see `TsfpgaCodingConventions.md` "Reset policy"), not active-low
+`rst_n`, unless a requirement or target-library constraint overrides that
+default.
 
 For asynchronous external resets crossing into a synchronous domain, prefer
 an explicitly designed reset synchronizer when appropriate. Never assume an
@@ -368,14 +422,14 @@ Preferred:
 signal count     : unsigned(7 downto 0);
 signal delta     : signed(15 downto 0);
 signal wr_addr   : unsigned(ADDR_WIDTH-1 downto 0);
-signal sample_ix : natural range 0 to C_MAX_SAMPLES-1;
+signal sample_ix : natural range 0 to max_samples-1;
 ```
 
 Avoid:
 
 ```vhdl
 signal count   : std_logic_vector(7 downto 0);
-signal wr_addr : std_logic_vector(ADDR_WIDTH-1 downto 0);
+signal wr_addr : std_logic_vector(addr_width-1 downto 0);
 ```
 
 when those signals are used numerically.
@@ -449,7 +503,7 @@ Use `natural` / constrained integer when:
 Example:
 
 ```vhdl
-signal retry_count : natural range 0 to C_MAX_RETRIES := 0;
+signal retry_count : natural range 0 to max_retries := 0;
 ```
 
 Use `unsigned` when:

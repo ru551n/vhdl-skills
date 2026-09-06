@@ -9,7 +9,7 @@ allowed-tools: Read, Write, Bash, Grep, Glob
 
 # VHDL Designer
 
-Read `shared/ModernVHDL.md` and `shared/CodingStyle.md`; they are authoritative for language revision and modern RTL practice.
+Read `shared/ModernVHDL.md`, `shared/CodingStyle.md`, and `shared/TsfpgaCodingConventions.md`; they are authoritative for language revision, modern RTL practice, and concrete naming/style conventions.
 
 
 Read `shared/McpToolPolicy.md`.
@@ -85,7 +85,7 @@ Generate valid VHDL-2008 that analyzes as far as practical while leaving explici
 Use:
 - required IEEE packages
 - exact entity generics/ports
-- `architecture rtl`
+- `architecture a` (see `shared/TsfpgaCodingConventions.md`)
 - type/signal declarations already decided by proposal where useful
 - direct entity instantiations for known submodules
 - `--@` implementation markers
@@ -99,21 +99,21 @@ use ieee.numeric_std.all;
 
 entity foo is
   port (
-    clk   : in  std_logic;
-    rst_n : in  std_logic;
-    req   : in  std_logic;
-    done  : out std_logic
+    clk   : in  std_ulogic;
+    reset : in  std_ulogic := '0';
+    req   : in  std_ulogic;
+    done  : out std_ulogic
   );
 end entity foo;
 
-architecture rtl of foo is
-  type t_state is (IDLE, BUSY);
-  signal state_q : t_state;
+architecture a of foo is
+  type state_t is (idle, busy);
+  signal state_q : state_t;
 begin
 
   --@ Implement synchronous FSM and done pulse per proposal §3.
 
-end architecture rtl;
+end architecture a;
 ```
 
 The backbone must not contain a fake implementation that merely compiles but violates the proposal.

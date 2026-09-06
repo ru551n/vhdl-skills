@@ -23,13 +23,21 @@ Do not use:
 
 ## Naming
 
-- entities, architectures, signals, ports, generics: `lower_snake_case`
-- constants: `C_UPPER_SNAKE_CASE`
-- types: `t_*`
-- subtypes: `st_*`
-- instances: `u_*`
-- processes: `p_*`
-- generate blocks: `g_*`
+Read `TsfpgaCodingConventions.md` — it is authoritative for concrete naming,
+derived from auditing the real `tsfpga`/`hdl-modules` source this project
+vendors and reuses. Summary:
+
+- entities, architectures, signals, ports, generics, **and constants**:
+  `lower_snake_case`, no prefix (not `C_UPPER_SNAKE_CASE`, not `g_*`/`c_*`)
+- types and subtypes: suffix `_t` (not a `t_*`/`st_*` prefix)
+- enum literals: lowercase
+- instances: suffix `_inst` (`dut` for a single DUT in a testbench), not a
+  `u_*` prefix
+- processes: a plain descriptive name, not a `p_*` prefix
+- generate blocks: a descriptive name; a `g_` prefix is acceptable here
+  specifically to disambiguate from a same-named signal, but do not extend
+  that habit to generics or constants
+- architecture name: `a` for RTL, `tb` for testbenches (not `rtl`)
 
 Choose names by intent, not by temporary implementation.
 
@@ -53,7 +61,7 @@ Prefer concurrent assignments for simple logic.
 Use:
 
 ```vhdl
-p_comb : process(all)
+comb : process(all)
 begin
   next_state <= state;
   ...
@@ -69,11 +77,11 @@ Every combinational output must receive a value on every path.
 Canonical style:
 
 ```vhdl
-p_regs : process(clk)
+regs : process(clk)
 begin
   if rising_edge(clk) then
-    if rst_n = '0' then
-      state <= IDLE;
+    if reset = '1' then
+      state <= idle;
       valid <= '0';
     elsif ce = '1' then
       state <= next_state;
@@ -83,7 +91,11 @@ begin
 end process;
 ```
 
-Reset only state that functionally requires initialization.
+Reset only state that functionally requires initialization. Default is
+resetless (declaration initial values, `FpgaInitialization.md`); when a
+runtime-restorable reset is genuinely needed, use active-high synchronous
+`reset`, not active-low `rst_n` — see `TsfpgaCodingConventions.md` "Reset
+policy".
 
 Prefer clock enables over gated clocks.
 
@@ -92,8 +104,8 @@ Prefer clock enables over gated clocks.
 Use an enumerated type:
 
 ```vhdl
-type t_state is (IDLE, RUN, DONE);
-signal state, next_state : t_state;
+type state_t is (idle, run, done);
+signal state, next_state : state_t;
 ```
 
 Do not manually encode unless encoding is part of an explicit implementation requirement.
@@ -178,7 +190,7 @@ Counters may be `natural`, constrained `integer`, or `unsigned`.
 Prefer the type that expresses the contract:
 
 ```vhdl
-signal packet_count : natural range 0 to C_MAX_PACKETS := 0;
+signal packet_count : natural range 0 to max_packets := 0;
 signal signed_delta : integer range -127 to 127 := 0;
 signal phase_count  : unsigned(15 downto 0) := (others => '0');
 ```
@@ -195,8 +207,8 @@ reset branch when reset existed only for power-up initialization.
 Example:
 
 ```vhdl
-signal state : t_state := IDLE;
-signal count : natural range 0 to C_MAX := 0;
+signal state : state_t := idle;
+signal count : natural range 0 to max_count := 0;
 ```
 
 Do not use this optimization for unknown targets or when runtime reset behavior
@@ -242,7 +254,7 @@ coordinates.
 signal data_p2  : unsigned(31 downto 0);
 signal valid_p2 : std_logic;
 signal last_p2  : std_logic;
-signal tag_p2   : t_tag;
+signal tag_p2   : tag_t;
 ```
 
 If `data_p2` is aligned with `valid_p2`, they represent the same relative stage.
@@ -285,8 +297,8 @@ For long repetitive pipelines, an indexed array may be clearer than many
 individual declarations:
 
 ```vhdl
-type t_sample_pipe is array (integer range <>) of signed(15 downto 0);
-signal sample_pipe : t_sample_pipe(-2 to 3);
+type sample_pipe_t is array (integer range <>) of signed(15 downto 0);
+signal sample_pipe : sample_pipe_t(-2 to 3);
 ```
 
 Then the index has the same semantic coordinate:

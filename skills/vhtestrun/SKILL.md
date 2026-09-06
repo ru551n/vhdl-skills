@@ -7,7 +7,7 @@ allowed-tools: Read, Write, Bash, Grep, Glob
 
 # VHDL Test Runner
 
-Read `shared/ModernVHDL.md` and `shared/CodingStyle.md`; they are authoritative for language revision and modern RTL practice.
+Read `shared/ModernVHDL.md`, `shared/CodingStyle.md`, and `shared/TsfpgaCodingConventions.md`; they are authoritative for language revision, modern RTL practice, and concrete naming/style conventions.
 
 
 Read `shared/McpToolPolicy.md`.
@@ -25,6 +25,8 @@ If a source-level compile check is needed first, use `vunit_compile`.
 ### 2. Run tests
 
 Use `vunit_run_tests` with `waveform_format` (`vcd` on GHDL, `fst` on NVC) so failing tests can be diagnosed at signal level.
+
+**Parallelism.** Always pass `num_threads=0` (VUnit's `-p 0` / `--num-threads 0`, "use all logical CPUs") unless debugging a single test interactively — this speeds up GHDL regressions substantially (GHDL's per-test elaborate+simulate startup cost dominates at the default `-p 1`/sequential setting). Applies to every `vunit_run_tests` call, not just full regressions.
 
 Prefer the smallest requested test pattern; use full regression only when required.
 
@@ -73,7 +75,8 @@ Do not claim root cause unless directly obvious; `vhdebug` owns diagnosis.
 If `vunit-mcp` is unavailable:
 1. run the project's VUnit `run.py` directly — select the simulator with
    the `VUNIT_SIMULATOR` env var (`VUNIT_SIMULATOR=nvc run.py ...`); VUnit 5
-   has no `--simulator` flag
+   has no `--simulator` flag; pass `-p0` (`run.py -p0 ...`) for the same
+   all-CPU parallelism as `num_threads=0` above
 2. use standalone GHDL only for a non-VUnit project
 
 For standalone tests, process exit status plus the final `[FINISH] PASS/FAIL` token determine verdict.

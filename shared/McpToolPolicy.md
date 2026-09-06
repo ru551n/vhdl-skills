@@ -170,7 +170,7 @@ Fallback:
 - `ghdl --read-wave-opt`/wave dump tooling if available
 - Python/VCD parsing only when no suitable waveform tool exists
 
-Do not parse huge waveforms manually if Waver is available.
+Do not parse huge waveforms manually if Peeper is available.
 
 ### 4. `tsfpga-mcp`
 

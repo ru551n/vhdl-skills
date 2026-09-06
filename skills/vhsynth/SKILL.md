@@ -7,7 +7,7 @@ allowed-tools: Read, Write, Bash, Grep, Glob
 
 # VHDL Synthesizer
 
-Read `shared/ModernVHDL.md` and `shared/CodingStyle.md`; they are authoritative for language revision and modern RTL practice.
+Read `shared/ModernVHDL.md`, `shared/CodingStyle.md`, and `shared/TsfpgaCodingConventions.md`; they are authoritative for language revision, modern RTL practice, and concrete naming/style conventions.
 
 
 Read `shared/McpToolPolicy.md`.
@@ -21,6 +21,25 @@ Do not describe `tsfpga-mcp` resource synthesis as vendor timing closure.
 
 `tsfpga-mcp` only reports aggregated resource counts (LUTs, FFs, DSPs, block RAMs, or raw cell
 counts for `chip=generic`) — never a per-port netlist dump.
+
+## Per-module smoke check (run after every module goes green)
+
+Do not defer all synthesis to the final IP-level phase. As soon as a
+module's testbench goes green (`vhfill`/`vhtestgen` loop passes), run a
+quick `tsfpga_synthesize`/local-fallback pass on that module alone (its own
+entity as `top`, `chip=generic` is enough — no need for a specific
+vendor/family at this stage) before moving to the next module. Purpose:
+catch synthesis-only failures (constructs that simulate fine but don't
+synthesize) and resource-count blow-ups (e.g. an accidental full-width
+multiply/unrolled loop/latch inference) while the change causing them is
+still fresh, rather than at IP-level integration when it's harder to
+localize. This smoke check does not replace the final documented
+`synth/<module>/synth_report.md` — it's a fast sanity gate, so recording
+just the resource-count summary and a pass/fail note in `flow_status.md`
+is enough; no separate report file is required for it. Treat any GHDL/Yosys
+error, or a resource count that is unexpectedly large/non-zero compared to
+similarly-sized sibling modules, as a blocker to resolve before continuing
+the flow.
 
 ## Inputs
 

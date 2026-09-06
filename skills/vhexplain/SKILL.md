@@ -8,7 +8,7 @@ allowed-tools: Read, Write, Bash, Grep, Glob
 
 # VHDL Explainer
 
-Read `shared/ModernVHDL.md` and `shared/CodingStyle.md`; they are authoritative for language revision and modern RTL practice.
+Read `shared/ModernVHDL.md`, `shared/CodingStyle.md`, and `shared/TsfpgaCodingConventions.md`; they are authoritative for language revision, modern RTL practice, and concrete naming/style conventions.
 
 
 Read `shared/McpToolPolicy.md`.

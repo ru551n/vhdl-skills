@@ -8,7 +8,7 @@ allowed-tools: Read, Write, Bash, Grep, Glob
 
 # VHDL Flow Orchestrator
 
-Read `shared/ModernVHDL.md` and `shared/CodingStyle.md`; they are authoritative for language revision and modern RTL practice.
+Read `shared/ModernVHDL.md`, `shared/CodingStyle.md`, and `shared/TsfpgaCodingConventions.md`; they are authoritative for language revision, modern RTL practice, and concrete naming/style conventions.
 
 
 Read `shared/McpToolPolicy.md`.
@@ -26,6 +26,10 @@ Inspect the project, detect available MCP backends, and maintain a resumable `fl
    its `<module>_req.md` first (red), then implement with `vhfill` until
    that same testbench passes (green). `vhtestgen` and `vhfill` alternate
    per module here; they are not two separate whole-project passes.
+   Once a module goes green, run `vhsynth`'s per-module smoke check
+   (`chip=generic` synthesis of that module alone) before moving to the
+   next module — see `vhsynth`'s "Per-module smoke check" section. Do not
+   defer this to phase 7; it is part of the per-module loop.
 4. IP-level test generation — `vhtestgen`, integration test(s) across
    already-green modules (e.g. a full-pipeline golden-model comparison)
 5. Regression — `vhtestrun`
