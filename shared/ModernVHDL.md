@@ -325,6 +325,50 @@ Prefer recognizable templates for:
 
 Keep vendor attributes isolated and documented.
 
+### Memory: infer the intended RAM type, and prove it
+
+A large array in RTL is a *memory*, and which physical resource it lands in
+is a design decision — not something to leave to whatever the synthesizer
+happens to do. Getting this wrong is the single most common way a small block
+consumes an absurd share of a device: an array that was meant to be a few
+block RAMs, mapped to distributed/LUT RAM instead, costs tens of thousands of
+LUTs and will not be noticed by any testbench.
+
+Preferred source order, same discipline as `CdcPolicy.md`:
+
+1. An existing memory/FIFO module already used and verified in the project.
+2. A proven reusable block from the project's HDL library or vendored
+   dependencies (e.g. `hdl-modules`' `fifo`, `asynchronous_fifo`,
+   `ring_buffer`, `hard_fifo`) — with a **thin wrapper** if generics/ports do
+   not line up (`ReusableRTL.md`).
+3. A vendor memory primitive/macro intended for the target family, isolated
+   behind a wrapper so the rest of the RTL stays portable.
+4. A hand-written inference template only when no suitable block exists.
+
+When writing an inference template, respect what the primitive can actually
+do. Block RAM has a **registered read port** and a **bounded number of ports**
+(typically two). RTL that asks for more than the primitive offers silently
+falls back to distributed RAM:
+
+- **Combinational (asynchronous) read** blocks BRAM inference outright. If the
+  read address and read data are in the same cycle, the tool cannot use a
+  BRAM. Register the read port and absorb the extra cycle in the pipeline.
+- **Many simultaneous random-access reads** of one array (say, K rows of a
+  line buffer at once) exceed the port count. Restructure into separate
+  banks/arrays — one per concurrent access — rather than one big array read
+  N ways.
+- Read-during-write behavior, reset on the memory contents, or an initial
+  value the primitive cannot express can each disqualify inference. Do not
+  reset memory arrays.
+
+Do not size a memory into RTL and assume: **check the utilization report**.
+Distributed-RAM cells appear under names like `RAM32M`/`RAM64M`/`RAM128X1`
+(Xilinx) or as LUT-RAM in the vendor report, and a block that was budgeted in
+BRAMs showing `Block RAMs: 0` and a huge LUT count is the signature of a
+failed inference. Fence the expected numbers with a resource check in CI
+(`tsfpga`'s `BuildResultCheckers`, or the equivalent) so a regression in
+inference fails the build instead of being discovered at place-and-route.
+
 Portable synthesis through GHDL/Yosys is useful for structural/resource
 feedback, but vendor implementation remains authoritative for:
 - FPGA primitive mapping

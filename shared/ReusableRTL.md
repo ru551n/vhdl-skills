@@ -22,6 +22,11 @@ building blocks, ...) and to shared packages/record types
   primitives (FIFOs, handshake joins/forks, CDC synchronizers, packing
   functions, ...) that already exist in the project or its vendored
   dependencies.
+- **Memories especially.** Prefer an existing RAM/FIFO block, wrapped if
+  needed, over a hand-written array. A hand-rolled memory that misses its
+  inference template maps to distributed/LUT RAM and can cost tens of
+  thousands of LUTs without failing a single test. See "Memory: infer the
+  intended RAM type, and prove it" in `ModernVHDL.md`.
 - Record the reuse decision in the architecture/proposal doc's submodule
   table (`new` / `reuse` / `new, generic wrapper around <module>`) so the
   choice is auditable, per `vharch`'s submodule table convention.
