@@ -368,6 +368,9 @@ BRAMs showing `Block RAMs: 0` and a huge LUT count is the signature of a
 failed inference. Fence the expected numbers with a resource check in CI
 (`tsfpga`'s `BuildResultCheckers`, or the equivalent) so a regression in
 inference fails the build instead of being discovered at place-and-route.
+A failed inference like this is also a synthesis-time problem, not just a
+resource one: `vhsynth`'s "Keep synthesis runs scoped" section covers a
+2m45s-vs-8.5s real case caused by exactly this.
 
 Portable synthesis through GHDL/Yosys is useful for structural/resource
 feedback, but vendor implementation remains authoritative for:

@@ -41,6 +41,42 @@ error, or a resource count that is unexpectedly large/non-zero compared to
 similarly-sized sibling modules, as a blocker to resolve before continuing
 the flow.
 
+## Keep synthesis runs scoped
+
+Yosys runtime does not scale with source size — it scales with how big the
+netlist ends up. A failed block-RAM inference in one module has produced a
+2m45s synthesis where sibling entities in the same project each took
+0.2-8.5s: the design fell back to distributed RAM (4608 RAM32M/RAM64M-class
+cells, ~23700 LUTs), and Yosys' runtime degrades badly at that cell count.
+Source size did not predict this; only the utilization report would have.
+See `shared/ModernVHDL.md`'s "Memory: infer the intended RAM type, and prove
+it" for the failure mode that causes this class of blowup.
+
+Because the blowup is not predictable from the RTL, do not default to
+synthesizing everything on every iteration:
+
+- While iterating on one module, synthesize only that module (the
+  per-module smoke check above, `top` set to the entity in question) — not
+  the whole project, and not the top level.
+- Run the full set of builds only at integration points: before a commit
+  that touches a shared package or more than one module, and in CI.
+- Filter instead of building all: `tsfpga_project_list_builds` and
+  `tsfpga_project_build` take `project_filters` (wildcards, e.g.
+  `["*window_gen*"]`) — use it to target the module(s) at hand rather than
+  running every netlist build in the project.
+- Leave `use_existing_project` at its default (`true`) while iterating; it
+  reuses the project directory instead of forcing a clean re-create. Pass
+  `false` only when the project definition itself changed (module set,
+  generics, constraints), not on every rebuild.
+- Treat a sudden jump in synthesis time as a design signal, not an
+  annoyance: it usually means a netlist blowup (failed RAM/DSP inference,
+  unintended replication, a combinational explosion). Stop and read the
+  utilization report rather than waiting out the build.
+- Keep long or known-slow builds out of the tight edit-test loop. The
+  simulation regression (`vhunit`/`vhtestgen`) is the fast gate; synthesis
+  is the slower structural gate and belongs at module-done and integration
+  boundaries, not on every edit.
+
 ## Inputs
 
 Must know:
