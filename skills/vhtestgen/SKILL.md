@@ -86,13 +86,30 @@ duplicate them here.
 
 Per `shared/Vunit.md` §12 ("Verification components (VCs)"):
 
-- **Prefer a built-in VUnit VC** (`axi_stream_master`/`axi_stream_slave`/
-  `axi_stream_monitor`/`axi_stream_protocol_checker`, `axi_lite_master`,
+- **Always use a premade VC/BFM; never hand-roll one unless it truly does
+  not exist.** Built-in VUnit VCs (`axi_stream_master`/`axi_stream_slave`/
+  `axi_stream_monitor`/`axi_stream_protocol_checker`, `axi_read_slave`/
+  `axi_write_slave` + `memory_t`, `axi_lite_master`,
   `avalon_master`/`avalon_slave`/`avalon_source`/`avalon_sink`,
   `wishbone_master`/`wishbone_slave`, `uart_master`/`uart_slave`,
-  `ram_master`, `bus_master_pkg`) over a hand-written driver/checker
-  process. Write a custom VC only when no built-in one models the
-  protocol/behavior needed.
+  `ram_master`, `bus_master_pkg`) and, where the project has hdl-modules,
+  its `bfm.*` wrappers (`bfm.axi_read_slave`, `bfm.axi_write_slave`,
+  `bfm.axi_slave`, `bfm.axi_lite_master`, `bfm.axi_stream_master`/
+  `bfm.axi_stream_slave`, ...) cover every AXI4/AXI4-Lite/AXI4-Stream side
+  a DUT can present. A hand-written slave/master/memory/response process
+  is a defect to be fixed, not a shortcut: it re-implements handshake
+  rules, backpressure randomization, data capture and response ordering
+  that the BFM already gets right and keeps right. Real cost on this
+  project: two AXI DMA testbenches shipped with hand-rolled AXI
+  read/write slaves (own randomizer, own capture arrays, own BRESP
+  queue) and had to be rewritten on `bfm.axi_read_slave`/
+  `bfm.axi_write_slave` with `set_expected_word`/
+  `check_expected_was_written`. When a BFM lacks one behavior (e.g. a
+  non-OKAY `RRESP`/`BRESP` on one chosen beat -- VUnit's slave VC always
+  answers OKAY), keep the BFM and add a *passive wire-level override of
+  that one field* between BFM and DUT for that beat; the BFM still owns
+  every handshake and data byte. Write a whole custom VC only when no
+  built-in or hdl-modules one models the protocol at all.
 - **Before reusing any higher-level BFM/VC wrapper** (e.g. an hdl-modules
   `bfm.*` wrapper around a raw VUnit VC), check its generic-range
   assertions against the actual interface width being tested — a wrapper
@@ -169,7 +186,22 @@ Only when the project does not use VUnit, or the user explicitly requests standa
   reference models (golden models)", for the exact `pre_config`/
   `post_check` signatures (both must explicitly `return True`) and the
   stimulus/expected file-exchange pattern. Do not hand-compute expected
-  values inline in the testbench when a reference model is warranted. A
+  values inline in the testbench when a reference model is warranted.
+  **Never check generated vectors into the repository.** Generate them on
+  the fly, per test config, in `pre_config` into that test's
+  `output_path`, and have the testbench read them back through the
+  `output_path : string` generic VUnit fills automatically (no
+  hand-built absolute `vectors_root` generic). Checked-in vectors are
+  pure overhead: they churn the repo on every model edit, need one
+  duplicate tree per generic configuration, silently drift from the
+  model until someone remembers the regeneration step, and hide which
+  Python parameters produced them. Real case: a `test/vectors/` tree
+  that was checked in needed a second, near-duplicate
+  `test/vectors_pe_rows_16/` tree the moment one generic got a second
+  legal value -- the `pre_config` form needs one extra `add_config`
+  line instead. Keep the generator importable and deterministic
+  (fixed per-case seeds) so a failing test is reproducible without
+  any stored artifact. A
   VHDL-side reimplementation of the same golden model is not a substitute
   for this exchange — see `shared/Vunit.md`'s "Two independent golden
   models are not a cross-check" for a real case where that gap (a

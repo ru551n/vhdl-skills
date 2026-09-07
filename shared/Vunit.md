@@ -183,9 +183,14 @@ golden model written in VHDL, and pytest checked the packer against a
 reference model written in Python — neither side ever consumed an artifact
 from the other. The bug was found by reading both files by hand, not by any
 test. Require at least one bit-exact cross-language test per shared
-convention: the reference model emits checked-in vectors (stimulus and
-expected results), `pre_config`/`post_check` read those exact files and
-drive the real DUT — no VHDL reimplementation of the model in between.
+convention: the reference model emits its vectors (stimulus and expected
+results) *at test time* from `pre_config` into that config's
+`output_path` — never checked in — and the testbench reads those exact
+files back through the auto-filled `output_path` generic and drives the
+real DUT with them, no VHDL reimplementation of the model in between.
+Checked-in vectors add overhead (repo churn per model edit, one duplicate
+tree per generic configuration, silent drift until regenerated) and buy
+nothing a deterministic, seeded generator does not already give.
 Two green suites that never exchange an artifact can both be green while
 disagreeing, and the more independently they were written, the more
 convincing and wrong that agreement looks.

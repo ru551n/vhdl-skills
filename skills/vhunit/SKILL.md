@@ -92,6 +92,19 @@ tool usage. This skill owns the VHDL + Python.
   (`shared/Vunit.md` §12).
 - Back-pressure by default on all slave-side interfaces (random stall
   probability + random latencies with verification components).
+- **Premade VCs/BFMs only.** Every AXI4/AXI4-Lite/AXI4-Stream side of a
+  DUT is driven or terminated by a VUnit VC or an hdl-modules `bfm.*`
+  wrapper (`bfm.axi_read_slave`, `bfm.axi_write_slave`, `bfm.axi_slave`,
+  `bfm.axi_lite_master`, `bfm.axi_stream_master`/`slave`, `memory_t`
+  scoreboard). Never hand-roll a slave/master/memory/response process;
+  if a BFM lacks one behavior (e.g. a non-OKAY response on one beat), keep
+  the BFM and passively override that one field on the wire between BFM
+  and DUT. See `vhtestgen` "Verification components" for the full rule
+  and the real rewrite it cost.
+- **Generated vectors are never checked in.** Golden-model stimulus/
+  expected files are produced per config in `pre_config` into
+  `output_path` and read back through the auto-filled `output_path`
+  generic (`shared/Vunit.md`, "Python reference models").
 
 ## Checker process rules (mandatory)
 

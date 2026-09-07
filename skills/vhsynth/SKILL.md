@@ -72,6 +72,59 @@ synthesizing everything on every iteration:
   annoyance: it usually means a netlist blowup (failed RAM/DSP inference,
   unintended replication, a combinational explosion). Stop and read the
   utilization report rather than waiting out the build.
+
+## Estimate from leaves; defer the expensive integration build
+
+A composition entity's synthesis can cost 30-300x its leaves (measured:
+`conv_core` 858s versus 3.2s/5.1s/21s/23s for its four submodules). Do not
+pay that cost to answer a question the leaves already answer.
+
+- **Synthesize the leaves, then add them up.** FFs, block RAMs and DSP
+  blocks are *structural* — they are additive across a composition and
+  stable between tool versions. Verified on a real design: the composite's
+  FF/BRAM/DSP each matched the sum of its four submodules exactly
+  (2033/75/106), while LUTs came out ~1.5% below the sum from
+  cross-boundary optimization. So: leaf sums give an exact FF/BRAM/DSP
+  prediction and a slightly conservative LUT upper bound.
+- **State it as an estimate.** Report "estimated from measured submodules,
+  integration build deferred" — never as a measured composite result. The
+  "never claim success without a real tool result" rule applies to the
+  claim, not to the arithmetic: measured leaves *are* real tool results.
+- **Run the integration build only when it decides something**: before a
+  commit that changes a shared package or crosses module boundaries, when
+  re-baselining CI checkers, when leaf sums approach a device limit, or
+  when the composition itself (not its leaves) is what changed.
+- The same logic applies to answering resource questions during design
+  exploration: a 5-second spike on a representative memory/datapath shape
+  beats a 15-minute build of the real thing, and usually answers the
+  question better because you can sweep configurations.
+
+## Backend choice: Yosys for leaves, vendor tools for integration
+
+- **Yosys + GHDL plugin**: fast per-module smoke checks and spikes. Its
+  numbers are not vendor-accurate and shift between Yosys versions (a local
+  dev build has measured ~2.7x fewer LUTs than the release build CI used for
+  the same RTL) — treat Yosys LUT counts as trend data, not baselines.
+- **Vendor synthesis (Vivado etc.) via `tsfpga-mcp` project mode / a
+  `VivadoNetlistProject`**: use for integration-level and top-level builds,
+  and for any number that will become a committed CI checker limit.
+- Yosys and vendor numbers are **not comparable**. When a checker limit
+  moves from one backend to the other, re-baseline it and record which tool
+  produced it in the comment next to the limit.
+- **Cap every Yosys netlist build at a 10-minute timeout.** If it has not
+  finished by then, kill it and run that build with the vendor tool
+  (Vivado etc.) instead — do not wait it out and do not retry it on Yosys.
+  A Yosys run that exceeds 10 minutes is telling you the netlist blew up
+  (failed RAM/DSP inference, unrolled write-enable loops, wide-array
+  replication); the vendor tool both finishes and gives the number that
+  actually counts for a CI baseline. Record in the report which backend
+  produced each number.
+- **Never pass `-flatten` to `synth_xilinx` in an ad-hoc spike.** On
+  memory-heavy designs (wide arrays, per-lane write-enable loops) it is the
+  single biggest RAM multiplier and has OOM-killed sessions. Plain
+  `synth_xilinx -family <fam>; stat` reports everything needed. Redirect the
+  log to a file and parse a summary line out of it rather than reading it —
+  Yosys logs are large enough to be a problem on their own.
 - Keep long or known-slow builds out of the tight edit-test loop. The
   simulation regression (`vhunit`/`vhtestgen`) is the fast gate; synthesis
   is the slower structural gate and belongs at module-done and integration
