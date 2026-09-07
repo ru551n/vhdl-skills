@@ -124,18 +124,32 @@ record it as a hand-verified, dated comment next to the relevant build
 entry, and re-measure by hand after any change that could move it — do not
 expect an automated `build_result_checkers` gate to enforce it.
 
-## Enabling timing analysis can shift reported resource counts, not just add timing data
+## Enabling timing analysis changes synthesis itself, not just what gets reported afterward
 
-Turning on `analyze_synthesis_timing=True` (or, more generally, moving from a
-"hook right after synth_design, design never opened" utilization report to
-an "open the run, then report_utilization" one) can change the *reported*
-RAMB18/RAMB36 split for the exact same RTL and generics — even though the
-combined "how much block RAM does this really need" answer is close. Do not
-assume a resource checker baselined under one reporting mode carries over
-unchanged when the build is switched to the other mode; re-measure and
-re-baseline the specific counters that could be report-method-sensitive
-(BRAM primitive-type split is the one seen in practice; LUT/FF/DSP totals
-were stable across the switch in the same test).
+Turning on `analyze_synthesis_timing=True` is **not** a pure post-hoc
+analysis switch, and the resource-count drift it causes is not just a
+reporting-method artifact — verify the actual mechanism before assuming
+that. In `VivadoNetlistProject.create()`, this flag also controls whether an
+unconditionally-appended, `"early"`-processing-order auto-clock constraint
+file gets populated with a real `create_clock -period <T> [get_ports
+<clk>]` on the auto-detected clock port. That constraint file is loaded via
+`read_xdc` and left `USED_IN_SYNTHESIS` (the default) — so it is live
+**during `synth_design` itself**, not merely during the later
+`open_run`/`report_timing` step. A previously-unconstrained netlist build
+(no clock at all, pure area-oriented out-of-context synthesis) and the same
+RTL/generics built with a real clock constraint present are two genuinely
+different synthesis runs, and Vivado is free to make different
+area/timing tradeoffs (register retiming, BRAM-cascade choices, LUTRAM vs.
+block RAM, etc.) between them.
+
+In practice this can move **LUT and FF totals, not just the RAMB18/RAMB36
+split** — confirmed on a real design where enabling this flag across six
+existing netlist builds shifted FF counts by several hundred and BRAM
+primitive counts by several units each, failing 3 of 6 previously-passing
+`build_result_checkers`. Do not assume a resource checker baselined under
+"no clock constraint" synthesis carries over unchanged once this flag is
+turned on (or vice versa); re-measure and re-baseline every counter, not
+just BRAM split, whenever this flag's setting changes for a given build.
 
 ## Vivado's DSP48E1 MACC inference is template-sensitive
 
@@ -175,6 +189,29 @@ assuming the "obvious" DSP count from the RTL's arithmetic shape.
   delete the stale generated project directory before a from-scratch rerun
   when the project's construction (module set, generics, constraints)
   changed.
+
+## Always delegate timing analysis and timing fixes to a strong model
+
+Reading a critical-path report and deciding what to change (re-pipeline a
+MAC chain, break a combinational adder tree, move a register across a
+module boundary) requires holding the full path — every gate/register/net
+the report lists, why each one is on the path, and what a correctness-
+preserving restructuring looks like — in context at once, and getting it
+subtly wrong (an off-by-one-cycle pipeline stage, a dropped valid/enable
+that used to gate a now-relocated register) produces a design that still
+"passes" functional tests written against the old timing but is wrong, or a
+design that still fails timing for a different, unnoticed reason. This is a
+qualitatively harder reasoning task than the mechanical
+measure-and-record-a-number work above it. Never do timing analysis or
+timing fixes with a fast/cheap model pass, and do not have the orchestrating
+agent eyeball a `timing.rpt` critical path itself as a shortcut — always
+delegate both analyzing *why* a path is slow and implementing the fix to a
+strong-tier model (e.g. `task` with `model_tier: "strong"`), even under
+time/cost pressure. If timing work must be split across independent
+entities, running several strong-model subagents in parallel (one per
+entity) is fine and often faster than serializing them — the "strong model
+only" rule is about capability per unit of work, not about avoiding
+parallelism.
 
 ## Composition-entity synthesis time does not scale with source size
 
