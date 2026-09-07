@@ -12,6 +12,14 @@ Read `shared/ModernVHDL.md`, `shared/CodingStyle.md`, and `shared/TsfpgaCodingCo
 
 Read `shared/McpToolPolicy.md`.
 
+Load the `vivado-gotchas` skill before any Vivado-backed synthesis, timing
+estimate, constraint, or place-and-route work (whether via `tsfpga-mcp`, a
+project's own `build_fpga.py`, or a raw `VivadoProject`/`VivadoNetlistProject`)
+— it collects Vivado/tsfpga-specific behaviors (post-synthesis hook
+reliability, XDC parsing restrictions, the `analyze_synthesis_timing`
+ordering bug, DSP inference template sensitivity, etc.) that are easy to get
+silently wrong.
+
 ## Backend priority
 
 1. **`tsfpga-mcp`** for portable VHDL synthesis/resource summaries.
@@ -198,6 +206,34 @@ Record the returned:
 Post-route timing, vendor Fmax, site utilization, power estimation, and
 place-and-route are out of scope; state that in the report instead of
 fabricating results.
+
+### Fast post-synthesis timing estimate vs full place-and-route closure
+
+These are two different questions; do not let one stand in for the other in
+a report:
+
+- **Post-synthesis (synth-only) slack estimate**: adding a clock-period
+  constraint (XDC/SDC) plus a vendor-tool post-synthesis TCL hook that
+  reports worst setup/hold slack right after `synth_design`, before any
+  place-and-route. This is fast (order of a build's normal synthesis time,
+  no extra P&R runtime) and useful as an early, repeatable regression
+  signal on the leaves of a design (see "Estimate from leaves" above) —
+  but synthesis-stage slack is measured on an unplaced, unrouted netlist,
+  so it is optimistic/inaccurate versus the final routed result and must
+  never be reported as "meets timing" or as an Fmax number. Label it
+  explicitly as an estimate in any report or checker.
+- Do not assume a project's `tsfpga-mcp`-style "analyze synthesis timing"
+  flag covers this: such flags commonly check only clock-domain-crossing
+  and pulse-width constraint violations, not setup/hold slack — verify
+  what a given flag actually reports before relying on it, and add a
+  custom post-synthesis TCL hook when a slack number is actually needed.
+- **Full timing closure** requires place-and-route (and, for signoff,
+  the vendor's static timing analysis on the routed design). Reserve this
+  for when there is a complete top-level design to place and route — a
+  synth-only estimate on leaf/submodule netlists cannot substitute for it,
+  since inter-module routing and placement congestion are exactly what it
+  cannot see. State which of the two a given result is whenever timing is
+  reported.
 
 ## Outputs
 

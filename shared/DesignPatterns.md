@@ -94,6 +94,40 @@ For each field specify:
 - hardware-vs-software ownership
 - reserved-bit behavior
 
+When a design has generics that change the elaborated hardware (array
+widths, parallelism factors, buffer depths), consider exposing the
+actual elaborated values as a dedicated read-only status register,
+distinct from any build-time/generation-time constants used by test or
+software generators. Software reading the same generic value at runtime
+(instead of trusting a value baked in at its own build time) can detect
+a mismatch between the bitstream it is running against and its own
+assumptions. Keep this register purely observational (no side effects on
+read) and pack multiple small generic values into byte/sub-fields of one
+word rather than spending a register per field.
+
+## Parameterized resource/throughput scaling generic
+
+When a single generic (e.g. a parallelism/replication factor) is the
+intended way to trade hardware resources for throughput or latency:
+
+- Keep it a single top-level generic that propagates through the
+  hierarchy via the generic propagation map, not a value re-derived or
+  hardcoded at multiple levels.
+- Build a small closed-form cost/throughput model (cycles-per-unit-work
+  as a function of the generic, clock frequency, target work size) as
+  code, not just prose in a design doc. Pin it with regression tests that
+  assert concrete numbers for each configuration the project actually
+  ships or plans to ship (not just symbolic bounds) — this catches silent
+  drift between the model and the RTL/architecture as both evolve.
+- Treat "does configuration X meet the target budget" as a regression
+  test assertion, and record the margin (headroom or shortfall) rather
+  than only a pass/fail, so a later change that erodes headroom is
+  visible before it flips the test.
+- Do not assume every configuration must meet every target; it is valid
+  for a smaller/cheaper configuration to knowingly miss an aspirational
+  target as long as that shortfall is asserted explicitly rather than
+  silently unverified.
+
 ## CDC single-bit level
 
 For an asynchronous level entering a domain, use a documented 2+ stage
