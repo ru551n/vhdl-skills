@@ -13,6 +13,31 @@ synthesis, timing-estimation, constraint, or place-and-route work — from
 (and, where noted, tsfpga-wrapping-Vivado) behaviors that are easy to get
 silently wrong because they fail quietly instead of erroring.
 
+Read `shared/McpToolPolicy.md`.
+
+## MCP preference
+
+For an actual tsfpga project's own Vivado build (not the portable Yosys
+flow), prefer `tsfpga-mcp`'s project-mode tools over manually invoking
+Vivado/`build_fpga.py` via `bash` and over manually opening or grepping the
+generated report files:
+
+- `tsfpga_project_status` / `tsfpga_project_list_builds` instead of
+  manually locating build directories or guessing which builds exist.
+- `tsfpga_project_build` (with `project_filters` to scope it) instead of
+  invoking `build_fpga.py`/Vivado directly from the shell.
+- `tsfpga_project_get_timing_report`, `tsfpga_project_get_utilization_report`,
+  and `tsfpga_project_get_drc_report` instead of manually reading
+  `timing.rpt`, a utilization report, or a DRC report off disk.
+
+This does not remove the need for the Vivado-behavior knowledge below —
+the gotchas about post-synthesis hook reliability, XDC parsing, and report
+content are exactly what these report-retrieval tools are surfacing, and
+still apply when reasoning about *why* a retrieved report looks the way it
+does. Fall back to manually invoking Vivado/`build_fpga.py` and reading its
+generated report files directly only when `tsfpga-mcp` (or its project-mode
+tools specifically) is unavailable.
+
 ## Post-synthesis TCL hooks cannot reliably query the constraint/clock state
 
 A `STEPS.SYNTH_DESIGN.TCL.POST` build-step hook runs after `synth_design`
@@ -119,9 +144,10 @@ not a design-side mistake to "fix" by making the checker tolerate `None` —
 that would silently stop checking anything. Until the ordering is fixed
 upstream (or overridden via a subclass that reorders it), treat the
 frequency number the same way genuinely un-checkable vendor numbers are
-treated elsewhere: read it from the printed build summary / `timing.rpt`,
-record it as a hand-verified, dated comment next to the relevant build
-entry, and re-measure by hand after any change that could move it — do not
+treated elsewhere: read it from the printed build summary, or — preferably —
+`tsfpga_project_get_timing_report` rather than manually opening `timing.rpt`
+on disk; record it as a hand-verified, dated comment next to the relevant
+build entry, and re-measure after any change that could move it — do not
 expect an automated `build_result_checkers` gate to enforce it.
 
 ## Enabling timing analysis can shift reported resource counts, not just add timing data
@@ -183,8 +209,9 @@ size of the netlist it produces, not by its source line count or how many
 submodules it has. A failed RAM/DSP inference in one leaf can turn what
 should be a sub-minute build into an 18-minute one for a design that looks
 similarly sized to its siblings. Treat a sudden jump in synthesis time as a
-signal to check the utilization report for a fallback mapping (distributed
-RAM instead of block RAM, LUT fabric instead of DSP), not as an annoyance to
-wait out. See `shared/DesignPatterns.md` / `vhsynth`'s own notes on
+signal to check the utilization report (`tsfpga_project_get_utilization_report`
+when the build went through `tsfpga-mcp` project mode) for a fallback mapping
+(distributed RAM instead of block RAM, LUT fabric instead of DSP), not as an
+annoyance to wait out. See `shared/DesignPatterns.md` / `vhsynth`'s own notes on
 backend/runtime choices for the general (non-Vivado-specific) version of
 this rule.

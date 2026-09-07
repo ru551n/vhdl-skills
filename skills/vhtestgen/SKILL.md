@@ -21,7 +21,12 @@ the default project-wide policy is: generate the module's VUnit testbench
 from its `<module>_req.md` first, confirm it is red (fails to elaborate
 against a stub, or fails for the expected "not implemented yet" reason),
 then hand off to `vhfill` to implement until that same testbench goes
-green. Only fall back to writing the testbench after implementation when
+green. When `vunit-mcp` is available, confirm the "fails to elaborate"
+case with `vunit_elaborate` (recently added) rather than a full
+`vunit_run_tests` — it runs a real GHDL elaboration pass and is the cheaper
+way to establish the red baseline when the expected failure is structural
+(missing entity/port/generic against a stub), reserving `vunit_run_tests`
+for the "fails for the expected not-implemented-yet reason" case. Only fall back to writing the testbench after implementation when
 the user explicitly asks for that order, or when retrofitting tests onto
 already-existing, previously-untested RTL (a distinct, explicitly-flagged
 case — record it as such, do not silently treat it as the default flow).
@@ -55,7 +60,7 @@ Use:
 - top entity
 - requirements
 - register/protocol docs
-- relevant precedent from `corvidex-mcp` when available
+- relevant precedent from `corvidex-mcp` when available (`search_hdl`/`search_vhdl` for conceptual precedent; prefer `find_definition`/`find_references` over grep once an exact port/generic/type name from the DUT is already known, e.g. confirming every consumer of a shared record type the test must construct)
 
 ## Recommended VUnit structure
 

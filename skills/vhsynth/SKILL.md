@@ -27,6 +27,13 @@ silently wrong.
 
 Do not describe `tsfpga-mcp` resource synthesis as vendor timing closure.
 
+When the question is about design structure — instance hierarchy,
+generate-block expansion, resolved generics — rather than resource counts,
+prefer `tsfpga_hierarchy` (recently added) over a full `tsfpga_synthesize`
+run or manually reading source/`ghdl`-elaborating by hand: it runs GHDL
+elaboration (generics resolved) without paying for full technology-mapping
+synthesis, so it is far cheaper for a pure hierarchy/structure question.
+
 `tsfpga-mcp` only reports aggregated resource counts (LUTs, FFs, DSPs, block RAMs, or raw cell
 counts for `chip=generic`) — never a per-port netlist dump.
 
@@ -57,8 +64,11 @@ netlist ends up. A failed block-RAM inference in one module has produced a
 0.2-8.5s: the design fell back to distributed RAM (4608 RAM32M/RAM64M-class
 cells, ~23700 LUTs), and Yosys' runtime degrades badly at that cell count.
 Source size did not predict this; only the utilization report would have.
-See `shared/ModernVHDL.md`'s "Memory: infer the intended RAM type, and prove
-it" for the failure mode that causes this class of blowup.
+For a real Vivado project build, retrieve it with
+`tsfpga_project_get_utilization_report` rather than manually opening/
+grepping the generated report file. See `shared/ModernVHDL.md`'s "Memory:
+infer the intended RAM type, and prove it" for the failure mode that causes
+this class of blowup.
 
 Because the blowup is not predictable from the RTL, do not default to
 synthesizing everything on every iteration:
@@ -172,6 +182,12 @@ Use `tsfpga_inspect` when:
 
 Resolve every `Notes:` ambiguity by asking the user before synthesizing.
 
+If the goal is understanding/verifying the design's instance hierarchy
+(generate-block-expanded instance names, resolved generics) rather than
+producing resource counts, call `tsfpga_hierarchy` (recently added) instead
+of proceeding to a full synthesis run — it is a much cheaper way to answer
+that specific question.
+
 ### 3. Choose target
 
 If the user did not already provide a valid target, call `tsfpga_targets`.
@@ -227,6 +243,11 @@ a report:
   and pulse-width constraint violations, not setup/hold slack — verify
   what a given flag actually reports before relying on it, and add a
   custom post-synthesis TCL hook when a slack number is actually needed.
+  When a real per-project Vivado build was run through `tsfpga-mcp`'s
+  project-mode tools, retrieve the resulting number with
+  `tsfpga_project_get_timing_report` rather than manually parsing
+  `timing.rpt`; see `vivado-gotchas` for the hook-reliability caveats
+  behind where that report data actually comes from.
 - **Full timing closure** requires place-and-route (and, for signoff,
   the vendor's static timing analysis on the routed design). Reserve this
   for when there is a complete top-level design to place and route — a

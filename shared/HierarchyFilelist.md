@@ -61,3 +61,10 @@ If `vunit-mcp` is available and the project has a VUnit `run.py`:
 4. Only use the manual dependency procedure above when VUnit is unavailable or the sources are not registered in the project.
 
 If `corvidex-mcp` is available, it may be used to locate package/entity sources, but the authoritative VUnit compile order should still come from `vunit_list_files` for a VUnit project.
+
+If the actual goal is understanding instance hierarchy/generate-block
+expansion/resolved generics rather than a compile-order filelist, prefer
+`tsfpga-mcp`'s `tsfpga_hierarchy` tool (recently added) over manually
+tracing instantiations through the source — it runs GHDL elaboration
+(generics resolved) without the cost of full synthesis and answers that
+question directly.
