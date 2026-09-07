@@ -17,6 +17,43 @@ Read `shared/McpToolPolicy.md`.
 
 Inspect the project, detect available MCP backends, and maintain a resumable `flow_status.md`.
 
+## General principle: MCP-first, local-tool fallback
+
+Every phase below has a corresponding MCP server that is strictly preferred
+over the equivalent manual/local approach whenever it is exposed in the
+current host (`shared/McpToolPolicy.md` is authoritative; this is a
+summary for the orchestrator):
+
+- **`corvidex-mcp`** — semantic search and exact code/doc navigation.
+  Prefer it over raw `grep`/`find`/manual file reads for anything in an
+  indexed repository. Use `search_hdl`/`search_vhdl`/`search_knowledge` for
+  conceptual discovery; use the recently added `find_definition`/
+  `find_references`/`find_symbol`/`hover_info` (exact, LSP/compiler-backed)
+  instead of a fuzzy search or grep once the exact symbol name/location is
+  already known.
+- **`vunit-mcp`** — VUnit project discovery, compile, elaborate, run,
+  report/log/waveform retrieval. Prefer it over manually invoking
+  `ghdl`/`run.py` via `bash` or manually grepping VUnit logs. Use the
+  recently added `vunit_elaborate` liberally right after RTL is written or
+  edited — it is a real GHDL elaboration pass that catches cross-unit
+  port/generic/type mismatches `vunit_compile` (analyze-only) cannot, and
+  is cheap because it does not simulate anything.
+- **`tsfpga-mcp`** — portable Yosys+GHDL synthesis/resource summaries and
+  real per-project Vivado builds. Prefer it over manually shelling out to
+  `yosys`/`ghdl`/`build_fpga.py` or manually reading generated report
+  files. Use the recently added `tsfpga_hierarchy` instead of a full
+  `tsfpga_synthesize` run when the question is about instance
+  hierarchy/generic resolution rather than resource counts — it is far
+  cheaper.
+- **`peeper-mcp`** — waveform inspection. Prefer it over manually parsing
+  VCD/FST files or eyeballing a waveform viewer when the question is about
+  signal timing/values/clock period/latency.
+
+`vunit_elaborate` and `tsfpga_hierarchy` (and corvidex-mcp's
+`find_definition`/`find_references`/`find_symbol`/`hover_info`) are recent
+additions to their respective upstream MCP servers; treat them as available
+per the normal Availability probing rule below, not as guaranteed present.
+
 ## Phases
 
 1. Architecture — `vharch`
@@ -41,10 +78,10 @@ Inspect the project, detect available MCP backends, and maintain a resumable `fl
 
 | Phase | Preferred MCP | Fallback |
 |---|---|---|
-| Architecture/design/docs | `corvidex-mcp` | Read/Grep |
-| Compile/test | `vunit-mcp` | VUnit run.py / GHDL |
+| Architecture/design/docs | `corvidex-mcp` (`search_hdl`/`search_knowledge`, and `find_definition`/`find_references`/`find_symbol` for exact lookups) | Read/Grep |
+| Compile/test | `vunit-mcp` (`vunit_compile` then `vunit_elaborate` before a full run) | VUnit run.py / GHDL |
 | Waveform debug | `peeper-mcp` | GTKWave/manual |
-| Synthesis | `tsfpga-mcp` | local Yosys+GHDL |
+| Synthesis | `tsfpga-mcp` (`tsfpga_hierarchy` for structure-only questions, `tsfpga_synthesize` for resource counts) | local Yosys+GHDL |
 
 ## Availability probing
 

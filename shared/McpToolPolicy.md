@@ -40,10 +40,31 @@ Relevant tools when exposed:
 - `get_source`
 - `sync_repositories`
 - `reindex_repository`
+- `find_definition` — recently added (upstream `corvidex-mcp` PR #27, not
+  yet merged at the time this policy was written); exact, LSP/compiler-backed
+  go-to-definition via `vhdl_ls`/Veridian
+- `find_references` — recently added, same PR; exact find-all-usages
+- `hover_info` — recently added, same PR; exact type/signature info at a
+  location
+- `find_symbol` — recently added, same PR; exact symbol-name search
+  (workspace symbol lookup), not similarity search
 
 Usage rule:
 1. Call `repository_status` when repository/index health matters.
-2. Search at topic granularity, not module granularity and not item
+2. Choose the right tool for the question, not just the familiar one:
+   - **Conceptual/natural-language discovery** ("find the AXI FIFO reference
+     implementation", "how does this project usually structure a CDC
+     handshake") → `search_hdl`/`search_vhdl`/`search_knowledge` (fuzzy
+     semantic+lexical search).
+   - **Exact symbol already known, precise resolution needed** ("who else
+     instantiates `foo_fifo`", "where is `FIFO_DEPTH` declared", "what is
+     the type of this port") → `find_references`, `find_definition`,
+     `find_symbol`, `hover_info`. These are LSP/compiler-backed exact
+     resolution, not similarity search, and are strictly more accurate than
+     a grep-based or fuzzy-search-based lookup for this case — prefer them
+     over `search_hdl`/`grep` whenever the exact name/location is already
+     the input, not the thing being discovered.
+3. Search at topic granularity, not module granularity and not item
    granularity. Neither extreme works well: one query for "the whole
    module" returns a diffuse mix of unrelated chunks, but one query per
    individual port/signal/constant over-fragments a coherent unit and wastes
@@ -58,8 +79,8 @@ Usage rule:
    functions (`new_axi_stream_master`/`new_axi_stream_slave`), a third for
    its push/check procedures — not one query per port, and not one query
    trying to cover the whole file.
-3. Use `get_source` for exact source before copying or relying on an implementation detail.
-4. Do not assume indexed material is current if status reports sync/index errors.
+4. Use `get_source` for exact source before copying or relying on an implementation detail.
+5. Do not assume indexed material is current if status reports sync/index errors.
 
 **ALWAYS prefer `corvidex-mcp` over local `grep`/`find`/`git grep` for any code,
 docs, or knowledge that lives in a repository the server has configured/indexed**
@@ -106,6 +127,9 @@ Relevant tools when exposed:
 - `vunit_list_tests`
 - `vunit_list_files`
 - `vunit_compile`
+- `vunit_elaborate` — recently added (upstream `vunit-mcp` PR #13, not yet
+  merged at the time this policy was written); runs VUnit's `--elaborate`
+  flag, a real GHDL elaboration pass
 - `vunit_run_tests`
 - `vunit_get_report`
 - `vunit_get_test_log`
@@ -121,6 +145,16 @@ Usage rule:
 5. Pass `waveform_format` to `vunit_run_tests` when waveform debug may be required (`vcd` on GHDL, `fst` on NVC); a run without it records no waveform. Skip it only when the run is expected green and no debug is planned.
 6. Use `vunit_get_report` before fetching detailed failure logs.
 7. Use `vunit_get_test_waveform` to obtain the waveform path and pass it to `peeper-mcp`.
+8. **Use `vunit_elaborate` liberally right after writing or modifying RTL**,
+   as a validation step before a full `vunit_run_tests` is warranted.
+   `vunit_compile` is analyze-only (GHDL `-a`/`--compile`) and can report
+   clean success on code that still has a cross-unit port/generic/type
+   mismatch — elaboration is what actually binds entities/architectures and
+   resolves generics, so it catches that class of error `vunit_compile`
+   silently misses. This is the closest free/open equivalent to a
+   commercial compiler's incremental-validation feedback loop; do not skip
+   straight from `vunit_compile` to a full test run when the goal is just
+   "did this edit break anything structurally".
 
 Fallback:
 1. Project `run.py` directly, using VUnit.
@@ -182,12 +216,24 @@ Preferred for:
 - supported synthesis-target discovery (which chips/flows the installed Yosys provides)
 - synthesis through `tsfpga.yosys.project` (GHDL + Yosys)
 - aggregated resource-count summaries (no per-port netlist)
+- real per-project Vivado builds and their timing/utilization/DRC reports
 
 Relevant tools when exposed:
 - `tsfpga_status`
 - `tsfpga_targets`
 - `tsfpga_inspect`
+- `tsfpga_hierarchy` — recently added (upstream `tsfpga-mcp` PR #13, not yet
+  merged at the time this policy was written); a GHDL-elaborated,
+  generics-resolved instance/hierarchy tree (generate-block-expanded
+  instance names, resolved generics) **without** running full
+  technology-mapping synthesis
 - `tsfpga_synthesize`
+- `tsfpga_project_status`
+- `tsfpga_project_list_builds`
+- `tsfpga_project_build`
+- `tsfpga_project_get_timing_report`
+- `tsfpga_project_get_utilization_report`
+- `tsfpga_project_get_drc_report`
 
 Usage rule:
 1. Call `tsfpga_status` first.
@@ -196,9 +242,25 @@ Usage rule:
 4. Never infer required top level, chip/family, or generic overrides.
 5. There is no architecture-selection parameter. If `tsfpga_inspect` reports more than one architecture for the top, ask the user which one, then include only that architecture's source file in the source set passed to `tsfpga_synthesize`.
 6. Pass the complete source dependency set to `tsfpga_synthesize`; when `top` is not a VHDL entity, also pass the VHDL entity names it instantiates via `vhdl_entities`.
+7. **Prefer `tsfpga_hierarchy` over `tsfpga_synthesize` (or manually
+   shelling out to `ghdl`/`yosys`) when the question is about design
+   structure** — instance hierarchy, generate-block expansion, resolved
+   generics — rather than resource counts. It is far cheaper than a full
+   technology-mapping synthesis run because it stops at GHDL elaboration.
+8. For real Vivado-project work (an actual tsfpga project's own
+   `build_fpga.py`, not the portable Yosys flow), prefer
+   `tsfpga_project_status`/`tsfpga_project_list_builds`/
+   `tsfpga_project_build` over invoking Vivado/`build_fpga.py` manually via
+   `bash`, and prefer `tsfpga_project_get_timing_report`/
+   `tsfpga_project_get_utilization_report`/`tsfpga_project_get_drc_report`
+   over manually grepping/opening the generated Vivado report files
+   (`timing.rpt`, `utilization.rpt`, DRC report). See the `vivado-gotchas`
+   skill for the underlying Vivado report/hook behaviors these tools read.
 
 Fallback:
-Yosys + GHDL plugin locally for generic/open-source synthesis.
+Yosys + GHDL plugin locally for generic/open-source synthesis; direct
+Vivado/`build_fpga.py` invocation and manual report reading when
+`tsfpga-mcp` project-mode tools are unavailable.
 
 `tsfpga-mcp` provides synthesis/resource reporting, not a substitute for vendor place-and-route timing or vendor power analysis.
 

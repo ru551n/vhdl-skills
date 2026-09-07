@@ -126,7 +126,12 @@ must respect the test phases — pick one, per `shared/Vunit.md` §7.1/§7.2:
 
 1. `vunit_status` → `vunit_compile` (fix compile/elaboration errors;
    common causes: missing `add_vhdl_builtins()`, VUnit-4 `add_vhdl`
-   calls, wrong context).
+   calls, wrong context) → `vunit_elaborate` (recently added) to confirm a
+   real GHDL elaboration pass succeeds — `vunit_compile` is analyze-only
+   and can pass cleanly even when a port/generic/type mismatch between
+   units would fail elaboration; run `vunit_elaborate` before `run.py`/
+   `vunit_run_tests` whenever a runner or testbench was just authored or
+   repaired.
 2. `vunit_run_tests` with the smallest relevant test pattern; pass
    `waveform_format` (`vcd` on GHDL, `fst` on NVC) so failures can be
    diagnosed at signal level — without it no waveform is recorded.

@@ -20,7 +20,12 @@ Call:
 1. `vunit_status`
 2. `vunit_list_tests`
 
-If a source-level compile check is needed first, use `vunit_compile`.
+If a source-level compile check is needed first, use `vunit_compile`. If the
+regression follows a recent RTL edit and a quick structural sanity check is
+warranted before committing to a full run, use `vunit_elaborate` (recently
+added) after `vunit_compile` — it performs a real GHDL elaboration pass and
+catches cross-unit port/generic/type mismatches that analyze-only
+`vunit_compile` can miss, without the cost of simulating any test.
 
 ### 2. Run tests
 

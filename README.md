@@ -139,8 +139,16 @@ third-party install is caught by it.
 
 ## Optional MCP servers
 
-The skills work without MCP but are designed around a recommended set of
-servers, including the intended failure-debug chain:
+The skills work without MCP but are designed **MCP-first, local-tool
+fallback**: when a listed server is available in the current agent
+environment, the skills prefer its tool over the equivalent manual
+approach (raw `grep`/file reads, hand-invoking `ghdl`/`yosys`/Vivado,
+manually parsing VUnit logs or waveform files) and only fall back to the
+manual approach when the server is unavailable. `shared/McpToolPolicy.md`
+is the authoritative, per-server statement of this policy.
+
+Below is the recommended set of servers, including the intended
+failure-debug chain:
 
 | Server | Repo | Role in the flow |
 | --- | --- | --- |

@@ -44,11 +44,19 @@ Given the waveform path:
 ### 3. Source/context evidence — corvidex-mcp
 
 When available:
-- `search_vhdl` / `search_hdl` for driving logic and symbol references
+- `search_vhdl` / `search_hdl` for driving logic and symbol references (conceptual discovery — "what drives this kind of signal")
 - `search_docs` / `search_knowledge` for intended behavior/conventions
 - `get_source` for exact source before concluding root cause
+- once the suspect signal/generic/port name is known, prefer `find_definition`/`find_references` (recently added, LSP/compiler-backed exact resolution) over `search_hdl` or grep to trace every declaration and usage precisely — e.g. tracing a signal backward through entity boundaries or confirming every instantiation site of a generic implicated in a mismatch
 
 Fall back to local Read/Grep when unavailable.
+
+A suspected generic-map or port-mismatch root cause can often be confirmed
+cheaply before a full source trace: if `vunit-mcp` is available, run
+`vunit_elaborate` on the affected design — it performs a real GHDL
+elaboration pass and will surface a cross-unit port/generic/type mismatch
+directly, which `vunit_compile` (analyze-only) would not have caught even
+if the original regression compiled cleanly.
 
 ## Trace method
 
