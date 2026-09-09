@@ -880,16 +880,231 @@ Artix-7/some Kintex-7), −2LI (0.95 V, larger Kintex-7), −2LE (1.0 V or
 (Spartan-7 expanded temperature) and −2GE (Virtex-7 faster
 transceivers). Check DS180 Table "speed grade / voltage" for the part.
 
-**Family-specific design advice.** The 25-bit A path is the packing
-limit (S ≤ 17); the 18-bit shift of the UltraScale recipe does not fit.
-Four LUTs per slice and CARRY4 mean a W-bit carry chain spans W/4
-slices, twice the UltraScale span — budget adder width per stage
-against the period (`shared/TimingAndResources.md`, "Carry chains
-count"). 12 clocks per region is the tightest clocking budget of the
-three families. No URAM: buffers beyond a few Mb are external memory.
-Two-thirds SLICEL: a design heavy in LUTRAM/SRL runs out of SLICEM
-before it runs out of LUTs. The largest Virtex-7 parts are SSI (DS180
-lists the SLR count per part) — SLR rules (A10) apply there.
+#### Design instructions
+
+**1. Timing and logic structure.**
+- Budget one pipeline stage as *one LUT level plus one carry chain*.
+  `CARRY4` is four bits per slice, so a W-bit add/compare occupies
+  `ceil(W/4)` vertically cascaded slices — twice the span of a `CARRY8`
+  family for the same width. Budget roughly half the adder width per
+  stage that you would on UltraScale at the same period, and confirm
+  against `report_design_analysis -logic_level_distribution` rather than
+  a rule of thumb; the exact width per nanosecond is speed-grade
+  dependent (DS181/DS182/DS183).
+- Mux budget: 4:1 fits one LUT6; 16:1 fits one slice as one LUT level
+  plus the F7A/F7B/F8 mux stages. Beyond 16:1 costs another LUT level
+  *and* an inter-slice route per factor of 16 — register there, or
+  replace the mux with a registered one-hot select or a small LUTRAM
+  lookup.
+- Control-set grouping is the tightest of the three families: one clock,
+  one set/reset and one clock enable for all eight storage elements of a
+  slice. Every register that carries a different reset or enable net
+  therefore takes its own slice. Give each pipeline stage a single
+  enable net and a single reset net, and close conditionals on small
+  register groups with an `else` instead of inventing an enable (A1).
+- Retiming is **off** by default on this family: ask for it with
+  `synth_design -global_retiming on`, or move a specific register with
+  `retiming_forward`/`retiming_backward`. It is blocked by a reset on
+  the register being moved, by `dont_touch`/`mark_debug`, by timing
+  exceptions on the path, by instantiated cells, and (for port-driven
+  registers) by out-of-context mode.
+
+**2. Registers, reset and enable.**
+- Eight flip-flops pack into one slice only while they share one clock,
+  one set/reset and one enable. A second reset net or a second enable
+  net in the same logical group splits it across slices and puts routing
+  between stages of the same pipeline.
+- Four of the eight storage elements can be latches, and using one
+  makes the other four unusable — treat `[Synth 8-327] inferring latch`
+  as a hard error (A2).
+- `SRLC32E` has **no reset**: a reset on a delay line replaces up to 32
+  taps per LUT with 32 flip-flops and moves the line out of SLICEM.
+  Distributed RAM likewise has no array reset. Do not reset delay lines
+  or memory arrays; a synchronous reset on the *output register* after a
+  memory is permitted where a protocol demands it.
+- Never reset block-RAM contents, SRL chains, pipeline payload or the
+  DSP48E1 A/B/C/D/M/P registers. An asynchronous reset on any of those
+  forces `FDCE`/`FDPE`, which no hard block accepts, so the register
+  stays in fabric (A4 §4).
+- Use declaration initial values for power-up state; GSR applies them at
+  the end of configuration (A4 §1).
+
+**3. Memory.**
+- Up to ~64 words, or wide, multi-ported or asynchronously read →
+  distributed RAM in SLICEM (256 bits per CLB). Only about one third of
+  slices are SLICEM and SRLs compete for the same LUTs, so read `LUTRAMs`
+  and `SRLs` separately from `Logic LUTs` (A9). Above that → `RAMB18E1`
+  / `RAMB36E1`.
+- Choose `RAMB18E1` when the array fits 18 Kb and the port is ≤ ×18
+  (×36 in SDP); two RAMB18 share one RAMB36 site, so an 18 Kb choice is
+  never wasteful.
+- Always write the output register (a second registered stage after the
+  read, packed into `DO*_REG`); without it the BRAM clock-to-out is the
+  stage delay. Keep logic and any asynchronous reset out of that stage
+  (A2).
+- Cascade: only the 64K×1 mode cascades in hardware on this family.
+  Every other deep memory is muxed in fabric, so build depth from the
+  widest word the port allows and register the address decode — do not
+  assume a free cascade as on UltraScale.
+- Read-during-write: `WRITE_FIRST` is the default and costs nothing but
+  forbids the NO_CHANGE power saving; `READ_FIRST` is the cheapest form
+  for a stream buffer; `NO_CHANGE` holds the output register and is
+  **not available in SDP mode** on 7-series — a simple-dual-port RAM
+  cannot be NO_CHANGE here, so `rw_addr_collision = "no"` buys nothing.
+- Byte writes: 4 (RAMB36 TDP), 8 (RAMB36 SDP), 2–4 (RAMB18), and not
+  with the dual-clock FIFO or ECC modes. Arrange the array in equal 8-,
+  9-, 16- or 18-bit columns or each lane becomes its own RAM (A2).
+- ECC: one 64-bit SEC-DED per RAMB36, in ×64 SDP only, and mutually
+  exclusive with byte writes — an ECC-protected buffer must be written
+  64 bits at a time.
+- Initialise with a constant aggregate or a `std.textio` read into an
+  array of `bit_vector`; the contents survive GSR, so an initialised
+  memory needs no reset.
+- Use `FIFO18E1`/`FIFO36E1` (or `xpm_fifo_*`) rather than a fabric
+  pointer FIFO around a BRAM when the width and depth fit; the hard
+  block brings its own pointer logic and, in the dual-clock case, the
+  crossing.
+- **No UltraRAM.** A buffer beyond a few Mb is external memory, and the
+  memory controller is soft (MIG) — budget its fabric, its clocking and
+  its own calibration state machine in `vharch`.
+
+**4. DSP.**
+- Enable A1/A2 (`AREG = 2`), B1/B2, M and P; the data-sheet DSP48E1
+  Fmax is the fully pipelined figure, and `MREG` in particular is what
+  splits the multiplier from the adder.
+- Pre-adder: `(a ± d) * b`, **signed**, on the 25-bit A path; the D port
+  is 25 bits and the pre-added operand may use all 25 including its
+  extra carry bit.
+- Accumulate in the 48-bit P path, and keep the path from multiply to
+  add unconditional — a condition between them drops the whole array
+  into fabric. Gate with the DSP's registered clock enable or a
+  `first`-flag load instead (A2).
+- `use_dsp = "simd"` gives `ONE48`/`TWO24`/`FOUR12` adds, but only with
+  the multiplier unused. Use the pattern detector for convergent
+  rounding, overflow/underflow and terminal-count auto-reset rather than
+  a fabric compare.
+- **No wide XOR** on DSP48E1 (that arrives with DSP48E2): CRC, parity
+  and LFSR reductions stay in LUTs here.
+- Cascades: ACIN/ACOUT 30 bits, BCIN/BCOUT 18, PCIN/PCOUT 48, plus
+  CARRYCASCADE and MULTSIGN for a 96-bit accumulate over two blocks.
+  Cascades are column-local and do not cross an SLR — a long adder tree
+  must be column-local or pipelined through fabric.
+- INT8: two products per block by designer-side packing with a **shared**
+  activation, shift `16 ≤ S ≤ 17` (because `8 + S ≤ 25`), and **no guard
+  bits**. Unpack every cycle, before any accumulation, and add the low
+  field's sign back into the high field; never accumulate the packed
+  value (A9, `shared/DesignPatterns.md`, "Packed multiply").
+- No native INT8 and no floating-point mode: FP is fabric or the
+  Floating-Point Operator IP.
+
+**5. Clocking.**
+- Buffer per job: `BUFG` for anything global (32 per device, per SLR on
+  SSI parts); `BUFH`/`BUFHCE` to keep a clock inside one region and save
+  a global line; `BUFR` for a regional clock that needs a divide;
+  `BUFIO` only for an I/O-bank-local capture clock (it reaches I/O
+  logic, not fabric); `BUFMR`/`BUFMRCE` to extend a regional clock over
+  three regions.
+- Per-region budget: **12** horizontal clock lines / BUFH — the
+  tightest of the three families. Count distinct clocks per region while
+  partitioning in `vharch`; more than 12 in one area is a placement
+  failure, not a timing one.
+- Generate every synchronous rate from one `MMCME2_ADV` (seven outputs,
+  fractional divide on CLKOUT0 and CLKFBOUT, CLKOUT6 cascading into
+  CLKOUT4 for a large divide, fine/dynamic phase shift) and use the
+  `PLLE2_ADV` (six outputs, no fractional divide, no inverted outputs)
+  for the plain jitter-filter jobs. One CMT = one MMCM + one PLL per
+  clock region. VCO range and the M/D limits are speed-grade dependent
+  — check DS181/DS182/DS183 for the part.
+- Never divide a clock in fabric: there is no auto-derived clock and no
+  buffer behind it (A5, A7).
+- Clock-enable idiom: `if rising_edge(clk) then if ce = '1' then`, one
+  CE net per wide stage. For power, gate a region at `BUFHCE`/`BUFR`/
+  `BUFMRCE` and a whole domain at `BUFGCE` — never in fabric (A11).
+
+**6. IO and SERDES.**
+- Pack an I/O register into ILOGIC/OLOGIC with `iob` (RTL) or the `IOB`
+  property: the register must be a plain flip-flop with no logic between
+  it and the pad, and the packed path must not fan out elsewhere.
+- `IDDR` supports OPPOSITE_EDGE, SAME_EDGE and SAME_EDGE_PIPELINED;
+  `ODDR` supports OPPOSITE_EDGE and SAME_EDGE. Prefer SAME_EDGE so both
+  half-words are available on one rising edge; SAME_EDGE_PIPELINED costs
+  a cycle of latency for a relaxed capture.
+- `ISERDESE2`/`OSERDESE2` reach 8:1 SDR, and 10:1/14:1 DDR only with
+  master/slave pairing (input) or width expansion (output). This is the
+  only one of the three families with 1:10/1:14, so an interface built
+  on those ratios has no direct UltraScale equivalent (UG1026).
+- `IDELAYE2` has 31 taps and requires an `IDELAYCTRL` per bank group fed
+  by a reference clock (200 MHz nominal, ≈78 ps per tap); `ODELAYE2`
+  exists in HP banks only, so an output-delay interface constrains the
+  bank choice before the RTL exists.
+- Bank rules that reach the RTL: one `IOSTANDARD` voltage family per
+  bank (HR ≤ 3.3 V, HP ≤ 1.8 V), DCI and ODELAY in HP only, clock inputs
+  on clock-capable pins, a differential pair on a P/N pin pair in one
+  bank. Spartan-7 and Artix-7 have HR banks only. Fix bank and pin
+  assignment before writing the I/O logic (A10).
+
+**7. Reset and CDC nuances.**
+- GSR sets every sequential cell to its `INIT` at the end of
+  configuration, and the release is asynchronous to every user clock —
+  apply A4 §6's remedies (clock enables or a synchronised reset on
+  state-holding logic, buffer CE gating until MMCM `LOCKED`, a delayed
+  release through an `ASYNC_REG` chain).
+- XPM_CDC, XPM_MEMORY and XPM_FIFO are available for this family from
+  UG953. The default `DEST_SYNC_FF` of 4 is conservative but 7-series
+  MTBF at high rates genuinely wants 3–4 stages: measure with
+  `report_synchronizer_mtbf` before reducing it (A6).
+- `async_reg` keeps a synchroniser chain in one slice — which here means
+  eight flip-flops sharing one control set, so give the chain no clock
+  enable and no reset.
+- No BRAM/URAM `SLEEP` on this family, so no sleep/wake interaction with
+  reset sequencing.
+
+**8. Floorplanning and SLR.**
+- SLR rules apply only to the largest Virtex-7 parts (DS180 lists the
+  SLR count per part); for every other 7-series part, **not applicable**
+  — Pblocks only on `CLOCKREGION` ranges and only for a demonstrated
+  congestion or locality problem (A10).
+- On the SSI parts, register both sides of every crossing with plain
+  flip-flops, and note that carry chains, BRAM cascades and DSP cascades
+  do **not** cross an SLR: wide arithmetic and memory columns must be
+  SLR-local by construction.
+- Clock region = 50 CLBs tall, one 50-pin I/O bank, ten RAMB36 and 20
+  DSP48E1 per column, one CMT. A block needing more than that per column
+  spreads over regions whatever a Pblock says — size Pblocks from those
+  numbers.
+
+**9. Migration notes.**
+- From Virtex-6 (UG429): the DSP48E1 is the same slice, so DSP RTL and
+  instantiations carry over; block RAM is 36 Kb-based with 18 Kb halves
+  as before; clock regions are larger, so a design that spanned two
+  Virtex-6 regions may fit one here; MMCM topologies usually need no
+  change.
+- From Spartan-6: the DSP is a different block (DSP48A1, 18×18 with an
+  18-bit pre-adder) — re-derive multiplier widths, pre-adder widths and
+  any packing for 25×18; `DCM_*` clock managers become MMCM/PLL, so
+  retarget every instantiated clock primitive.
+- General rule for any migration into this family: inferred RTL moves
+  unchanged and instantiated primitives are the work — which is the
+  argument for keeping primitives out of RTL in the first place
+  (`shared/VendorPolicy.md`).
+
+**10. Common mistakes on this family.**
+- Resetting a delay line or a memory output register, losing SRL/LUTRAM
+  extraction or the BRAM `DO*_REG`.
+- An asynchronous reset on DSP operand registers, which emulates the
+  multiplier in fabric (UG949's worked example).
+- Expecting `NO_CHANGE` in simple-dual-port mode: unavailable here, so
+  the power saving never appears in the report.
+- Assuming a free BRAM cascade — only 64K×1 cascades; every other deep
+  memory pays a fabric mux level.
+- Porting the UltraScale INT8 pack with `S = 18`: `8 + 18 > 25`, so the
+  high weight is silently truncated.
+- Carrying UltraScale adder widths per stage into a `CARRY4` family and
+  failing timing at a lower frequency.
+- Exhausting SLICEM (LUTRAM + SRL) while `Logic LUTs` still looks free.
+- Placing more than 12 distinct clocks in one clock region.
+- Writing `BUFH`/`BUFR`/`BUFIO`/`BUFMR` into RTL that is meant to
+  migrate to UltraScale, where none of them exist.
 
 ### B2. UltraScale and UltraScale+ (Kintex/Virtex UltraScale; Artix/Kintex/Virtex UltraScale+, Zynq UltraScale+ MPSoC, RFSoC)
 
@@ -1014,22 +1229,267 @@ larger EG/EV) plus four PS-GTR; RFSoC GTY — counts per part in DS890.
 nominal voltage (DS892 note). The 0.72 V operating point is where the
 DSP cascade and URAM Fmax footnotes apply.
 
-**Family-specific design advice.** Eight LUTs and `CARRY8` per slice
-halve the slice count of a wide adder relative to 7-series, and F9
-gives a 32:1 mux in one slice — but the two-reset/four-enable slice
-means a register group with a third reset net or a fifth enable net
-spills into another slice: group by control set. The 27-bit port is
-what makes two-per-DSP INT8 packing work with guard bits (7-series has
-none); the wide XOR makes CRC/parity/LFSR cheap in DSPs. URAM (where
-present) is the buffer for anything above a few Mb — 72-bit fixed,
-single-clock, no init, so plan the width and the pipeline (4 stages)
-in `vharch`. BRAM cascade is free within a column and clock region;
-`cascade_height` is the timing/power lever. 24 BUFGCE per region is
-generous, but every BUFGCE_DIV must share CE/RST with its siblings
-(A5). SSI parts: register both sides, plan SLR assignment per block in
-the architecture, keep no SLR above ~85 % of any resource (A9, A10).
-Migration from 7-series: UG1026 (buffers, SelectIO, DSP48E1→E2 are
-compatible; RAM SDP write modes gain NO_CHANGE).
+#### Design instructions
+
+**1. Timing and logic structure.**
+- Budget one pipeline stage as *one LUT level plus one carry chain*.
+  `CARRY8` is eight bits per slice, so a W-bit add/compare occupies
+  `ceil(W/8)` cascaded slices — half the 7-series span, so roughly
+  double the adder width fits one stage at the same period. Confirm with
+  `report_design_analysis -logic_level_distribution`; the width per
+  nanosecond is speed-grade and voltage dependent (DS892/DS893/DS923),
+  and the 0.72 V L grades are a separate operating point.
+- A `CARRY8` splits into two independent 4-bit chains (carry-in at bit 0
+  and at the midpoint), so two narrow adders share one slice — use it to
+  keep two lane-parallel counters together instead of spreading them.
+- Mux budget: 4:1 in one LUT6; **32:1 in one slice** as one LUT level
+  plus the F7/F8/F9 mux stages. Beyond 32:1 costs a LUT level and an
+  inter-slice route per factor of 32 — register there.
+- Control-set grouping is the binding constraint on this slice: **two
+  clocks and two set/reset nets** (one each per eight-flip-flop half,
+  A–D and E–H) and **four clock-enable groups** (per half × per Q1/Q2).
+  Synchronous versus asynchronous set/reset is chosen per half; set
+  versus reset per flip-flop; and if one register in a CE group uses CE,
+  all four must. Group registers by the `(clock, set/reset, enable)`
+  triple in the RTL — one enable per stage, not per signal — because a
+  group with a third reset net or a fifth enable net spills into another
+  slice while its LUTs sit free.
+- Retiming is **off** by default: request it with `-global_retiming on`
+  or move a specific register with `retiming_forward`/`_backward`. It is
+  blocked by a reset on the moved register, by `dont_touch`/`mark_debug`,
+  by exceptions on the path, by instantiated cells, and for port-driven
+  registers in out-of-context mode.
+
+**2. Registers, reset and enable.**
+- Sixteen flip-flops pack into one slice, but under at most two reset
+  nets and four enable nets. The cost of a third reset net in a logical
+  group is that the group is split across slices, inserting routing
+  between stages of the same pipeline; the cost of a fifth enable is the
+  same.
+- Latches take all eight flip-flops of a half or none: one inferred
+  latch costs half a slice (A2).
+- `SRLC32E` cascades to **256 deep inside one slice** via MC31/Q31, so
+  long delay lines are cheap here — but the SRL still has no reset, so
+  never reset one, and an SRL whose intermediate taps are read elsewhere
+  cannot be one SRL.
+- Distributed RAM reaches 512 bits per SLICEM; the array has no reset.
+- Never reset BRAM/URAM contents, SRLs, pipeline payload or the DSP48E2
+  A/B/C/D/AD/M/P registers. URAM specifically is only inferable when the
+  output reset, if present, is a synchronous reset to zero (A2).
+- Use declaration initial values for power-up state rather than a global
+  reset (GSR, A4 §1).
+
+**3. Memory.**
+- Register files, asynchronous reads and small wide tables → distributed
+  RAM (≤ 512 bits per SLICEM). Kb-scale → `RAMB18E2`/`RAMB36E2`. Large
+  single-clock buffers whose natural access is 72 bits → `URAM288`
+  (UltraScale+ only, and part-dependent; DS890).
+- Always add the BRAM output register. On URAM enable the pipeline
+  registers — **up to four stages per port** (input, output, `IREG_CAS`,
+  `OREG_CAS`) — because the URAM Fmax figure assumes them; put those
+  cycles in the latency budget before the RTL is written.
+- BRAM cascade is in hardware, bottom-up, **within one BRAM column and
+  one clock region**; beyond that Vivado inserts fabric muxing. URAM
+  cascades the full column height within an SLR (16 URAM per clock
+  region per column), with extra pipeline registers when a chain crosses
+  clock regions and fabric when it crosses columns. `cascade_height`
+  (and `-max_uram_cascade_height`) shortens a chain for timing or
+  lengthens it for power; UG901's default URAM chain limit is eight.
+- Read-during-write: **all three modes are now available in SDP as well
+  as TDP** (the 7-series restriction is gone), so a simple-dual-port
+  buffer can be NO_CHANGE. `WRITE_FIRST` uses the primitive's internal
+  bypass and is the timing-safe default; `NO_CHANGE` holds the output
+  register and is the low-power choice; `READ_FIRST` is cheapest for a
+  stream buffer. For an SDP RAM with a registered read address the
+  choice is made by `rw_addr_collision` (A2/A3). URAM's native mode is
+  NO_CHANGE.
+- ECC: 64-bit SECDED per 36 Kb block in ×64 SDP only and mutually
+  exclusive with byte writes; URAM has per-port SECDED **with** byte
+  writes, which is the reason to put an ECC-protected byte-addressable
+  buffer in URAM.
+- URAM rules that constrain the RTL, not just the constraints:
+  **single clock** (a dual-clock buffer must be BRAM or must have the
+  crossing in front of the URAM), **fixed 72-bit width** (pack the
+  payload to a multiple of 72 or waste the remainder), **no `INIT`**
+  (an initialised table cannot be URAM), and two ports each performing
+  one read *or* one write per cycle, so a read-and-write per cycle
+  consumes both ports.
+- Prefer `FIFO18E2`/`FIFO36E2` (asymmetric ×4…×72 ports, FWFT,
+  synchronous reset, cascadable) or `xpm_fifo_*` over a hand-built
+  pointer FIFO.
+- `SLEEP` on BRAM and URAM saves power over long idle periods; check
+  UG573 for the wake-up latency before designing a duty cycle around it,
+  and sequence it from a small FSM rather than a combinational term
+  (A11).
+
+**4. DSP.**
+- Enable AREG/BREG (1 or 2, with `ACASCREG`/`BCASCREG` consistent),
+  DREG and ADREG when the pre-adder is used, MREG and PREG. The
+  data-sheet DSP48E2 Fmax is the fully pipelined figure and the
+  low-voltage grades carry their own footnotes.
+- Pre-adder: `(a ± d) * b`, **signed**, on the **27-bit** A path with a
+  27-bit D port. The extra two bits over 7-series are exactly what make
+  a two-product INT8 pack fit with guard bits.
+- Accumulate in the 48-bit ALU, 96 bits across two slices via
+  PCOUT + CARRYCASCOUT + MULTSIGN. Keep the multiply-to-add path
+  unconditional and gate with the DSP's registered clock enable or a
+  `first`-flag load.
+- `use_dsp = "simd"` for dual-24 / quad-12 adds with the multiplier
+  unused; `use_dsp = "logic"` for the **wide XOR** (up to 96 bits in one
+  slice, 192 across two) — put CRC, parity and LFSR reductions there
+  instead of a LUT tree. Use the pattern detector for convergent
+  rounding, counter auto-reset, overflow/underflow and the 96-bit
+  AND/NOR test.
+- INT8 (WP486): two products per block through the **pre-adder** as
+  `p = (a << 18) + b` with the shared 8-bit activation on the 18-bit B
+  port. The shift of 18 leaves **two guard bits** above the 16-bit low
+  product, so at most **seven** packed products may be accumulated
+  inside the DSP before the low field corrupts the high one — either
+  spend one extra DSP per seven (WP486's 14 MACs per 8 DSPs) or unpack
+  every cycle in fabric and accumulate outside, which removes the bound.
+  Add the low field's sign bit back into the high field on unpack.
+- Cascades ACIN/BCIN/PCIN/CARRYCASCIN are column-local and do not cross
+  an SLR; `-cascade_dsp tree|force` shapes an adder tree into them. A
+  cascade crossing a clock-region centre at the low-voltage grade may
+  run below the data-sheet Fmax — keep a cascade chain region-local or
+  break it with a fabric register.
+
+**5. Clocking.**
+- Buffer per job: `BUFGCE` for every ordinary global clock (24 per
+  region); `BUFGCTRL` only for clock muxing (8 per region), and only
+  between asynchronous clocks (A5); `BUFGCE_DIV` for an integer divide
+  that must stay phase-related to its parent (4 per region — no CDC and
+  no MMCM phase error between the two); `BUFG_GT` (with `BUFG_GT_SYNC`,
+  divide 1–8) for transceiver clocks. `BUFCE_LEAF` is the tool-inserted
+  leaf-level buffer — do not instantiate it.
+- `BUFH`, `BUFR`, `BUFIO` and `BUFMR` **do not exist**: retarget
+  BUFH → BUFGCE, BUFIO → BUFGCE, BUFR/BUFMR → `BUFGCE_DIV` (UG1026).
+- Per-region budget: 24 clocks, because the region has 24 horizontal and
+  24 vertical routing tracks plus 24 + 24 distribution tracks and the
+  buffers share them. The buffer count is not the limit — the tracks
+  are.
+- CMT = **one MMCM + two PLLs** per I/O bank (`MMCME3`/`PLLE3` on
+  UltraScale, `MMCME4`/`PLLE4` on UltraScale+). The PLLs are reduced
+  relative to 7-series — no phase compensation, no external feedback,
+  fewer outputs (UG572 "Key Differences from 7 Series FPGAs") — so put
+  anything needing phase shift or deskew on the MMCM and leave the PLLs
+  for jitter filtering and I/O clocks. MMCM output frequency can be
+  changed dynamically (clock-divide dynamic change, or DRP) without
+  resetting the MMCM. VCO range and M/D limits are per speed grade and
+  voltage — check DS892/DS893/DS923.
+- Parallel `BUFGCE_DIV`s must share CE and RST, or their divided phases
+  diverge after a reset (A5).
+- Clock-enable idiom unchanged; gate a whole domain at
+  `BUFGCE`/`BUFGCE_DIV`/`BUFG_GT` CE for power, never in fabric.
+
+**6. IO and SERDES.**
+- Pack an I/O register into the I/O logic with `iob` / `IOB TRUE`;
+  the register must be plain and must not fan out beyond the pad path.
+- `IDDRE1`/`ODDRE1` replace `IDDR`/`ODDR` with the same capture modes
+  but **fewer pins**: IDDRE1 loses CE and S; ODDRE1 loses CE, R and S
+  (UG571). An I/O DDR register therefore cannot be enabled or reset —
+  put the enable and the reset in the first fabric stage behind it.
+- `ISERDESE3`/`OSERDESE3` stop at **1:4 SDR / 1:8 DDR**; there is no
+  1:10 or 1:14. Anything faster or wider uses the bit-slice native mode
+  (`RX_BITSLICE`, `TX_BITSLICE`, `RXTX_BITSLICE`, `BITSLICE_CONTROL`),
+  which brings its own auto-derived clocks (A7) and a documented
+  bring-up/reset sequence — design it as an IP block with a state
+  machine, not as a primitive drop-in.
+- Native and non-native mode I/O may not be mixed freely within a nibble
+  (UG571) — assign pins per nibble before writing the I/O logic.
+- `IDELAYE3`/`ODELAYE3` support a COUNT (tap) and a TIME (picosecond)
+  delay format; the TIME format depends on the calibration flow
+  (`BITSLICE_CONTROL`/`IDELAYCTRL` plus a reference clock, UG571 "Delay
+  Calibration") — check UG571 for the tap count and reference-clock
+  range of the part. ODELAY is HP-bank only.
+- Banks are HP, HR **and HD** (HD on Artix/Spartan UltraScale+ and
+  Kintex UltraScale+ Gen 2), 52 pins each: HP up to 1.8 V with
+  DCI/ODELAY, HR to 3.3 V without DCI, HD lower-rate with no DCI, no
+  ODELAY and no bit-slice — never plan a source-synchronous interface on
+  an HD bank (A10).
+
+**7. Reset and CDC nuances.**
+- GSR behaviour and the startup remedies are unchanged from 7-series
+  (A4 §6): synchronise the release, or gate state-holding logic with CE
+  until `LOCKED`.
+- XPM_CDC, XPM_MEMORY and XPM_FIFO come from UG974. `DEST_SYNC_FF`
+  defaults to 4; UltraScale+ tolerates fewer stages for the same MTBF,
+  but reduce it only against `report_synchronizer_mtbf`, and never below
+  2 (A6).
+- `async_reg` forces the chain into one slice — and one slice half here
+  is eight flip-flops under a single set/reset net, so a synchroniser
+  that carries a reset consumes that half's reset net. Keep synchroniser
+  chains resetless and enable-less.
+- BRAM/URAM `SLEEP` must be deasserted and the wake-up latency waited
+  out before the first access; that sequencing needs its own reset, so
+  it belongs in control logic, not the datapath.
+
+**8. Floorplanning and SLR.**
+- Applicable on the SSI parts listed above. Map a register-to-register
+  SLR crossing onto a Laguna `TX_REG` driving a Laguna `RX_REG`
+  directly on UltraScale+ (on UltraScale only one side can be Laguna),
+  and mark both cells `USER_SLL_REG TRUE`. Those registers must be plain
+  flip-flops — no reset, no clock enable — and must fan out to one SLR
+  only, or the property is ignored. Wide buses above 250 MHz need three
+  stages (source SLR, Laguna, destination SLR). Query capacity with
+  `get_property NUM_TOP_SLLS [get_slrs …]`.
+- Carry chains, BRAM cascades, DSP cascades and URAM cascades are all
+  column-local and none of them crosses an SLR: partition wide
+  arithmetic and large buffers per SLR in the architecture, not in the
+  floorplan.
+- Clock region: 60 CLBs tall, 24 DSP48E2 and 12 RAMB36 per column, 16
+  URAM per column, 52 I/O per bank. Size Pblocks on `CLOCKREGION`
+  ranges from those numbers; a block needing more of a hard resource
+  than a region holds will spread regardless.
+- Keep no SLR above ~85 % of any resource even when the device average
+  is comfortable, and root clocks that span SLRs in the centre SLR
+  (A9, A10).
+
+**9. Migration notes.**
+- From 7-series (UG1026). Inferred RTL migrates unchanged; instantiated
+  primitives are the work. `CARRY4` instances map into `CARRY8`
+  automatically — convert them only where dense packing matters.
+- Clocking: BUFH/BUFR/BUFIO/BUFMR are gone (item 5); PLLs lose phase
+  compensation, external feedback and outputs; clock regions become
+  rectangular tiles instead of half-device rows; clock-capable (CC) pins
+  become global-clock (GC) pins, so re-check pin assignment.
+- SelectIO is redesigned: the 1:10/1:14 SERDES ratios disappear in
+  favour of bit-slice native mode; IDDR/ODDR become IDDRE1/ODDRE1 with
+  fewer control pins; IDELAYE2 → IDELAYE3 with a new calibration flow.
+- Memory: SDP gains NO_CHANGE; BRAM gains the hardware column cascade
+  and `SLEEP`; FIFO18/36E1 → E2 with asymmetric ports; UltraScale+ adds
+  URAM, so revisit any 7-series design that used external memory for a
+  few-Mb buffer.
+- DSP48E1 → DSP48E2 is backwards compatible, but the pre-adder widens
+  25 → 27 bits and the wide XOR is new: re-derive the INT8 pack for
+  `S = 18` with guard bits instead of porting the `S ≤ 17` version.
+- Control sets loosen from one clock/reset/enable per slice to two
+  resets and four enables: a 7-series design that was control-set-bound
+  may now pack, and keeping register groups artificially small buys
+  nothing.
+- Core voltage drops (0.95 V UltraScale, 0.85 V UltraScale+, 0.72 V for
+  the L grades) — re-baseline timing rather than scaling the 7-series
+  numbers by speed grade.
+
+**10. Common mistakes on this family.**
+- `set_clock_groups -asynchronous` across a crossing that contains an
+  XPM_CDC macro or a project resync block: it overrides their scoped
+  `set_max_delay -datapath_only` and the crossing becomes unbounded
+  (A6).
+- A third reset net or a fifth enable net inside what was meant to be
+  one slice-wide register group.
+- Expecting an initialised, dual-clock or non-72-bit memory to become
+  URAM: it silently stays BRAM. Check the utilisation report.
+- Omitting URAM's up-to-four pipeline cycles from the latency budget, or
+  assuming a URAM port can read and write in the same cycle.
+- Reusing a 7-series 1:10/1:14 SERDES ratio, or putting a clock enable
+  or reset on an `IDDRE1`/`ODDRE1` pin that no longer exists.
+- Laguna crossing registers with a reset or a clock enable — not
+  packable, so the crossing routes through fabric.
+- Assuming a BRAM cascade works across clock regions or columns.
+- Accumulating more than seven packed INT8 products inside a DSP.
+- Parallel `BUFGCE_DIV`s with independent CE/RST.
+- Planning a source-synchronous interface on an HD bank.
 
 ### B3. Versal adaptive SoC (AI Core, AI Edge, Prime, Premium, HBM; Gen 2)
 
@@ -1156,19 +1616,269 @@ class (L/M/H) + static-power screen (S standard / L low) + temperature
 documented as "production" — do not expand it. Per-family tables in
 DS957 (AI Core), DS958 (AI Edge), etc.
 
-**Family-specific design advice.** Design methodology changes when hard
-blocks exist: memory bandwidth, PS traffic and cross-die transport move
-to the NoC (fabric AXI interconnect shrinks to local glue); dense INT8
-inference belongs in AI Engines or DSP58 `INT8` mode (3 products/DSP,
-no packing arithmetic), FP32 in `DSPFP32`; the 58-bit accumulator
-removes most guard-bit gymnastics. `-global_retiming` is on by default
-for Versal — write resetless datapath registers so it can work. Wide
-muxes cost LUT cascades, not F7/F8 — budget a LUT level per 2:1 beyond
-what one LUT6 absorbs. Read `LOOKAHEAD8` logic levels as 1–2 LUT delays.
-Control sets are coarser: plan reset/enable groups per 8-FF carry
-group. UG1387 "Avoid Unnecessary Pipelining" — the CLB is bigger and the
-interconnect (and, where present, IMUX registers) faster; measure before
-adding stages. `power_opt_design` is not available.
+#### Design instructions
+
+**1. Timing and logic structure.**
+- Budget one pipeline stage as *one LUT level plus one carry chain*.
+  `LOOKAHEAD8` is eight bits per slice (32 bits of carry per CLB, since
+  a CLB is four slices), so a W-bit add occupies `ceil(W/8)` slices as
+  on UltraScale — but read the histogram differently: a `LOOKAHEAD8` is
+  reported as several logic levels and costs **one to two LUT delays**
+  (UG1788/UG1387). Do not pipeline a chain because the level count looks
+  high. A chain may start at bit 0 or bit 4, so two narrow adders share
+  a slice.
+- **There are no `MUXF7`/`MUXF8`/`MUXF9`.** A wide mux is a dedicated
+  LUT→LUT cascade (O6 into the next LUT's A5 input, A→B→…→H within the
+  slice). One LUT6 still gives 4:1; each further factor of four costs a
+  cascade hop instead of a free mux stage. Budget a LUT level per ×4
+  beyond the first, and prefer a registered one-hot select, a decoded
+  enable, or a small LUTRAM/BRAM lookup over a 16:1 or 32:1 mux that was
+  free on UltraScale.
+- Control-set grouping: clock and set/reset are **coarser** than
+  UltraScale — four clocks and four SR nets per CLB, shared by the eight
+  LUT/flip-flop pairs on one carry chain — so a distinct reset net costs
+  a whole carry group rather than a slice half. AM005's "Differences
+  from Previous Generations" states that "control sets for CLK and SR
+  are at a coarser granularity, but CE stays the same"; follow AM005 and
+  group registers by clock and reset first, by enable second (the
+  architecture note above reads the CE granularity more pessimistically
+  — treat CE as unchanged from UltraScale, four groups per slice, and
+  verify with `report_control_sets`).
+- **IMUX registers**, where the part has them, are registers at the
+  interconnect/CLB boundary and at hard-block inputs (192 IMUX plus 64
+  bypass per CLB) with CE and synchronous or asynchronous reset but no
+  set and no init-to-1. The tools use them for hold fixing and as free
+  pipeline stages. Never design a pipeline whose stage count depends on
+  them: they are absent on the first-generation parts and on Gen 2
+  (check AM005 for the part).
+- Retiming: `-global_retiming` defaults to **on** for Versal. Write
+  resetless datapath registers so the tool can move them; a reset,
+  `dont_touch`, `mark_debug` or a timing exception on a datapath
+  register silently disables this family's default optimisation.
+- UG1387 "Avoid Unnecessary Pipelining": the CLB is four times larger
+  and the interconnect faster, so measure the logic-level histogram
+  before adding a stage — an unnecessary stage costs a control set and a
+  cycle of latency for nothing.
+
+**2. Registers, reset and enable.**
+- A slice holds 8 LUTs and 16 flip-flops; a CLB holds four slices, 32
+  LUTs and 64 flip-flops. Because clock and SR are shared across an
+  eight-flip-flop carry group, a second reset net costs a whole carry
+  group; a distinct enable costs four flip-flops.
+- Exactly **half** a CLB's LUTs are SLICEM (LUTRAM/SRL-capable): 16 of
+  32 — a better ratio than 7-series (about a third) — but LUTRAM and
+  SRLs still compete for the same LUTs, so read `LUTRAMs` and `SRLs`
+  separately (A9).
+- SRL32 or two SRL16 per SLICEM LUT and 64-bit LUTRAM per LUT; neither
+  has a reset. Never reset a delay line or a memory array.
+- Never reset BRAM/URAM contents, SRLs, pipeline payload or the DSP58
+  registers. On this family the cost is higher than elsewhere, because a
+  reset on a datapath register also blocks the default global retiming.
+- A register that must come up as '1' cannot live in an IMUX register
+  (no set, no init-to-1) — keep it in the slice flip-flops and state
+  that dependence where it matters.
+
+**3. Memory.**
+- LUTRAM (64 bits per LUT) for register files and asynchronous reads;
+  `RAMB18E5`/`RAMB36E5` for Kb-scale; `URAM288E5` for large buffers
+  whose natural access is 72 bits (present on most parts, typically 24
+  per clock region per column). `rom_style = "ultra"` is available here
+  for a large ROM.
+- Accelerator RAM (XRAM: 4 MB, ECC, three 256-bit AXI ports, some AI
+  Edge parts) and Multiport RAM (MPRAM, Premium VP1902 only) are
+  block-design resources reached over AXI, never inferred from HDL.
+- **External DDR is reached only through the hard DDRMC on the NoC.** Do
+  not plan a soft memory controller in fabric; plan an AXI master and an
+  NMU instead.
+- Always use the BRAM output register (the block also offers a latched
+  output — prefer the registered form). On URAM enable the input and
+  output pipeline registers (up to four stages per port) and put those
+  cycles in the latency budget.
+- Cascade with `CASCADE_ORDER` and CASDIN/CASDOUT on BRAM and with the
+  column cascade on URAM; `cascade_height` remains the timing-versus-
+  power lever (A3, A11).
+- Read-during-write modes and their costs are as UltraScale: all three
+  in both TDP and SDP, `WRITE_FIRST` timing-safe by default,
+  `NO_CHANGE` lowest power, `READ_FIRST` cheapest for a stream buffer;
+  URAM's native mode is NO_CHANGE, single clock, no `INIT`, fixed
+  72-bit width.
+- ECC is one 64-bit code per 36 Kb block with **standard, encode-only
+  and decode-only** variants — the split variants let the encoder and
+  the decoder sit at opposite ends of a link, which the earlier families
+  cannot do.
+- **There is no hard FIFO primitive** (AM007 lists none). Every FIFO is
+  `xpm_fifo_sync`/`xpm_fifo_async` or a project block over BRAM/URAM; a
+  design that instantiated `FIFO18E2`/`FIFO36E2` must be rewritten.
+
+**4. DSP.**
+- Enable the input, product and output pipeline registers as on the
+  earlier families; the DSP58 is backwards compatible with DSP48E2, so
+  an existing multiply/MAC infers unchanged.
+- 27×24 signed multiply with a 27-bit pre-adder (A 34 bits, B 24, C 58,
+  D 27) and a **58-bit** accumulator (116 bits by cascading two). The
+  wider accumulator removes most guard-bit and saturation gymnastics:
+  size the accumulator from the loop bound instead of packing tricks.
+- `DSP_MODE = "INT8"` is **native**: a three-term dot product
+  `a0·b0 + a1·b1 + a2·b2` with 9-bit signed `a_i` and 8-bit signed
+  `b_i` from six *independent* inputs, with accumulate or post-add.
+  Three products per DSP, no shared operand, no shift, no guard bits and
+  no unpacking — prefer it over any designer-side packing. Whether a
+  sum-of-three-products in RTL infers the mode is a UG901 question for
+  the tool version in use; instantiating `DSP58` with
+  `DSP_MODE = "INT8"` is the certain route. Verify the DSP count and the
+  mode in the utilisation report either way.
+- `DSPFP32` for floating-point MAC (binary32 or binary16 multiplicand
+  and multiplier, adder always binary32, round-to-nearest-even only, and
+  **no bfloat16** — bfloat16 lives in AIE-ML, not in the fabric DSP);
+  `DSPCPLX` for an 18×18 complex MAC over two adjacent DSP58s.
+- Without the multiplier: SIMD dual-24 / quad-12 (`use_dsp = "simd"`), a
+  58-bit logic unit, a wide XOR up to 116 bits (`use_dsp = "logic"`) and
+  a 23-bit right shift — use them for vector adds, CRC/LFSR and
+  fixed-point scaling.
+- Cascades ACOUT/BCOUT/PCOUT/MULTSIGNOUT/CARRYCASCOUT are column-local
+  as before; keep a cascade chain inside one column.
+- Dense INT8/INT16 inference at scale belongs in the **AI Engines**, not
+  the DSP column: the fabric DSP is for pre/post-processing and for
+  shapes the AIE array cannot take.
+
+**5. Clocking.**
+- There is no CMT. Buffer/generator per job (AM003): the **MMCME5** for
+  general frequency synthesis, jitter filtering and deskew (sigma-delta
+  fractional divide, two deskew phase detectors, no inverted outputs);
+  the **DPLL** — one per MMCM block, plus standalone DPLLs near HDIO and
+  GT columns — for the same duties when the output feeds the general
+  interconnect; the **XPLL** (two per XPIO bank, four outputs, no
+  fractional divide; `X5PLL` on Gen 2) for PHY/I/O clocking only.
+- Deskew constrains timing *analysis*, not just quality: an MMCM/XPLL
+  output is safely timeable against CLKIN for `CLKOUTx_PHASE_CTRL` 00
+  or 10 unconditionally, while the deskewing settings 01 and 11 are
+  analysable only when the matching phase detector (PD1 or PD2) is
+  active, and two deskewed outputs must share the same
+  `CLKOUTx_DIVIDE`. Check AM003 "Safe Timing Clocking Topologies for
+  MMCM and XPLL" before choosing a deskew topology.
+- Buffers: `BUFGCE` for global clocks, `BUFGCTRL` for muxing,
+  `BUFGCE_DIV` for a synchronous integer divide, `BUFG_GT` for
+  transceiver clocks, `BUFG_PS` for the up-to-12 PS clocks, and the
+  `MBUFG*` variants for leaf-level division. `BUFG_FABRIC` is for
+  high-fanout **non-clock** nets (higher jitter, no deskew) — use it to
+  broadcast a reset or a global enable, never for a clock.
+- Per-region budget: 24 horizontal distribution tracks, hence 24 clocks
+  per region, plus 12 horizontal and 24 vertical routing tracks. Global
+  clock pins: four per XPIO bank, two per HDIO bank — so a clock input
+  on an HDIO bank is a scarce resource.
+- Clock-enable idiom unchanged, and it matters more here:
+  **`power_opt_design` is not available on Versal**, so clock-enable and
+  block-RAM enable gating must be written into the RTL rather than
+  inserted by the tool (A11).
+
+**6. IO and SERDES.**
+- Pack an SDR I/O register into the IOL by instantiating `FDRE`/`FDSE`/
+  `FDCE`/`FDPE` with `IOB = TRUE` on the instance (AM010) — the same
+  idiom as the earlier families, with the primitive named explicitly.
+- DDR: `ODDRE1` supports **only SAME_EDGE** on this family (both bits
+  presented on the rising edge, which saves CLB and clock resources);
+  IDDR modes are listed in AM010. If the data path uses `ODDRE1` the
+  tristate path **must also** use `ODDRE1` — a mixed data/tristate
+  registering structure is not allowed.
+- High-speed source-synchronous interfaces use the **XPHY**: nine XPHY
+  nibbles per XPIO bank, six NIBBLESLICEs each (54 pins per bank), each
+  nibbleslice containing a serialiser, a deserialiser, I/O delays and a
+  receive FIFO. Delays are trimmed by per-nibble built-in
+  self-calibration (BISC) and are adjustable from the PL through the
+  nibble's register interface unit (RIU). Check AM010 for the
+  serialisation ratios and modes before fixing the fabric bus width.
+- Delay resources are the uncalibrated input/output delay primitives
+  plus the BISC-managed XPHY delays (AM010): there is no
+  `IDELAYCTRL`-plus-reference-clock arrangement to build as on the
+  earlier families.
+- Bank rules that reach the RTL: XPIO (high-performance, XPHY, 54 pins,
+  four GC pins) versus HDIO (lower rate, two GC pins, no XPHY). Decide
+  which interface lives in which bank type before writing the I/O logic,
+  and never plan a source-synchronous interface on HDIO (A10).
+
+**7. Reset and CDC nuances.**
+- Power-up initialisation is driven by the PMC/PLM as it loads the PDI
+  rather than by a user-visible GSR net, but the consequence for RTL is
+  identical to A4 §6: registers come up at their `INIT` value and the
+  release is asynchronous to every user clock, so gate state-holding
+  logic with a clock enable or a synchronised reset until the
+  MMCM/DPLL has locked. See AM011 "Resets Overview" and UG1273 "Boot and
+  Configuration" for the sequence.
+- XPM_CDC, XPM_MEMORY and XPM_FIFO are available for this family
+  (UG1344), and XPM_CDC is the recommended crossing circuitry.
+  XPM_FIFO is also the *only* FIFO macro here, since there is no hard
+  FIFO.
+- `async_reg` applies as before; because clock and set/reset are shared
+  across a carry group, keep synchroniser chains resetless and
+  enable-less so a chain can share one group.
+- The `-global_retiming on` default interacts with hand-written delay
+  lines: `async_reg` implies `dont_touch` and so protects a
+  synchroniser, but a plain N-cycle delay whose stage count is
+  functionally required is not protected — mark it `dont_touch` or make
+  it an SRL.
+
+**8. Floorplanning and SLR.**
+- Applicable on the multi-die parts (check DS950 per part). AM005: the
+  super-long-line (SLL) connections are now **part of the CLB** rather
+  than a dedicated Laguna column, so an SLR crossing is registered in
+  ordinary CLB registers. Still register both sides with plain
+  flip-flops and still assign blocks with `USER_SLR_ASSIGNMENT` or an
+  SLR Pblock, but the placement is less special-cased than the
+  UltraScale+ Laguna pairing.
+- The NoC changes what floorplanning is for: cross-die and
+  to-memory traffic travels over the hard NoC, not the fabric, so
+  partition data movement by NMU/NSU access and keep only
+  latency-critical fabric-to-fabric paths SLR-local.
+- Clock regions carry 24 clocks; URAM is typically 24 per region per
+  column. Size Pblocks on `CLOCKREGION` ranges and expect a block that
+  needs more of a hard resource than a region holds to spread (A10).
+
+**9. Migration notes.**
+- From UltraScale+. Inferred RTL migrates and DSP48E2 code infers DSP58
+  unchanged; re-derive INT8 as the native three-term dot product instead
+  of a two-per-DSP pack, because the packing arithmetic becomes pure
+  overhead.
+- `MUXF7`/`MUXF8`/`MUXF9` instances have no equivalent: delete them and
+  let the LUT cascade build the mux, then re-check any path that relied
+  on a 32:1 mux being one slice.
+- `CARRY8` → `LOOKAHEAD8`: inferred adders are unchanged, instantiated
+  `CARRY8` must be retargeted.
+- Replace `FIFO18E2`/`FIFO36E2` instances with `xpm_fifo_*`.
+- Clocking: no CMT, so `MMCME3`/`MMCME4` and `PLLE3`/`PLLE4` instances
+  become `MMCME5`/`DPLL`/`XPLL` — the Clocking Wizard is the safe route.
+- SelectIO: `ISERDESE3`/`OSERDESE3` and the UltraScale bit-slice become
+  the XPHY; `ODDRE1` keeps only SAME_EDGE; `IDELAYE3`/`ODELAYE3` and
+  their calibration flow become the uncalibrated delay primitives plus
+  BISC.
+- `power_opt_design` is gone: move block-RAM enable gating and register
+  CE gating into the RTL.
+- Retiming turns on by default, so a design that carried resets on
+  datapath registers gains nothing until they are removed.
+- The PS/NoC boundary replaces the Zynq HP ports: no `S_AXI_HP*`,
+  128-bit maximum on PS AXI, and PL-to-DDR bandwidth through NMUs (B4).
+
+**10. Common mistakes on this family.**
+- Building a 16:1 or 32:1 mux and expecting the UltraScale F8/F9 cost —
+  it is a LUT cascade here.
+- Reading `LOOKAHEAD8` logic levels literally and pipelining a path that
+  already meets timing (UG1387 "Avoid Unnecessary Pipelining").
+- Leaving resets on datapath registers and so defeating the family's
+  default global retiming.
+- Instantiating `FIFO36E2`, `MUXF8`, `CARRY8`, `IDELAYCTRL` or
+  `MMCME4` — none of them exist here.
+- Designing a pipeline that assumes IMUX registers, which are absent on
+  the first-generation and Gen 2 parts.
+- Planning a soft DDR controller, or a fabric AXI interconnect for
+  memory and PS traffic, instead of the NoC — and then forgetting that
+  the NMU boundary is an asynchronous crossing that needs a registered
+  AXI interface and bursts sized for the 128-bit packet.
+- Expecting `power_opt_design` to insert block-RAM enable gating.
+- Using `ODDRE1` in OPPOSITE_EDGE mode, or mixing an `ODDRE1` data path
+  with a non-`ODDRE1` tristate path.
+- Carrying an UltraScale reset/enable grouping over unchanged: clock and
+  set/reset are coarser here, so the same RTL fragments differently.
+- Treating the AI Engine array as fabric — it is a peer accelerator
+  reached over AXI4-Stream PLIO and the NoC.
 
 ### B4. Zynq-7000 and Zynq UltraScale+ MPSoC — PS/PL boundary (brief)
 
@@ -1228,6 +1938,9 @@ adding stages. `power_opt_design` is not available.
 | Clocks per region | 12 (BUFH lines); 32 BUFG per device/SLR | 24 (24 BUFGCE + 8 BUFGCTRL + 4 BUFGCE_DIV per region) | 24 | 24 distribution tracks; BUFGCE/BUFGCTRL/BUFGCE_DIV + BUFG_PS/BUFG_FABRIC |
 | Clock generation | CMT = 1 MMCME2 + 1 PLLE2 | CMT = 1 MMCME3 + 2 PLLE3 | CMT = 1 MMCME4 + 2 PLLE4 | no CMT: MMCME5 + DPLL, XPLL per XPIO bank |
 | SERDES max ratio | 8 SDR / 14 DDR (paired) | 4 SDR / 8 DDR | 4 SDR / 8 DDR | XPHY bit-slice logic (see the Versal SelectIO guide) |
+| DDR I/O primitive | `IDDR` / `ODDR`, OPPOSITE_EDGE + SAME_EDGE (+ SAME_EDGE_PIPELINED on input) | `IDDRE1` / `ODDRE1`, same modes but no CE/S (ODDRE1 also no R) | same | `ODDRE1` SAME_EDGE only; tristate path must use the same structure |
+| I/O delay | `IDELAYE2` 31 taps + `IDELAYCTRL` REFCLK (~78 ps/tap at 200 MHz); `ODELAYE2` HP banks only | `IDELAYE3`/`ODELAYE3`, COUNT or TIME format (TIME needs the calibration flow); ODELAY HP only | same | uncalibrated delay primitives + per-nibble BISC inside the XPHY; no IDELAYCTRL |
+| SLR crossing register | Laguna (largest Virtex-7 only) | Laguna, one side of the crossing | Laguna `TX_REG` → `RX_REG`, both sides, `USER_SLL_REG` | SLL is part of the CLB (AM005) — ordinary CLB registers |
 | Core voltage (base grades) | 1.0 V | 0.95 V (−3E 1.0 V) | 0.85 V (−3E 0.90 V; L grades 0.72 V) | L 0.70 / M 0.80 / H 0.88 V classes |
 | SSI / SLR | Virtex-7 largest parts (DS180) | KU085/KU115, VU125–VU440 | VU5P–VU13P, VU35P/37P, HBM | check DS950 per part |
 | Hard NoC / DDR | no | no | no | yes (PG313) |
@@ -1305,6 +2018,9 @@ it, and the text above says so.
 - UG471 7 Series FPGAs SelectIO Resources User Guide, v1.10 (2018-05-08).
 - DS180 7 Series FPGAs Data Sheet: Overview, v2.6.1 (2020-09-08) —
   product tables, speed grades, transceivers.
+- UG429 7 Series FPGAs Migration Methodology Guide, v1.2 (2018-04-04)
+  — migration into the 7-series family from Virtex-6/Spartan-6
+  (clocking regions, MMCM, block RAM, DSP pointers).
 - UG585 Zynq 7000 SoC Technical Reference Manual, v1.15 (2026-02-06);
   PG082 Processing System 7 v5.3 Product Guide — PS/PL ports, FCLK.
 - UG574 UltraScale Architecture Configurable Logic Block User Guide,
@@ -1315,9 +2031,15 @@ it, and the text above says so.
 - UG573 UltraScale Architecture Memory Resources User Guide, v1.14
   (2025-11-18) (some detail from the v1.9 PDF).
 - UG572 UltraScale Architecture Clocking Resources User Guide, v1.11
-  (2025-05-29) (some detail from the v1.7 PDF); UG1026 UltraScale
-  Architecture Migration Methodology Guide, v1.5.
-- UG571 UltraScale Architecture SelectIO Resources User Guide, v1.16;
+  (2025-05-29) (some detail from the v1.7 PDF), "Key Differences from
+  7 Series FPGAs" (buffer removals, reduced PLLs, `BUFCE_LEAF`,
+  rectangular clock regions, CC→GC pins); UG1026 UltraScale
+  Architecture Migration Methodology Guide, v1.5 (CARRY4→CARRY8,
+  SelectIO retargeting).
+- UG571 UltraScale Architecture SelectIO Resources User Guide, v1.16 —
+  IDDRE1/ODDRE1 pin differences, ISERDESE3/OSERDESE3 ratios, bit-slice
+  native mode and its bring-up/reset, IDELAYE3/ODELAYE3 delay formats
+  and delay calibration, nibble mixing rules;
   UG570 UltraScale Architecture Configuration User Guide, v1.9.1 (SSI
   table).
 - DS890 UltraScale Architecture and Product Data Sheet: Overview, v4.10
@@ -1327,12 +2049,21 @@ it, and the text above says so.
 - UG1085 Zynq UltraScale+ Device Technical Reference Manual, v2.5
   (2025-03-21); PG201 Zynq UltraScale+ Processing System v3.5.
 - AM005 Versal Adaptive SoC Configurable Logic Block Architecture
-  Manual, v1.4 (2025-05-14).
+  Manual, v1.4 (2025-05-14), including "Differences from Previous
+  Generations" (4× CLB, LUT→LUT cascade, no MUXF7/F8/F9, IMUX
+  registers, coarser CLK/SR control sets with CE unchanged, SLL
+  connections moved into the CLB).
 - AM004 Versal ACAP DSP Engine Architecture Manual, v1.2.1 (2022-09-11).
 - AM007 Versal Adaptive SoC Memory Resources Architecture Manual, v1.2.1
   (2026-06-05).
 - AM003 Versal Adaptive SoC Clocking Resources Architecture Manual, v1.6
-  (2026-06-09).
+  (2026-06-09), including "Clock Management MMCM, XPLL, and DPLL"
+  (which block for which job) and "Safe Timing Clocking Topologies for
+  MMCM and XPLL" (`CLKOUTx_PHASE_CTRL` and phase-detector rules).
+- AM010 Versal Adaptive SoC SelectIO Resources Architecture Manual,
+  2026.1 — XPIO/HDIO banks, XPHY nibbles and NIBBLESLICEs, BISC and
+  the RIU, SDR flip-flop packing with `IOB = TRUE`, IDDR/ODDR modes,
+  uncalibrated delay primitives.
 - PG313 Versal Adaptive SoC Programmable Network on Chip and Integrated
   Memory Controller Product Guide, v1.1 (2026-06-23); WP562 (2025-03-10);
   UG1273 Versal Design Guide, 2026.1 — NoC.
@@ -1366,4 +2097,14 @@ guide is PG313; UltraScale slices have 2 SR / 4 CE groups, URAM has
 byte-write enables, ISERDESE3 stops at 1:8; 7-series low-voltage grades
 are 0.95 V / 0.9–1.0 V by family, not a flat 0.9 V; tsfpga scopes
 constraints with `read_xdc -ref`, not `SCOPED_TO_REF`, and hdl-modules
-renamed `resync_slv_level_coherent` to `resync_twophase`.
+renamed `resync_slv_level_coherent` to `resync_twophase`. Added in the
+family design-instruction blocks, against expectation: AM005 states that
+on Versal only the CLK and SR control-set granularity is coarser and
+"CE stays the same" as UltraScale (the CLB fact paragraph above reads
+the CE granularity more pessimistically — B3 follows AM005); Versal
+`ODDRE1` supports SAME_EDGE only, and its tristate path must use the
+same registering structure (AM010); Versal I/O registers are ordinary
+`FDRE`-family primitives packed with `IOB = TRUE`, not a dedicated IOB
+flip-flop (AM010); Versal SLL connections live in the CLB rather than a
+Laguna column (AM005); UltraScale PLLs are *reduced* relative to
+7-series PLLs, not merely renamed (UG572).
