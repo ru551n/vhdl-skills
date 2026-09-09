@@ -150,6 +150,81 @@ on disk; record it as a hand-verified, dated comment next to the relevant
 build entry, and re-measure after any change that could move it — do not
 expect an automated `build_result_checkers` gate to enforce it.
 
+## A leaf entity's out-of-context Fmax is blind to cones that start at an input port
+
+The single most dangerous way to misread the synthesis-only estimate above:
+it reports **register-to-register** paths. On an out-of-context netlist
+build, a purely combinational cone whose *start point is a top-level input
+port* is not a register-to-register path, so it is never timed and never
+appears as the worst path. A leaf entity whose real work is one deep
+combinational cone hanging off its input ports will therefore report a
+spectacular Fmax — the tool is timing whatever small internal
+register-to-register path happens to remain, not the logic you care about.
+
+Confirmed on a real design: a requantize leaf reported **520 MHz** standalone
+while being the **46.77 MHz critical path of the composition entity that
+instantiated it**. Its whole ~21 ns cone (bias-add, multiply, rounded shift,
+saturate) started at its `s_*_m2s.data` / `*_rd_data` input ports, so the
+standalone build timed a 1-LUT `valid_q -> data_q/CE` path and reported
+520 MHz. Inside the parent, with that cone fed by another submodule's
+registers, it became the bottleneck.
+
+**Rule: treat a leaf's out-of-context Fmax as an upper bound and nothing
+more. Only a composition entity — one where the cone's source registers are
+inside the same netlist — produces a number worth acting on. Never optimise a
+leaf against its own standalone figure, and never conclude "this leaf is
+fine, look elsewhere" from one.**
+
+Corollaries worth budgeting for:
+
+- **Fixing the reported critical path may buy nothing at the top level.**
+  Each fix only reveals the next comparable path. On the design above the
+  progression across four reworks was 46.77 -> 46.77 -> 47.66 -> 159.72 ->
+  159.95 MHz: two of the four reworks moved the top-level number by ~0 and
+  ~1 MHz, and were still necessary — they were what exposed the path whose
+  fix delivered the 3.4x jump. Do not judge a timing rework by its immediate
+  top-level delta; judge it by whether the path it targeted is gone.
+- **Expect a plateau, and stop at it.** Once several paths sit within a few
+  hundred ps of each other, further single-path fixes yield fractions of a
+  MHz (above: +0.23 MHz) because a different module simply takes over as
+  worst path. That is the signal that the estimate is exhausted and the
+  remaining margin question belongs to real place-and-route, not to more
+  out-of-context iterations.
+- **Re-measure every leaf after every rework, not just the one you changed.**
+  Improving a leaf's input-port cone can change how the parent's other leaves
+  get mapped (see "A timing fix in one leaf can change another leaf's RAM/DSP
+  inference" below), which moves both their resource counts and their
+  contribution to the critical path.
+
+## A timing fix in one leaf can change another leaf's RAM/DSP inference
+
+Registering a leaf's input-port cone does not only change that leaf. When the
+signal driving it comes from a *different* submodule's memory, giving it a
+clean capture register can flip that other module's inference decision.
+Confirmed on a real design: pipelining a requantize leaf so its `bias_rd_data`
+input landed on a plain stage-1 register instead of feeding a 21 ns
+combinational cone moved the parent's count from **10 to 14 RAMB36** — Vivado
+had been partially dissolving the *weight buffer's* bias memory into fabric to
+shorten that cone, and stopped once the cone was gone. The higher number was
+the correct one; the old 10 was the anomaly.
+
+Practical consequences:
+
+- A parent's resource counts are not a stable baseline across timing reworks
+  of its children, even when the child's own counts are unchanged in the
+  direction you expected. Re-measure the parent after every child rework.
+- Verify parent counts **leaf-additively** as an integrity check rather than
+  just re-pinning whatever the build printed: sum the leaves' measured
+  DSP/BRAM primitives and confirm the parent matches (e.g. `32 DSP = 32
+  (requant, 2/lane x 16) + 0 (window gen, was 4)`; `14 RAMB36 = 11 (weight
+  buffer) + 3 (window gen)`). When the sum does *not* match, that is the
+  cheapest available detector of a silent inference change — much cheaper
+  than reading utilization hierarchies.
+- Keep DSP checkers strict (they encode structural invariants like
+  "two DSPs per lane") and give FF checkers explicit headroom; FF counts move
+  by hundreds under pipelining and retiming, DSP counts should not move at
+  all without a design reason.
+
 ## Enabling timing analysis changes synthesis itself, not just what gets reported afterward
 
 Turning on `analyze_synthesis_timing=True` is **not** a pure post-hoc
