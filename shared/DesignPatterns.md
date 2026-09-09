@@ -184,3 +184,63 @@ Encode assumptions close to the relevant boundary:
 - illegal control combinations
 
 Keep verification-only logic clearly separated when synthesis portability is uncertain.
+
+## Per-command configuration boundary
+
+An engine that runs for many cycles per command must receive **registered,
+pre-computed** configuration, never the controller's raw descriptor
+register. Derive geometry (output dimensions, tap counts, plane lengths,
+stride products) once at command start in a sequential setup phase; put a
+register stage on every engine's `cfg_*` inputs. A combinational cone that
+begins at the descriptor register is a timing failure waiting for a top-level
+build to reveal it. See `shared/TimingAndResources.md` §2.
+
+## Lossless two-stage read path
+
+Shared registered memory output feeding a per-consumer output register:
+- capture into the consumer's register **unconditionally** the cycle the
+  beat lands, so the shared register is borrowed for exactly one cycle and
+  no consumer can head-of-line-block another
+- issue a read only when a slot is **provably** free for the returning beat
+  under every consumer behaviour (`L + I − A ≤ 1`)
+- give each consumer a landing (skid) register; it is the losslessness
+  mechanism, and any prefetch term in the issue rule is throughput only —
+  test the two properties separately
+
+Document the invariant in the issue-rule comment, not in the header.
+
+## Position-boundary flag instead of out-of-band clear
+
+Do not clear an accumulator from outside the pipeline when a new item is
+accepted; that races the previous item's tail. Send a `first` flag down the
+pipeline with the data and have the accumulate stage **load** instead of
+add when it sees it. `0 + x = x`, so the change is bit-exact, and consecutive
+items overlap without a drain state.
+
+## Multi-buffered assembly with a reservation queue
+
+A stage that assembles an item over several cycles and presents it for
+several more should hold N buffers, N chosen from
+`max(work_cycles, ceil(reservation_cycles / N))` per item. Any interlock
+that protects the source (a row-bank aliasing guard) must key on the
+**oldest** in-flight item, not the one being launched — keep a small queue
+of the guard value pushed at launch and popped at acceptance. Re-derive the
+interlock when N changes; the single-buffer form is usually too coarse to
+survive, and dropping it must be proven by a mutation test at every depth.
+
+## Balanced, masked reduction
+
+Never write a wide reduction as a linear chain. Build a balanced tree, mask
+inactive leaves (for a variable tap count, mask with the identity of the
+operation: minimum for max, zero for sum), and pipeline the tree when its
+depth exceeds the cycle budget. Commutative integer operations keep the
+result bit-exact regardless of tree shape.
+
+## Packed multiply
+
+When one operand is broadcast across several products, pack two narrow
+products into one multiplier: `A = x_hi·2^S + x_lo`, `P = A·y`, split P.
+Take S from the multiplier's real port widths, keep S small enough that the
+packed operand fits, and **unpack every cycle before summing** so the only
+overflow condition is a single product. Pin the resulting multiplier count
+in a build checker; it is the packing's structural signature.

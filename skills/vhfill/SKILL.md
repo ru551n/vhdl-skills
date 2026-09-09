@@ -26,7 +26,7 @@ Read:
 1. `rtl/<module>.vhd`
 2. `ddoc/<module>_proposal.md`
 3. `shared/CodingStyle.md`
-4. `shared/DesignPatterns.md`
+4. `shared/DesignPatterns.md` and `shared/TimingAndResources.md` (read §2 "per-command configuration", §5 "freezing a pipeline", §7 "inference is template-sensitive" before writing any datapath, and §9 "design for verifiability" before writing its tests)
 5. `shared/Axi4.md` when the module exposes an AXI4/AXI4-Stream interface
 6. **Under the TDD policy (`shared/Vunit.md` §15, default)**: the module's
    testbench already exists and is currently failing/red — it was written

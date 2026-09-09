@@ -68,6 +68,7 @@ The proposal must capture:
 - latency/throughput
 - corner cases
 - selected patterns from `shared/DesignPatterns.md`
+- the timing-closure and resource rules in `shared/TimingAndResources.md` — in particular: no engine cone may start at a controller's descriptor register (per-command configuration is computed once at command start and handed over registered), reductions are balanced trees, and a leaf's standalone Fmax is an upper bound only
 - AXI4/AXI4-Stream protocol decisions per `shared/Axi4.md` — any streaming interface defaults to AXI4-Stream with backpressure (`TREADY`) unless the architecture doc explicitly justifies omitting it
 - verification plan
 - `## Implementation Notes (vhfill)` section, initially empty

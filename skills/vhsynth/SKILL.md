@@ -112,6 +112,13 @@ pay that cost to answer a question the leaves already answer.
   commit that changes a shared package or crosses module boundaries, when
   re-baselining CI checkers, when leaf sums approach a device limit, or
   when the composition itself (not its leaves) is what changed.
+- **This deferral is for area only. It never applies to timing.** A leaf's
+  out-of-context Fmax does not time any cone that starts at the leaf's own
+  input ports, so leaves fed with configuration or data from a sibling can
+  each report well above target while the composed design is an order of
+  magnitude short. Register a top-level (or pinnable-wrapper) build as soon
+  as the design has a top and run it before any timing claim; see
+  `shared/TimingAndResources.md` §1.
 - The same logic applies to answering resource questions during design
   exploration: a 5-second spike on a representative memory/datapath shape
   beats a 15-minute build of the real thing, and usually answers the

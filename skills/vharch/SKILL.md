@@ -56,6 +56,8 @@ Extract:
 
 Check `lib/` documentation (and any vendored dependency, e.g. `hdl-modules`) before designing a new block. Reuse existing documented entities when appropriate; see `shared/ReusableRTL.md` ("Reuse before authoring new RTL") — a thin wrapper around an existing module is allowed and preferred over a fork or a rewrite.
 
+Read `shared/TimingAndResources.md` before drawing the block diagram. Architectural decisions it constrains: every long-running engine gets a registered configuration boundary rather than reading the controller's descriptor directly; datapaths with different bounds get separate sizing constants; wide payloads that exceed a shared stream record get their own record type rather than a widened global; and the IP must have a **top-level build target** from the first milestone, because leaf out-of-context timing is an upper bound only.
+
 Prefer a modular decomposition over a monolithic block, including for newly
 authored (non-reused) functionality: see `shared/ReusableRTL.md` ("Prefer
 modular decomposition") for the single-responsibility, testable-unit
