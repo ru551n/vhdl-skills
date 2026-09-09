@@ -655,7 +655,13 @@ directives and treat any path that still needs a directive as a design
 finding. And never let the harness decide the number: DUT ports sit behind
 registers, pad registers are `IOB = TRUE`, pads carry realistic I/O
 delays, and the design's result is the register-to-register WNS
-(`shared/TimingAndResources.md` §1).
+(`shared/TimingAndResources.md` §1). A short pipeline (a stage or two) is
+fine between the IOB register and the port if the pad path needs the
+margin — but tag every stage `shreg_extract = "no"` (A3) first, since a
+same-clock, no-reset, no-enable register run is exactly what triggers SRL
+extraction, and an SRL cell has different placement/timing than discrete
+flip-flops and cannot be packed into the IOB itself. Confirm no SRL
+appears on the path in the post-synthesis utilization report.
 
 **Report sequence, every time, in this order:**
 
