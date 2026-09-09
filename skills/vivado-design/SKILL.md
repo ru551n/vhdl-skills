@@ -645,6 +645,18 @@ handshakes across *related* clocks are invisible to both and need review.
 
 ### A8. Timing-closure methodology (UG949 ch. "Timing Closure"; UG906; UG1292 quick reference)
 
+**Order of levers, and why it matters here.** Structure first — BRAM
+`DOA_REG`/`DOB_REG` output registers, pipeline and elastic stages, fan-out
+registers — then attributes, then implementation directives and
+`phys_opt_design`, then floorplanning. Vivado's directives and pblocks can
+buy a few hundred picoseconds each, but closure that rests on them is lost
+on the next netlist change; aim for positive slack with `Default`
+directives and treat any path that still needs a directive as a design
+finding. And never let the harness decide the number: DUT ports sit behind
+registers, pad registers are `IOB = TRUE`, pads carry realistic I/O
+delays, and the design's result is the register-to-register WNS
+(`shared/TimingAndResources.md` §1).
+
 **Report sequence, every time, in this order:**
 
 1. `report_timing_summary` — WNS/TNS/WHS/THS per clock, `check_timing`
