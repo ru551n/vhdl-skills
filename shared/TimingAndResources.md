@@ -88,6 +88,18 @@ is cheap at design time and expensive to retrofit.
   pipeline length (`shared/DesignPatterns.md`, "Ready/valid elastic
   stage").
 
+**Close timing by structure before any place-and-route lever.**
+- Exhaust the RTL levers first: the block-RAM output register on every
+  memory whose clock-to-out feeds a failing path, a pipeline or elastic
+  stage where a route is simply too long, fan-out registers near the
+  consumers. Only then pblocks, implementation directives and post-route
+  physical optimisation.
+- Closure that depends on a directive or a floorplan is fragile — it
+  evaporates on the next netlist change — while closure from structure
+  survives. The target is positive slack with default directives. If a
+  path still needs a place-and-route lever, that path is a finding about
+  the design; record which ones and why structure could not close them.
+
 **Prefer structure to constraints.**
 - A multi-cycle or false-path constraint is a claim about the design that
   the tool cannot check. Fix the structure first; use such a constraint
@@ -142,9 +154,17 @@ the leaf build never saw.
   then a true register-to-register path, nothing can be constant-propagated
   or trimmed, and the harness sits beside the design in the hierarchy
   rather than inside its row of the utilization report.
-- Constrain harness pins with zero input/output delay, **not** false paths.
-  A false path on a real pin is a clock-domain-crossing hole, and a
-  correctly configured flow rejects it.
+- **No DUT port ever connects to a pin directly**, in the harness or in
+  a real top. Every port goes through an internal buffered register, and
+  the pad-facing registers are packed into the I/O blocks (`IOB = TRUE`),
+  so a register-to-pad hop carries no fabric route and no uncompensated
+  clock-insertion delay. A harness whose *own* pad paths fail is an unfair
+  harness: its worst-negative-slack is about the wrapper, not the design.
+  Report the harness paths' slack separately and quote the
+  register-to-register number as the design's result.
+- Constrain harness pins with a realistic input/output delay relative to
+  the clock, **not** false paths. A false path on a real pin is a
+  clock-domain-crossing hole, and a correctly configured flow rejects it.
 - Read the slack progression from synthesis through placement to routing.
   If it barely moves, the problem is **logic depth**, which RTL can fix and
   which synthesis-only slack is a good enough proxy to iterate on. If it
