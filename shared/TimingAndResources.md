@@ -49,6 +49,18 @@ is cheap at design time and expensive to retrofit.
 - Compare against **terminal-count flags**, not wide counters: `done_q`
   set when the counter reaches its last value, rather than a wide equality
   in every consumer.
+- **A self-updating value with a multi-op body is the same problem in
+  disguise.** A burst/credit/pointer register whose next value is
+  computed as `subtract → clamp/min → divide` (or similar) in the same
+  cycle it is used stacks that whole chain into one level budget, and it
+  recurs anywhere a "how much is left, and what do I ask for next" value
+  is maintained. Split it: register the subtraction, then derive the
+  clamp/divide from the registered result on the following cycle — cheap
+  whenever the value is consumed far less often than every cycle (a burst
+  request that itself covers many beats, for instance). Where the divide
+  exists only to round to a size limit, check first whether that limit
+  can be a fixed power-of-two granularity instead: a compare-and-shift
+  replaces most of the chain's depth outright.
 
 **Structure registers so the tool can move them.**
 - Registers with no reset and no clock enable can be retimed and
@@ -80,7 +92,13 @@ is cheap at design time and expensive to retrofit.
   datapath combinationally.
 - Decode early: turn a multi-bit mode or opcode into per-consumer one-bit
   registered flags at the point the mode is set, not in every consumer
-  every cycle (§2).
+  every cycle (§2). The symptom to look for is one wide field (an opcode,
+  a mode) compared against a dozen-plus literals scattered across a
+  controller's validation and dispatch logic — each comparison is cheap
+  alone, but together they are a wide field with high combinational
+  fan-out into many unrelated cones. Decode the whole set into one-hot
+  flags once, registered at the same cycle the field is latched, and have
+  every site test its flag instead of the raw field.
 
 **Handshake stages.**
 - Every inter-stage link is registered-ready or a skid buffer. A
@@ -127,6 +145,21 @@ is cheap at design time and expensive to retrofit.
   way to tell the tool a path is an intentional asynchronous crossing
   rather than a timing failure. Use it there without hesitation, and see
   `shared/CdcPolicy.md`.
+
+**When a fix works, search the whole design for the same pattern before
+the next build.** A timing report shows the current worst path, not
+every path with the same defect — a duplicated block (two DMA engines
+built from one template, two lanes of the same pipeline) reproduces
+whatever anti-pattern the template has in every copy, and an unconverted
+sibling of a just-fixed multiply-into-an-accumulator conversion sits at
+nearly the same slack as the one already fixed. Fixing one instance and
+re-running synthesis finds the next one only after paying for a full
+build; grepping the source for the pattern's signature (the same
+variable names, the same operator shape, every instantiation of the same
+generic entity) finds all of them in one pass. A design that plateaus —
+several independent paths sitting within a few hundred picoseconds of
+each other after a fix — is usually exactly this: one anti-pattern,
+several unfixed copies, not several unrelated problems.
 
 The sections that follow are the ways designs fail these rules without
 anyone noticing.
