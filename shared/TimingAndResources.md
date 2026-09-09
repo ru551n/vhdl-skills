@@ -103,8 +103,15 @@ is cheap at design time and expensive to retrofit.
 **Handshake stages.**
 - Every inter-stage link is registered-ready or a skid buffer. A
   combinational `ready` chain across stages is a path that grows with the
-  pipeline length (`shared/DesignPatterns.md`, "Ready/valid elastic
-  stage").
+  pipeline length, and it is not confined to one entity — the worst
+  instances span several modules and hierarchy levels, where it can look
+  like congestion rather than the fan-out/depth problem it is
+  (`shared/DesignPatterns.md`, "Ready/valid elastic stage").
+- Make the registered form a **generic**, not something added only when
+  a timing report demands it: a `boolean`/depth generic that inserts the
+  skid register when set and passes straight through otherwise means
+  closing a ready-chain violation later is an instantiation-site change,
+  not an entity rewrite (`shared/DesignPatterns.md`, same section).
 
 **Close timing by structure before any place-and-route lever.**
 - Exhaust the RTL levers first: the block-RAM output register on every
@@ -257,12 +264,15 @@ datapath registers becomes the worst path in the design.
 - Configuration that reaches many consumers (hundreds of clock enables) is
   a fan-out problem as well as a depth problem; register it close to the
   consumers, or let the tool replicate a register you have provided.
-- **Bound the arithmetic before registering it.** An unconstrained
-  general-purpose integer type synthesises a multiplier or divider sized
-  for its full range, not for the values the design ever produces —
-  `kernel_h * kernel_w` on a 32-bit `natural` builds a 32-bit multiplier
-  for a product that never exceeds a few hundred. Narrow the subtype
-  first; only add a register if depth remains after narrowing. Registering
+- **Bound the arithmetic before registering it.** This is a blanket rule
+  on its own, not just a timing tactic — see `shared/ModernVHDL.md`,
+  "Always constrain the range — no exceptions" — and it pays off here
+  directly: an unconstrained `natural`/`positive`/`integer` synthesises a
+  multiplier or divider sized for the type's full width, not for the
+  values the design ever produces. `kernel_h * kernel_w` on a 32-bit
+  `natural` builds a 32-bit multiplier for a product that never exceeds a
+  few hundred. Narrow the subtype first; only add a register if depth
+  remains after narrowing. Registering
   an oversized combinational block first just moves the same logic behind
   a flip-flop and can silently change behaviour if anything downstream
   relied on the value being combinationally live within the cycle — check

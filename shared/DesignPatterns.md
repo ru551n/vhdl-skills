@@ -17,6 +17,20 @@ Document whether the stage is:
 
 Do not accidentally create a long combinational ready chain across many stages.
 
+**Expose the choice as a generic, not a fixed RTL structure, on any link
+whose stage count timing closure might need to change.** A combinational
+`ready` is cheapest until a timing pass shows the chain it is part of is
+too long, and at that point the fix is well known — a skid/elastic
+register at the boundary (`shared/TimingAndResources.md` §4, §6) — but
+only cheap to apply if the entity already has a place to put it. Give the
+stage a generic such as `g_register_ready : boolean` (or a pipeline-depth
+count where more than one stage might be needed) that is wired straight
+through when false/zero and inserts the register when not, so that
+closing a `ready`-chain violation later is a generic change at the
+instantiation site, never a rewrite of the entity's handshake. Default it
+to whatever is cheapest (usually combinational); the point is that the
+registered form already exists and is verified before it is ever needed.
+
 ## FIFO
 
 For a synchronous FIFO:

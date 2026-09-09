@@ -618,10 +618,18 @@ handshakes across *related* clocks are invisible to both and need review.
   produce zero clocks".
 - **I/O delays are mandatory** for every timed pin: `set_input_delay`
   (max = external Tco + board data delay + clock delay to the external
-  device − clock delay to the FPGA; min analogous) and
-  `set_output_delay`, against a virtual clock when the external
-  waveform differs. `TIMING-18` flags missing I/O delay; `check_timing`
-  lists unconstrained endpoints. For a pinnable timing harness, constrain
+  device − clock delay to the FPGA; min analogous) and `set_output_delay`
+  (max = external setup requirement + board data delay + clock delay to
+  the FPGA − clock delay to the external device; min = −(external hold
+  requirement) + board data delay + the same clock-delay difference),
+  against a virtual clock when the external waveform differs. Both
+  formulas include "clock delay to the FPGA", i.e. this device's own
+  insertion delay (IBUF + route + global buffer) — it is not zero and
+  not negligible, so a `0`/`0` shortcut is only ever correct when that
+  insertion delay happens to cancel against the external clock delay,
+  which a harness with no external device at all does not have.
+  `TIMING-18` flags missing I/O delay; `check_timing` lists unconstrained
+  endpoints. For a pinnable timing harness, constrain
   realistically rather than with zero delay: with no MMCM the clock's own
   insertion delay is uncompensated and a `0` output delay charges all of
   it to the pad, an unmeetable and misleading constraint — use the

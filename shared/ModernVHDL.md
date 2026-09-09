@@ -576,6 +576,40 @@ signal error_acc : integer range -1024 to 1023 := 0;
 Do not convert an integer/natural counter to `unsigned` merely to satisfy a
 style rule.
 
+### Always constrain the range — no exceptions
+
+`natural`, `positive` and `integer` are, unconstrained, 32-bit types. A
+signal or variable declared as one of them with no `range` constraint
+synthesises for that full width, no matter what values the design ever
+assigns to it — an unconstrained `natural` multiplied by another
+unconstrained `natural` synthesises a full 32×32 multiplier (and, if
+there is a division nearby, a full 32-bit divider) even when neither
+operand can ever exceed a few hundred. This is a real and recurring
+timing/area defect, not a style nicety: it has produced a multi-hundred-
+picosecond critical path from arithmetic that should have cost almost
+nothing, invisible in simulation because the *values* were always small
+even though the *synthesised hardware* was not.
+
+Give every `natural`/`positive`/`integer` declaration a `range` the
+moment it is written — variables and function/procedure parameters
+included, not just signals:
+
+```vhdl
+signal kernel_h    : natural range 1 to c_max_kernel_size;
+variable tap_count : natural range 0 to c_max_taps;
+```
+
+never
+
+```vhdl
+signal kernel_h    : natural;                    -- 32-bit multiplier waiting to happen
+variable tap_count : natural;
+```
+
+If the true bound is not yet known, that is a sign the value's origin
+needs to be understood before writing the arithmetic that consumes it,
+not a reason to leave the type unconstrained "for now."
+
 ## FPGA initialization instead of reset
 
 Read `FpgaInitialization.md`.
