@@ -135,6 +135,11 @@ synchronizer when the signal semantics permit it.
 
 Do not use the first synchronizer stage in functional logic.
 
+Prefer a ready-made block. Error modes and the constraint that closes each
+(flip-flop-driven input, `async`-marked chain, datapath-only max-delay bound
+of the smaller period, no false path): `shared/CdcPolicy.md`, "Reliable CDC
+techniques".
+
 ## CDC event/pulse
 
 Do not assume a narrow pulse will be observed by another clock domain.
@@ -145,11 +150,23 @@ Use:
 - request/ack handshake
 depending on event rate and semantics.
 
+Prefer a ready-made block. A toggle synchronizer loses *both* pulses when
+two arrive within about two destination periods (pulse overload); the
+feedback-gated variant guarantees at least one arrives. Never reconstruct an
+event count from output pulses. Details: `shared/CdcPolicy.md`, "Reliable
+CDC techniques".
+
 ## Async FIFO
 
 Use for sustained coherent multi-bit data between unrelated clocks.
 
 Synchronize Gray-coded pointers, not the payload bus bit-by-bit.
+
+Prefer a ready-made FIFO. Pointers need a bus-skew bound of one source
+period *and* a datapath-only max-delay bound; depth must be a power of two;
+register the binary-to-Gray stage; a LUTRAM read path is the one legitimate
+false path. Details and the clock-skew caveat: `shared/CdcPolicy.md`,
+"Reliable CDC techniques".
 
 ## Reset crossing
 

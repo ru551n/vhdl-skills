@@ -469,6 +469,119 @@ Vivado layer:
   flag unknown CDC, missing synchroniser property and an inappropriate
   `-datapath_only`.
 
+#### A6.1 Reliable CDC constraints — the Vivado recipe (after L. Vik / hdl-modules)
+
+**Instantiate a ready-made block; do not write these constraints per
+crossing.** The `hdl-modules` `resync_*`/`asynchronous_fifo` blocks ship
+every constraint and waiver below as scoped files, and XPM_CDC macros ship
+their own. Hand-writing them is only for building or reviewing a library
+block, and the result must reproduce this recipe exactly.
+
+The vendor-neutral error-mode analysis is in `shared/CdcPolicy.md`,
+"Reliable CDC techniques"; this is the exact XDC/Tcl that closes each
+mode in Vivado, as shipped in `hdl-modules`'
+`modules/resync/scoped_constraints/*.tcl` and
+`modules/fifo/scoped_constraints/asynchronous_fifo.tcl`. Copy the
+patterns, not the file names.
+
+**Ship every constraint scoped to the CDC entity.** `read_xdc -ref
+<entity> <file>.tcl` applies the file to every instance and lets it use
+`get_ports`/`get_cells`/`get_nets` *relative to that entity*, as if it were
+the top — no hierarchy navigation, no breakage when the block is moved.
+tsfpga does this for any file under a module's `scoped_constraints/`
+directory (A13). Inside such a file `get_timing_paths` does not work
+(critical warning), which is why the clocks are found through the ports:
+
+```tcl
+# Clock periods, with a safe fallback when a clock cannot be found at this
+# stage (not created yet, or driven by an IP core / non-trivial source).
+set clk_in  [get_clocks -quiet -of_objects [get_ports "clk_in"]]
+set clk_out [get_clocks -quiet -of_objects [get_ports "clk_out"]]
+if {${clk_in} != ""}  { set clk_in_period  [get_property "PERIOD" ${clk_in}]  } else { set clk_in_period  2 }
+if {${clk_out} != ""} { set clk_out_period [get_property "PERIOD" ${clk_out}] } else { set clk_out_period 2 }
+set min_period [expr {min(${clk_in_period}, ${clk_out_period})}]
+```
+
+The 2 ns fallback (500 MHz) is deliberately *tighter* than any real clock,
+so an unfound clock errs toward over-constraining, never toward an
+unbounded path.
+
+**Latency bound: `set_max_delay -datapath_only`, value = `min_period`.**
+
+```tcl
+set first_sync [get_cells "data_in_p1_reg"]          ;# first async_reg stage
+set_max_delay -datapath_only -from ${clk_in} -to ${first_sync} ${min_period}
+```
+
+Why `-datapath_only`: `set_max_delay -help` recommends it for asynchronous
+crossings, and without the flag the command has been observed to *fail*
+on derived clocks and clocks from IP cores. It also removes clock
+skew/jitter/pessimism from the check, so the real latency can exceed one
+period — expect up to about two destination cycles. If both clocks
+genuinely cannot be found, fall back to `set_false_path -setup -hold -to
+${first_sync}` and accept arbitrary latency; that is the only time a
+false path belongs on a synchroniser, and the block should report it.
+
+**Per topology — the exact objects and commands:**
+
+| Topology (hdl-modules block) | Constraints | `report_cdc` waiver |
+|---|---|---|
+| Single-bit level (`resync_level`) | `set_max_delay -datapath_only -from <clk_in or source FF> -to <first async_reg>` = `min_period` | none needed |
+| Pulse (`resync_pulse`) | same bound on `level_in_reg → level_out_m1_reg`; **and on the optional feedback** `level_out_reg → level_out_feedback_m1_reg` | none |
+| Gray counter (`resync_counter`) | `set_bus_skew -from <gray regs> -to <first sync regs>` = **`clk_in_period`** (≤ 1 bit in transition per sample) **plus** `set_max_delay -datapath_only` = `min_period` on the same pairs | `CDC-6` "Multi-bit synchronized with ASYNC_REG": safe because Gray + skew bound |
+| Two-phase / handshake (`resync_twophase`, `_handshake`) | `set_max_delay -datapath_only` on the **data** regs (`*_sampled_reg* → *_int_reg*`) and on **both** level directions | `CDC-15` "Clock enable controlled CDC": the CE *is* the mechanism |
+| LUTRAM two-phase / FIFO (`resync_twophase_lutram`, `asynchronous_fifo` with LUTRAM) | both level bounds as above, **plus** `set_false_path -setup -hold -from ${clk_in} -through [get_nets "read_data*"]` — LUTRAM reads are combinational; the pointer logic, not timing, protects the read | `CDC-1` (intentional 1-bit circuit), `CDC-26` (read/write collision — pointers guarantee none) |
+| Level sampled on a strobe (`resync_level_on_signal`) | `set_false_path -setup -hold -through <data_in net> -to <data_out reg>` — data is guaranteed stable when the strobe samples it | `CDC-15` / `CDC-17` (CE- or MUX-controlled) |
+
+Every waiver carries the structural reason in `-description`; a waiver
+without one is a hidden bug. Use `-quiet` on the `get_pins` in a waiver so
+an optional path (a disabled feedback, an absent output register) does not
+error.
+
+**The RTL side that the constraints assume** (`hdl-modules` `resync_*`):
+`async_reg` on every stage of the chain; `dont_touch` on the source-domain
+register that feeds the chain, so synthesis cannot merge it into a LUT
+and reintroduce the glitch mode; an optional `enable_input_register`
+generic that inserts that register when the caller's driver is
+combinational — and when it is *off*, the block must fall back to
+`set_false_path` because there is no `clk_in` register to bound from.
+
+**Never do at project level:** `set_clock_groups -asynchronous` or a
+domain-to-domain `set_false_path`. Both have higher priority than
+`set_max_delay` and silently cancel every bound above (A6, UG903
+priority). A crossing with no CDC block must *fail* timing; that is how it
+is found.
+
+**XPM caveats.** `xpm_cdc_pulse` has no latency bound (build-dependent,
+effectively unbounded — error mode #2) and no feedback, so closely spaced
+pulses are lost outright (error mode #4). Prefer a pulse block with the
+feedback level where pulse loss is unacceptable. `xpm_cdc_gray`,
+`xpm_cdc_handshake` and `xpm_fifo_async` are sound for their classes.
+
+**Asynchronous FIFO skew.** The read side may see the crossed write
+pointer with near-zero latency while the RAM write port sits on a
+different clock-tree branch. AMD publishes a maximum clock-tree skew for
+7-series (DS182, clock skew table, under 1 ns) but not an equivalent for
+every family, and not for SLR-spanning paths. Keep the FIFO within one
+clock region on SSI parts, register the binary-to-Gray stage, and record
+the assumption in the architecture doc.
+
+**Build gates, after `synth_design` and again after `route_design`** —
+tsfpga runs both; in a bare flow add them to the run hooks:
+
+```tcl
+set cdc [report_cdc -return_string -no_header -details -severity "Critical"]
+if {[string first "Critical" ${cdc}] != -1} { exit 1 }
+
+set ci [report_clock_interaction -delay_type "min_max" -no_header -return_string]
+if {[string first "(unsafe)" ${ci}] != -1} { exit 1 }
+```
+
+`report_cdc` severities cannot be adjusted per rule, so a false positive
+must be waived at its source with a reason, not globally suppressed.
+Together these catch roughly 90 % of dangerous crossings; pulses and
+handshakes across *related* clocks are invisible to both and need review.
+
 ### A7. Constraints — XDC (UG903; UG949 ch. "Design Constraints")
 
 - **What belongs where.** Timing constraints and physical constraints in
@@ -1981,6 +2094,13 @@ attribute choices in the proposal), `vhfill` (writing the templates),
 `vhsynth` (interpreting a Vivado report and choosing the fix).
 
 ## Sources
+
+- L. Vik, *Reliable FPGA CDC Constraints* #1 (single-bit level), #2
+  (counters and FIFOs), #3 (pulses), #4 (build tool settings), #5
+  (asynchronous FIFO), LinkedIn Pulse, 2024 — the error-mode analysis
+  and the `set_max_delay -datapath_only` / `set_bus_skew` / scoped-`read_xdc`
+  recipe in A6.1; verified against the shipped
+  `hdl-modules/modules/{resync,fifo}/scoped_constraints/*.tcl`.
 
 Verified 2026-09 against these AMD documents (docs.amd.com unless noted);
 where a document's statement differed from the expectation it replaced
