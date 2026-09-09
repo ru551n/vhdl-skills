@@ -6,6 +6,97 @@ intended resources. Read this before architecting a datapath (`vharch`,
 synthesis number (`vhsynth`). Each rule states the mechanism behind it;
 the mechanism is what makes the rule general.
 
+## Fundamentals — the timing-closure checklist
+
+Apply these while writing the RTL, not after the first failing build. Each
+is cheap at design time and expensive to retrofit.
+
+**Register at entity boundaries.**
+- Register every output of an entity by default. A leaf whose outputs are
+  combinational hands its logic depth to whatever instantiates it, and its
+  own out-of-context timing becomes meaningless (§1).
+- No combinational path from an input port to an output port unless the
+  entity's documentation says so explicitly (a pass-through ready is the
+  usual legitimate case). Composition must never create a through-path
+  nobody designed.
+- Where an input feeds a deep cone, register the input too. One register
+  each side of a boundary costs two cycles of latency and buys independent
+  timing of every module.
+
+**Budget logic depth per stage, and check it.**
+- Derive a per-stage budget from the target period and the part: a 6-input
+  LUT plus its routing costs a roughly fixed fraction of a period at a
+  given speed grade, so a target clock implies a maximum number of LUT
+  levels between registers. Write the budget down (e.g. "≤ 6 levels at
+  this clock") and split any stage that exceeds it.
+- Read the **logic-level histogram** in the timing report, not only the
+  worst path. A stage with many levels is the structural target; the
+  worst-slack path is merely its current representative and will be
+  replaced by the next one when fixed.
+- Carry chains count: a wide adder or comparator is one level of LUT plus
+  a carry chain whose length is the operand width. Split adders wider than
+  the budget allows across stages, or use the DSP block's own adder.
+
+**Pipeline arithmetic and wide selection.**
+- Multipliers: use the block's internal pipeline registers (input, product,
+  output). An unregistered product leaving a DSP block is a guaranteed
+  worst path.
+- Wide muxes: a mux is log2(inputs) levels for the data, and its
+  **select** is the late-arriving signal. Register the select one cycle
+  early rather than computing it in the same stage as the mux.
+- Dynamic shifts (barrel shifters) and dynamic-width operations are deep;
+  pipeline them or decompose by fixed stages.
+- Compare against **terminal-count flags**, not wide counters: `done_q`
+  set when the counter reaches its last value, rather than a wide equality
+  in every consumer.
+
+**Structure registers so the tool can move them.**
+- Registers with no reset and no clock enable can be retimed and
+  replicated freely. Reset and enable on a datapath register prevent that.
+- Reset only control (`valid`, state, counters). Never reset data,
+  memories or pipeline payload; they are qualified by `valid`.
+- Use synchronous reset. Asynchronous reset on wide buses blocks retiming
+  and needs its own release synchronisation.
+
+**Fan-out is a timing path.**
+- Every control net — `valid`, enable, reset, configuration — that reaches
+  more than a few tens of endpoints at a high clock needs replication.
+  Register a copy near each consumer group, or provide a register and let
+  the tool replicate it; a single flip-flop driving thousands of endpoints
+  is a path of its own (§8).
+- Clock enables are control nets too. A pipeline-wide `pipe_en` is the
+  right backpressure idiom (§5) and it needs the same replication.
+
+**Memories and lookup.**
+- Use the block RAM's **output register**. It costs one cycle and removes
+  the RAM's clock-to-out plus routing from the following stage. Never put
+  logic between a RAM's data output and the first register.
+- Read-address generation is itself a stage: register the address, then
+  read, then register the data. A three-stage read is normal.
+
+**Control structure.**
+- One-hot or otherwise sparse encoding for FSMs whose outputs drive wide
+  logic; register FSM outputs (Moore) rather than decoding state into the
+  datapath combinationally.
+- Decode early: turn a multi-bit mode or opcode into per-consumer one-bit
+  registered flags at the point the mode is set, not in every consumer
+  every cycle (§2).
+
+**Handshake stages.**
+- Every inter-stage link is registered-ready or a skid buffer. A
+  combinational `ready` chain across stages is a path that grows with the
+  pipeline length (`shared/DesignPatterns.md`, "Ready/valid elastic
+  stage").
+
+**Prefer structure to constraints.**
+- A multi-cycle or false-path constraint is a claim about the design that
+  the tool cannot check. Fix the structure first; use such a constraint
+  only when the path is genuinely multi-cycle by design, document why in
+  the RTL, and keep the constraint next to the design that needs it.
+
+The sections that follow are the ways designs fail these rules without
+anyone noticing.
+
 ## 1. Only a top-level build is a timing result
 
 An out-of-context build of a leaf entity times **register-to-register**
