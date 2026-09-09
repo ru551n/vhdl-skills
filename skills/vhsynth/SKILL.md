@@ -18,7 +18,11 @@ project's own `build_fpga.py`, or a raw `VivadoProject`/`VivadoNetlistProject`)
 — it collects Vivado/tsfpga-specific behaviors (post-synthesis hook
 reliability, XDC parsing restrictions, the `analyze_synthesis_timing`
 ordering bug, DSP inference template sensitivity, etc.) that are easy to get
-silently wrong.
+silently wrong. Load the `vivado-design` skill alongside it for the
+design-time decisions behind a Vivado build (inference templates,
+attributes, reset/clocking/CDC methodology, timing-closure report reading,
+per-family CLB/BRAM/URAM/DSP facts) — it is the positive methodology the
+gotchas skill assumes.
 
 ## Backend priority
 

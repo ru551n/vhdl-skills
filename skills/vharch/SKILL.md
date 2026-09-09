@@ -219,6 +219,11 @@ Record:
 
 If target/family is not known, do not assume initialization support.
 
+When the target is an AMD/Vivado part, load the `vivado-design` skill for
+the architecture-level decisions it constrains: clock-domain and reset
+planning, CDC structure and constraints, hard-block use (BRAM/URAM/DSP
+modes, NoC, PS ports), SLR assignment, and the per-family device facts.
+
 ## Reset policy decision
 
 Resetless-by-default (`shared/TsfpgaCodingConventions.md`) only applies when

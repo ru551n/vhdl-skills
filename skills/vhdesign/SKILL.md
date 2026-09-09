@@ -199,3 +199,8 @@ configuration matrices.
 Before using a vendor attribute, primitive, or IP, check whether portable
 inference is sufficient, classify the portability level, document why
 escalation is required, and isolate the dependency where practical.
+
+When the target is an AMD/Vivado part, load the `vivado-design` skill
+before this gate: it holds the inference templates, attribute semantics,
+reset/clocking/CDC methodology and per-family device facts the proposal
+must be written against.
