@@ -57,3 +57,14 @@ passing three says nothing about the fourth.
   map or sizing constant is generated, change the generator's input and
   regenerate. A hand-edited generated file is silently reverted by the next
   run.
+- **A synthesis attribute is a mapping instruction, not a fix.** RTL that
+  only works because of a `ram_style`/`use_dsp`/`max_fanout`-class
+  attribute simulates identically with or without it, so the dependency
+  is invisible until a different tool, a different version, or a project
+  default change removes it and the design silently re-maps into fabric,
+  a different inference, or an unbounded fan-out net. Write RTL whose
+  correct mapping is the tool's unforced default; see
+  `shared/TimingAndResources.md`, "Prefer better RTL to synthesis settings
+  and attributes." Clock-domain-crossing attributes are the deliberate
+  exception — there the attribute is the structure, not a workaround for
+  its absence.

@@ -94,6 +94,28 @@ is cheap at design time and expensive to retrofit.
   only when the path is genuinely multi-cycle by design, document why in
   the RTL, and keep the constraint next to the design that needs it.
 
+**Prefer better RTL to synthesis settings and attributes.**
+- A synthesis attribute or a project-wide synthesis setting changes how
+  the tool maps what you wrote; it does not change what you wrote. Reach
+  for it only after the structural fix has been tried and shown
+  insufficient, and attach it to the specific object it corrects (a
+  signal, an instance), never as a project-wide default that silently
+  changes every entity's mapping.
+- An attribute that suppresses a warning, forces an inference decision,
+  or overrides a fan-out/replication choice is a sign the RTL made that
+  decision ambiguous. Fix the RTL so the tool's default choice is already
+  correct, and the attribute becomes unnecessary rather than load-bearing.
+- Treat every attribute in the source as a debt: it must be commented
+  with the reason it is there and the structural fix that would remove
+  it, so a later reader does not mistake a workaround for a requirement.
+- **This does not apply to clock-domain crossings.** There, the
+  vendor/library attribute (`ASYNC_REG`, an XPM `_CDC_` macro's own
+  generics, a `set_max_delay -datapath_only` next to the crossing) is not
+  a workaround for missing structure — it *is* the structure, the only
+  way to tell the tool a path is an intentional asynchronous crossing
+  rather than a timing failure. Use it there without hesitation, and see
+  `shared/CdcPolicy.md`.
+
 The sections that follow are the ways designs fail these rules without
 anyone noticing.
 
