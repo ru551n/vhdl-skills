@@ -162,6 +162,17 @@ the leaf build never saw.
   harness: its worst-negative-slack is about the wrapper, not the design.
   Report the harness paths' slack separately and quote the
   register-to-register number as the design's result.
+- A pad path may need a short pipeline between the IOB-packed register and
+  the design's own port — up to a couple of stages is fine, and cheap
+  relative to a mis-timed harness. But a run of two or more flip-flops
+  with identical clock, no reset, no enable and no logic between them is
+  exactly the pattern the tool auto-detects as a shift register (SRL): it
+  will pack them into one SRL primitive with a different placement and
+  clock-to-out profile than discrete flip-flops, and an SRL cell cannot
+  itself be packed into an IOB. If those stages are latency padding, not
+  an intentional shift register, mark every stage with the vendor's
+  "keep as flip-flops" attribute (e.g. `shreg_extract = "no"`) and confirm
+  in the post-synthesis/route report that no SRL cell appears on the path.
 - Constrain harness pins with a realistic input/output delay relative to
   the clock, **not** false paths. A false path on a real pin is a
   clock-domain-crossing hole, and a correctly configured flow rejects it.
