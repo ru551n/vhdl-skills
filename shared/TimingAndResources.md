@@ -141,6 +141,13 @@ report a high Fmax while being the critical path of the design that
 instantiates it, because inside the parent that cone is fed by registers
 the leaf build never saw.
 
+The reverse move also happens, and both directions are real: a leaf's
+standalone Fmax can *fall* across a change that improves the top-level
+result, because the leaf synthesis estimate has no visibility into how
+its neighbours' registers land. Never use a leaf's own Fmax delta as a
+pass/fail regression gate on its own — check the top-level, in-context
+number.
+
 - Treat a leaf's standalone Fmax as an **upper bound**. It can rule a leaf
   out; it can never rule a leaf in.
 - Register a **top-level build target from the first milestone**. Leaf
@@ -176,6 +183,17 @@ the leaf build never saw.
 - Constrain harness pins with a realistic input/output delay relative to
   the clock, **not** false paths. A false path on a real pin is a
   clock-domain-crossing hole, and a correctly configured flow rejects it.
+  "Realistic" is not the same as zero: with no MMCM the clock's own
+  insertion delay (IBUF + route + global buffer, easily several
+  nanoseconds) is uncompensated, and `set_output_delay 0` charges every
+  bit of it to the pad while crediting the receiver with none — a
+  requirement no design at that frequency can meet, and it will report
+  as the design's own worst path when the fault is the constraint.
+  Model the actual receiver: an output delay of the clock's measured
+  insertion delay minus a real external setup allowance, and — as a
+  *separate* number — a minimum delay of the receiver's hold requirement
+  (usually near zero), never the same negative value reused for both;
+  reusing it turns the minimum bound into an unmeetable hold constraint.
 - Read the slack progression from synthesis through placement to routing.
   If it barely moves, the problem is **logic depth**, which RTL can fix and
   which synthesis-only slack is a good enough proxy to iterate on. If it
@@ -206,6 +224,27 @@ datapath registers becomes the worst path in the design.
 - Configuration that reaches many consumers (hundreds of clock enables) is
   a fan-out problem as well as a depth problem; register it close to the
   consumers, or let the tool replicate a register you have provided.
+- **Bound the arithmetic before registering it.** An unconstrained
+  general-purpose integer type synthesises a multiplier or divider sized
+  for its full range, not for the values the design ever produces —
+  `kernel_h * kernel_w` on a 32-bit `natural` builds a 32-bit multiplier
+  for a product that never exceeds a few hundred. Narrow the subtype
+  first; only add a register if depth remains after narrowing. Registering
+  an oversized combinational block first just moves the same logic behind
+  a flip-flop and can silently change behaviour if anything downstream
+  relied on the value being combinationally live within the cycle — check
+  any testbench that varies the configuration beat-by-beat before turning
+  a same-cycle read into a registered one; if it breaks a legitimate
+  contract, narrow the type and leave the timing combinational instead.
+- **A ready chain across several modules is the same failure with the
+  fix at the wrong end.** The signature looks like congestion — long
+  routes, many hierarchy crossings — but the actual cause is usually a
+  combinational `ready` or clock-enable derived from a descriptor or
+  status register several levels up and fanned out to hundreds of
+  consumers at the bottom. Read the endpoint type before reaching for a
+  floorplan: if it is a clock enable or a `ready` pin and the path spans
+  more than one or two entities, the fix is a skid/elastic register at
+  the hierarchy boundary that breaks the chain, not placement.
 
 ## 3. Reductions are trees, not chains
 
@@ -251,6 +290,15 @@ keeps advancing while it is held, and re-pairs data with the wrong entry on
 release. Give the read port the same enable, or re-present the last-issued
 address while frozen. This is invisible to a stall test with one item in
 flight; the test must have several.
+
+The same freeze must extend through every stage you add later. Adding a
+second read register (the block-RAM output register from §7, say) to
+absorb clock-to-out means the pipeline now drains for one more cycle
+after the freeze than "re-present the last address" alone covers — that
+trick holds off one stage, not two. Drive the added stage's own clock
+enable from the same `pipe_en` the rest of the pipeline uses, not from a
+fixed address re-presentation, or a stall will silently mis-pair data
+one stage later than before.
 
 ## 6. Lossless multi-stage read paths
 

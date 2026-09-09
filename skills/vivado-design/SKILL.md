@@ -621,8 +621,14 @@ handshakes across *related* clocks are invisible to both and need review.
   device − clock delay to the FPGA; min analogous) and
   `set_output_delay`, against a virtual clock when the external
   waveform differs. `TIMING-18` flags missing I/O delay; `check_timing`
-  lists unconstrained endpoints. For a pinnable timing harness constrain
-  with zero delay, not false paths (`shared/TimingAndResources.md` §1).
+  lists unconstrained endpoints. For a pinnable timing harness, constrain
+  realistically rather than with zero delay: with no MMCM the clock's own
+  insertion delay is uncompensated and a `0` output delay charges all of
+  it to the pad, an unmeetable and misleading constraint — use the
+  measured insertion delay less a real setup allowance for max, and a
+  genuinely separate near-zero value for min, never the same negative
+  number reused for both (`shared/TimingAndResources.md` §1). Never false
+  paths on a real pin.
 - **Exceptions are last** (`shared/TimingAndResources.md`, "Prefer
   structure to constraints"). A multicycle path must be genuinely
   multicycle by construction (registered enable that provably holds the
@@ -682,6 +688,14 @@ appears on the path in the post-synthesis utilization report.
    meets; ±1) and `report_qor_suggestions` — the tool's own ranked
    fixes, including ML strategies (top-3 from
    `report_qor_suggestions` is UG1292's recommended strategy sweep).
+   **Both are licensed features** and fail outright on a Basic/WebPACK
+   license (`[Implflow 47-2944] Your current selected license is
+   BASIC`) rather than degrading gracefully — confirm entitlement before
+   relying on either in a documented flow. Fallback with no extra
+   license: `report_design_analysis -timing -max_paths N`, then group
+   the worst N endpoints by owning module/instance by hand — this is
+   plain text processing, not a QoR feature, and it is where the real
+   leverage usually is regardless of license.
 5. `report_methodology` (TIMING-*, XDC*) and `report_control_sets`.
 
 **Reading the failure signature:**
