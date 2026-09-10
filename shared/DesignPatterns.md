@@ -46,6 +46,16 @@ invariant, instead of computing it every cycle, can be a zero-area fix
 where a skid register would have been a net loss. Measure both
 candidates' post-route WNS before picking one on a wide payload.
 
+This is not a blanket argument against skid registers on wide-ish
+payloads — it is specifically about the *width relative to the
+alternative*. A 128-bit skid register breaking the same class of
+cross-module ready chain has separately been the single best fix in a
+timing pass, on a design where the ~4.6 kbit case above was a net loss
+in the same skills history. The discriminator is payload width against
+what else is on the path (a 4.6 kbit register genuinely is a lot of new
+fan-out; 128 bits usually is not), not "skid register" as a category —
+measure, don't categorically avoid or categorically reach for it.
+
 ## FIFO
 
 For a synchronous FIFO:

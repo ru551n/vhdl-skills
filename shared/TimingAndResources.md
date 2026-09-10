@@ -255,6 +255,22 @@ datapath registers becomes the worst path in the design.
   over as many cycles as it needs. A command runs for thousands of cycles;
   a few cycles of setup latency are free. One extra logic level on a
   per-beat path is not.
+- **"Computed once" is not the same as "free of logic-depth budget."** A
+  one-shot setup cone is still a real register-to-register path the tool
+  must time; it is only free of the *per-beat repetition* cost, not of
+  the *single-cycle depth* cost. A multiply feeding straight into its own
+  fixup subtract/mod in the same setup cycle is exactly as much a
+  worst-path candidate as any other unregistered multiply-then-arithmetic
+  chain (Fundamentals, "an unregistered product leaving a DSP block is a
+  guaranteed worst path") — split it across the setup stages that
+  already exist, the same as any other depth budget, rather than
+  assuming "it only runs once per command" excuses the depth. Also
+  holds for a wider DSP cascade formed from two cascaded blocks (e.g.
+  an int8×int32 product): each block's own internal pipeline
+  register (M, then P) is a stage boundary, not decoration, and
+  skipping one to save a cycle puts the whole cascade's multiply-and-
+  add in one unregistered cone.
+  the depth.
 - Put a **register stage on every engine's configuration boundary**. No
   engine's combinational cone may begin at the controller's descriptor
   register.

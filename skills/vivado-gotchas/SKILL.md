@@ -49,6 +49,15 @@ exits. Capture the actual PID at launch time (`$!` from the backgrounding
 command) and poll with `ps -p "$PID" >/dev/null 2>&1` instead — a specific
 PID cannot self-match.
 
+The classic `grep "[b]uild_fpga"` bracket trick (which defeats `grep`
+matching its own argument list) does not fix this: the self-match comes
+from the *wrapper shell* invoked to run the whole polling command (its
+`cmd` line embeds the same pattern verbatim, e.g. via `bash -c "... grep
+...pattern... ..."`), not from `grep`/`pgrep`'s own process line, and the
+bracket trick does nothing about that outer shell. There is no reliable
+pattern-based fix for this class of self-match; capture the PID, poll
+the PID.
+
 ## Post-synthesis TCL hooks cannot reliably query the constraint/clock state
 
 A `STEPS.SYNTH_DESIGN.TCL.POST` build-step hook runs after `synth_design`
