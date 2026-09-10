@@ -947,6 +947,14 @@ Verified against the tsfpga source (`tsfpga/module.py`,
   block for that.
 - `build_fpga.py` conventions and the MCP wrappers around them are in
   `vivado-gotchas` ("MCP preference") and `vhsynth`.
+- **`build_fpga.py`'s non-zero exit on a timing failure is not a build
+  error** — a real place-and-route that completes but does not meet
+  timing still reports `fail` and a non-zero process exit, same as a
+  genuine synthesis/implementation crash would. Read the actual
+  `*_timing_summary_routed.rpt` (WNS/TNS/failing endpoints) before
+  concluding a run "failed" — a script or agent that treats any non-zero
+  exit as "the build broke" will mis-report a design that routed cleanly
+  but simply hasn't closed timing yet.
 
 ---
 

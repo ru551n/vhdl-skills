@@ -275,3 +275,23 @@ Take S from the multiplier's real port widths, keep S small enough that the
 packed operand fits, and **unpack every cycle before summing** so the only
 overflow condition is a single product. Pin the resulting multiplier count
 in a build checker; it is the packing's structural signature.
+
+## Per-command validation FSM: split a deep sequential guard chain
+
+A command-processor "validate the descriptor" state that accumulates a
+verdict through a long sequence of `if v_err = c_err_none then ... end if`
+guards (reserved fields, then space tags, then alignment, then geometry,
+then per-class dispatch — each one only reachable if every earlier one
+passed) is the same anti-pattern as a wide field compared against a dozen
+literals: one cycle spending a logic-level budget a per-command state can
+trade for a pipeline stage instead. Split it at any point along the chain:
+carry the verdict so far into a fresh registered `<name>_err_q` signal and
+a new state that continues the chain from where the first state left off
+(`v_err := <name>_err_q` as its first statement). This is the same shape as
+splitting a range-check state (`range_err_q`, `st_range` / `st_range_dst`)
+and costs exactly one free cycle per command, not per beat. Two independent
+model runs on the same design converged on this same fix for the same
+7-deep chain in a validation state — treat "one state doing everything a
+command needs before its engine starts" as a standing thing to grep for
+whenever the reserved-field/space-tag/alignment/geometry checks in a
+command processor grow past two or three guards deep.
