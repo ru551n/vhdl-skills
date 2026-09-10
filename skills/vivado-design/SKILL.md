@@ -717,6 +717,7 @@ appears on the path in the post-synthesis utilization report.
 | Clock skew large, `TIMING-6/-7/-8` (no common clock/node/period) | clocking | same buffer type/root, `CLOCK_DELAY_GROUP`, `BUFGCE_DIV` for synchronous divide, fix the constraint if the relation is false (A5, A6) |
 | Hold violations after route; `TIMING-15/-16` large hold/setup requirements | wrong exception or CDC constraint | `report_exceptions`, fix the `-hold` on multicycles, remove the false path |
 | Passes synthesis estimate, fails only after route | fan-out or congestion, not depth | as above; a synthesis-only estimate is a proxy for depth only (`shared/TimingAndResources.md` §1) |
+| Endpoint is a `/CE` or `/R` pin, not a data input | arithmetic (a subtract-and-compare, a wide reduction) gating a busy/ready/done/reset term | weaken the predicate — test the raw pre-clamp/pre-reduce value if it is provably equivalent, or move the arithmetic off the enable/reset entirely; do not pipeline a clock enable, `shared/TimingAndResources.md` §2 |
 
 **Fixes, in order of preference** (UG949 iterates RTL+constraints →
 synthesis options → implementation directives):
@@ -741,6 +742,20 @@ synthesis options → implementation directives):
    design is within reach so later minor changes do not reshuffle.
 5. **Floorplan** (A10) — last, and only for the residual placement
    problem.
+
+**Logic levels falling is not the same as slack rising.** `report_design_analysis`'s
+logic-level count is a synthesis-side proxy; the routed `Data Path Delay`
+line splits into `logic` and `route` components, and a fix that lowers
+logic levels while leaving (or worsening) the route-delay share can make
+WNS *worse* at route, not better — this has happened in practice: a fix
+that cut 14 levels to 10 regressed WNS because the path was already
+route-dominated and the fix moved the source further away without
+removing the dependency that made the net long. Read the logic/route
+split on the specific failing path **before** picking a fix class:
+logic-dominated → weaken/restructure the logic (this section, #1–#3);
+route-dominated → shorten the topology, remove a cross-hierarchy
+dependency, or treat it as placement (#5) — pipelining or attribute
+changes will not help a delay that is mostly wire.
 
 **The plateau.** Fixing the reported critical path reveals the next one;
 several consecutive fixes may move WNS by nothing while being necessary.

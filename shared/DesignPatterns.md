@@ -31,6 +31,21 @@ instantiation site, never a rewrite of the entity's handshake. Default it
 to whatever is cheapest (usually combinational); the point is that the
 registered form already exists and is verified before it is ever needed.
 
+**Check the payload width before reaching for a skid register as the
+fix.** A skid/elastic register costs roughly 2x the payload width in
+flip-flops (the live copy plus the skid copy) plus the control bits. On a
+narrow payload this is free; on a wide one (measured in practice: a
+~4.6 kbit window-generator payload) inserting one to break a `ready`
+chain has cost more in new fan-out/routing than the chain it removed and
+made WNS *worse*, not better. Before adding the register, check whether
+the chain can instead be removed outright — often the far end of a
+combinational `ready` chain is re-deriving an invariant the design
+already holds (e.g. "every lane is ready" when the lanes are lockstep by
+construction); reading one representative signal and asserting the
+invariant, instead of computing it every cycle, can be a zero-area fix
+where a skid register would have been a net loss. Measure both
+candidates' post-route WNS before picking one on a wide payload.
+
 ## FIFO
 
 For a synchronous FIFO:

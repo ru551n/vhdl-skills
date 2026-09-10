@@ -38,6 +38,17 @@ does. Fall back to manually invoking Vivado/`build_fpga.py` and reading its
 generated report files directly only when `tsfpga-mcp` (or its project-mode
 tools specifically) is unavailable.
 
+**When falling back to a manually-launched background build, block on the
+actual process, not a name-pattern match that can match yourself.** A
+common way to wait for a long `build_fpga.py`/Vivado run launched with
+`nohup ... &` is a loop like `until ! pgrep -f "<pattern>"; do sleep N;
+done` — but `pgrep -f` also matches the shell/awk/sleep invocation
+running the loop itself if the pattern is generic enough, so the loop
+never observes "no match" and spins forever even after the real build
+exits. Capture the actual PID at launch time (`$!` from the backgrounding
+command) and poll with `ps -p "$PID" >/dev/null 2>&1` instead — a specific
+PID cannot self-match.
+
 ## Post-synthesis TCL hooks cannot reliably query the constraint/clock state
 
 A `STEPS.SYNTH_DESIGN.TCL.POST` build-step hook runs after `synth_design`
