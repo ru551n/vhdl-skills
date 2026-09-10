@@ -78,6 +78,37 @@ is cheap at design time and expensive to retrofit.
   is a path of its own (§8).
 - Clock enables are control nets too. A pipeline-wide `pipe_en` is the
   right backpressure idiom (§5) and it needs the same replication.
+- **A disjoint per-consumer slice of a wide bus is not a fan-out
+  problem, even though it looks like one.** A wide shared-looking signal
+  where each individual bit drives exactly one consumer (a window/tap
+  bus statically sliced one bit-range per lane, for instance) has
+  fanout 1 per bit — replicating "the fan-out register" does not apply,
+  because there is no shared register to replicate; each consumer
+  already has its own. Check per-bit fanout before reaching for
+  replication on something that merely reads as a broadcast.
+- **Before adding a locality hint (sub-hierarchy, a floorplan lever),
+  check whether the placer already found the partition.** Dump the
+  placed cell locations for a suspect group (one Tcl loop over
+  `get_cells`/`get_property LOC`) and look for whether consumers that
+  should cluster already occupy disjoint, ordered column bands. If they
+  do, the placer has already done what a hierarchy hint would ask for,
+  and no RTL-level locality technique has anything left to contribute —
+  this falsifies an entire family of fixes (sub-hierarchy grouping,
+  register replication for locality, pblocks) in one check, before
+  writing any RTL.
+- **Route-delay *share* is not, by itself, a placement diagnostic.** A
+  path that is 70%+ route delay with few logic levels can be a perfectly
+  healthy path for the device — 7-series interconnect delay per hop is
+  routinely 2-3x a LUT's own delay, so a 6-level path *should* look
+  route-dominated by percentage. The real discriminator is **route delay
+  per logic level, compared against the design's own median across all
+  failing paths, and checked for correlation with physical span**. A
+  path whose ns/level matches the design's median regardless of how many
+  columns it's placed across is depth-bound, not distance-bound, no
+  matter how high its route-delay percentage reads; a real locality
+  outlier stands out as ns/level well above the median on a low-level-
+  count path, which route-delay percentage alone will not distinguish
+  from a normal deep path.
 
 **Memories and lookup.**
 - Use the block RAM's **output register**. It costs one cycle and removes

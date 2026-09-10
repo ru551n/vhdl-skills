@@ -764,7 +764,17 @@ Judge a rework by whether its target path is gone from the histogram,
 not by the immediate WNS delta; once several paths are within a few
 hundred picoseconds of each other, single-path fixes are exhausted and
 the remaining question belongs to place-and-route strategies, not to
-more RTL iteration. The full argument, with a worked progression, is in
+more RTL iteration. **On a design this dense, "target path gone from the
+histogram" is necessary but not sufficient — re-measure the floor
+(whatever frequency/WNS is actually shipping) after every change, not
+just the stretch target being explored.** A fix that provably deletes
+its target path's whole endpoint group can still be a net loss if the
+next-worst path it exposes costs more margin elsewhere than the target
+group was worth — measured in practice: two different structural fixes
+each removed 100+ endpoints from their target family while individually
+costing the shipping frequency's margin. On a plateau, judge a rework by
+both signals together (target gone AND floor unchanged-or-better), never
+by the first alone. The full argument, with a worked progression, is in
 `vivado-gotchas`, "A leaf entity's out-of-context Fmax is blind …",
 corollaries. Delegate reading a critical path and choosing the
 restructuring to a strong model (`vivado-gotchas`, "Always delegate
