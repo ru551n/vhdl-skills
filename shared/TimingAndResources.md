@@ -288,6 +288,20 @@ datapath registers becomes the worst path in the design.
   floorplan: if it is a clock enable or a `ready` pin and the path spans
   more than one or two entities, the fix is a skid/elastic register at
   the hierarchy boundary that breaks the chain, not placement.
+- **Keep arithmetic off a busy/ready/done clock enable, even within one
+  module.** A request-accept test written as `if <clamped-count> = 0`
+  looks harmless locally, but if `<clamped-count>` is itself
+  `min(raw_count, bound - offset)` — a subtract-and-compare — the whole
+  clamp chain lands on that clock enable's fan-in. Test the *raw,
+  pre-clamp* field instead (`if raw_count = 0`, an OR-reduce, one or two
+  LUT levels) wherever the two predicates are provably equal — often the
+  clamped value is zero only in the same case the raw value is zero, so
+  the substitution is free — and let the clamp arithmetic keep only the D
+  inputs it was always going to need, where it has a full cycle to
+  settle. The value still gets *stored* clamped; only the zero/accept
+  test moves off the arithmetic. Same family as the cross-module ready
+  chain above, but the fix is a re-spelled predicate, not a new register
+  stage.
 
 ## 3. Reductions are trees, not chains
 
