@@ -41,9 +41,12 @@ refresh if the upstreams drift.
 
 ## Naming (supersedes conflicting bullets in `CodingStyle.md`/`ModernVHDL.md`)
 
-- entities, architectures, signals, ports, generics, **and constants**:
-  `lower_snake_case`, no prefix (`data_width`, `memory_depth`, not
-  `g_data_width` / `C_DATA_WIDTH` / `c_data_width`).
+- entities, architectures, signals, ports, generics, constants, **and
+  process/subprogram-local `variable`s**: `lower_snake_case`, no prefix
+  (`data_width`, `memory_depth`, `export_base`, not `g_data_width` /
+  `C_DATA_WIDTH` / `c_data_width` / `v_export_base`). A local `variable`
+  gets no special marker distinguishing it from a signal or constant --
+  name it for what it holds, the same as everything else.
 - types and subtypes: suffix `_t` (`state_t`, `fifo_addr_t`), not a `t_`/`st_`
   prefix. A subtype used as an address/index range may instead use a
   descriptive `_range` name (`bram_addr_range`) when that reads better than
