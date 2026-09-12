@@ -1242,3 +1242,125 @@ testbench under this policy:
 - use a Python reference model via `pre_config`/`post_check` instead of
   hand-computed expected values whenever the module implements a
   specifiable numeric/algorithmic transform (§"Python reference models").
+
+## 17. Stub-first top-level integration testing
+
+An additional, optional technique — not a replacement for this document's
+default bottom-up order (§16, `vhflow` phases 3-4: per-module TDD to
+green first, true IP-level integration testing last). No project this
+skill set covers has actually used this yet; it is a genuinely new
+technique being proposed here, not a retrospective write-up of proven
+practice. Reach for it deliberately, not by default.
+
+**What it is.** Decompose the top-level architecture and every
+submodule's interface first — exactly what `vharch` already produces.
+Then, instead of building every leaf module to completion before wiring
+and testing the real top level, author a behavioral stand-in architecture
+for each not-yet-implemented submodule, matching its real interface
+exactly, and wire the *real* top-level entity against those stand-ins
+from day one. This gets genuine end-to-end top-level tests running
+immediately, against the intended architecture, rather than only after
+every leaf module is independently green. Replace each stand-in with the
+real RTL implementation one at a time, keeping the same top-level test
+green throughout as a running regression safety net. Value: catches
+integration-boundary bugs — interface mismatches, wrong assumptions about
+a neighboring module's protocol, top-level control-flow errors — against
+the real architecture, long before every leaf is finished. This is the
+opposite failure mode from a strict bottom-up build, where every module
+can look correct in isolation and integration still breaks at the very
+end.
+
+**Naming: `architecture model`.** Not `stub` — that word already names a
+narrower, different thing in this same document (§16 step 2's
+`--@`-stub entity: an empty/near-empty placeholder used only to get a
+red-phase TDD failure, same idea as `vharch`'s `--@` wiring-stub
+comments). Not `behavioral` — an other-ecosystem convention
+`shared/HouseStyle.md` already declines to import for `rtl` without a
+specific reason; the same reasoning applies here. Not `sim` — too broad,
+overlaps with "anything simulation-only" including `tb` itself. `model`
+reuses this document's own established "Python reference models (golden
+models)" terminology (§2), so a reader who already knows that term
+immediately understands what the architecture is. See
+`shared/HouseStyle.md`'s "Architecture naming" section for the full
+`a`/`tb`/`model` set.
+
+Put a `model` architecture in its own file, `<module>_model.vhd`,
+paralleling the already-conventional `<module>_model.py` naming for
+golden models (§2) — not as a second architecture appended to the real
+`<module>.vhd`. This keeps the real RTL file clean, and once a stand-in
+is retired for good, deleting the one file removes it with no risk of a
+dead architecture body left behind in the file that matters.
+
+**Precondition: interface fidelity, fixed early.** A `model`
+architecture's entity must match the real one's ports, generics, and
+modes exactly. This is precisely what `vharch`'s "Define architecture"
+and "Generate module requirement files" steps already produce and are
+meant to freeze early — treat that frozen interface as the contract both
+the `model` and the eventual `a` architecture are written against.
+
+**Mechanism: explicit architecture selection at the instantiation site.**
+`vharch`'s own generated top-level skeleton already names the
+architecture explicitly per instantiation (`entity work.foo_ctrl(a)`,
+see `vharch/SKILL.md`'s own example) — the real project's top level
+currently omits it only because exactly one non-`tb` architecture exists
+per entity today, so it's unambiguous. The moment a `model` architecture
+exists alongside `a`, every direct instantiation of that entity needs one
+named explicitly. This gives the simplest possible swap mechanism: point
+one instantiation at `entity work.<module>(model)`; when the real RTL is
+ready, change that same line to `entity work.<module>(a)`. No new
+VHDL-language machinery, and it matches `vharch`'s own existing generated
+style exactly.
+
+When the stub/real choice needs to be selectable *without* editing the
+top-level source — e.g. keeping both an all-stub smoke config and a
+fully-real regression config runnable from one unedited source tree — a
+top-level generic + `generate`, chosen per VUnit test config via
+`add_config(generics={...})` (§2), fits this codebase's existing
+generate-based conditional-instantiation idioms with no new VHDL-unit
+type. VUnit's own `add_config(..., vhdl_configuration_name=...)` (§2) is
+a real, available alternative for the same purpose, but has no precedent
+of actual use anywhere in this codebase and presupposes a
+component-instantiation style the project doesn't otherwise use — not the
+default recommendation here.
+
+**Mechanism: FFI-backed golden-model stand-in.** A `model` architecture's
+body can be a thin wrapper whose processes call
+`python_execute`/`python_call` (§7) into the same golden model already
+used for verification — bit-correct behavior for almost no hand-written
+VHDL, reusing §7's own "one selector + many stateless `get_*` functions"
+bridge idiom (driving DUT-facing outputs here, rather than feeding a
+testbench). Prefer this whenever a golden model already exists or is
+planned anyway (§2) for that submodule, or its real behavior is a
+numeric/algorithmic transform that's easier to express once in Python
+than to hand-approximate in VHDL. A plain hand-written trivial or
+combinational `model` body is simpler for near-passthrough or
+fixed-latency submodules with nothing worth modeling in Python at all.
+
+**Hard prerequisite: latency-agnostic, queue-based scoreboard checking.**
+The stand-in and the eventual real RTL will almost never share
+latency/backpressure behavior. A top-level test written against
+fixed-cycle-offset expectations breaks the moment a stand-in is swapped
+for real RTL (or vice versa), which defeats the entire point of keeping
+the same test green across the swap. This codebase already has the right
+idiom for this, just not written up under this name anywhere yet: push
+expected results onto a queue as they're generated, pop and check them
+against whatever arrives on the output interface whenever it arrives,
+bounded by a max-wait-cycles drain check at the end
+(`expected_q`/`monitor_out`/`drain_and_check`, e.g.
+`tb_cnn_accel_pe_array.vhd`, `tb_cnn_accel_window_gen.vhd`,
+`tb_cnn_accel_conv_core.vhd`). §12/§13 cover `queue_t` mechanics and the
+different `memory_pkg`-based scoreboard, not this specific hand-rolled
+pattern — treat this paragraph as its write-up until it earns a section
+of its own.
+
+**When this is and isn't worth it.** Good fit: novel or
+high-integration-risk architectures with many submodule boundaries, where
+the top-level data/control flow is the main risk and leaf behavior is
+cheap and faithful to model (numeric transforms, clean protocol
+datapaths). Poor fit: modules whose hard part *is* exact
+timing/protocol/contention/arbitration behavior that a model can't
+usefully approximate — a stand-in that fakes away the very thing under
+test gives false integration confidence, not real coverage — or cases
+where the existing bottom-up default already carries no realistic
+integration risk. Absent a specific reason to reach for this instead,
+§16's bottom-up order remains the default recommendation.

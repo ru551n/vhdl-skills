@@ -170,6 +170,13 @@ begin
 end architecture a;
 ```
 
+Note: this step's `--@` comments mark unresolved *wiring* only — a
+different thing from `shared/Vunit.md`'s "Stub-first top-level
+integration testing" `architecture model`, a working behavioral stand-in
+for a whole not-yet-built submodule. Don't conflate the two: a `--@`
+here means "this connection still needs deciding," not "swap this
+instance's architecture later."
+
 ### 6. Structural self-check
 
 For each architecture interface row verify:

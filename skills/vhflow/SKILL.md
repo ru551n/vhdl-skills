@@ -74,6 +74,19 @@ per the normal Availability probing rule below, not as guaranteed present.
 7. Synthesis — `vhsynth`
 8. Documentation — `vhdoc`
 
+## Optional variant: stub-first top-level integration
+
+An alternative to phases 3-4's default bottom-up order, for a team that
+wants early architecture-level validation across submodule boundaries
+before every leaf module is green: build the real top-level entity
+first, against behavioral stand-ins (`architecture model`) for
+not-yet-built submodules, and replace them with real RTL one at a time.
+Full write-up, when it's a good fit, and when it isn't: `shared/Vunit.md`
+§"Stub-first top-level integration testing". Does not replace the
+default per-module TDD loop in phase 3 above — it changes when true
+top-level integration testing (phase 4) starts, not whether phase 3
+still happens per module.
+
 ## Backend preference by phase
 
 | Phase | Preferred MCP | Fallback |

@@ -262,6 +262,19 @@ begin
 end architecture;
 ```
 
+A third name, `model`, is reserved for a behavioral stand-in used in
+place of a not-yet-implemented `a` architecture — see `shared/Vunit.md`
+§"Stub-first top-level integration testing" for when and how. Keep it in
+its own file (`<module>_model.vhd`), never appended to the same file as
+`a`.
+
+```vhdl
+architecture model of fifo is
+begin
+  ...
+end architecture;
+```
+
 ## Reset policy
 
 Default: **resetless**, using declaration initial values for power-up state
