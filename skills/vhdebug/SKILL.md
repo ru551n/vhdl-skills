@@ -44,10 +44,11 @@ Given the waveform path:
 ### 3. Source/context evidence — corvidex-mcp
 
 When available:
-- `search_vhdl` / `search_hdl` for driving logic and symbol references (conceptual discovery — "what drives this kind of signal")
+- `search_hdl` for driving logic and symbol references (conceptual discovery — "what drives this kind of signal")
 - `search_docs` / `search_knowledge` for intended behavior/conventions
 - `get_source` for exact source before concluding root cause
-- once the suspect signal/generic/port name is known, prefer `find_definition`/`find_references` (recently added, LSP/compiler-backed exact resolution) over `search_hdl` or grep to trace every declaration and usage precisely — e.g. tracing a signal backward through entity boundaries or confirming every instantiation site of a generic implicated in a mismatch
+- once the suspect signal/generic/port name is known, prefer `find_definition`/`find_references` (LSP/compiler-backed exact resolution) over `search_hdl` or grep to trace every declaration and usage precisely — e.g. tracing a signal backward through entity boundaries or confirming every instantiation site of a generic implicated in a mismatch
+- a "does this signal exist / is it driven anywhere" concept search that comes back empty is not conclusive — cross-check with `find_symbol` before ruling it out (see `shared/McpToolPolicy.md`'s known retrieval weaknesses)
 
 Fall back to local Read/Grep when unavailable.
 

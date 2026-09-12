@@ -14,7 +14,7 @@ Read `shared/ModernVHDL.md`, `shared/CodingStyle.md`, and `shared/HouseStyle.md`
 
 Read `shared/McpToolPolicy.md`.
 
-Use `corvidex-mcp` when available to cross-check architecture, module docs, VHDL symbols and related source. Exact current project artifacts remain authoritative. Use `get_source` before quoting or relying on exact implementation behavior. When cross-checking a specific, already-named symbol (e.g. confirming a generic/port referenced in a module doc actually resolves the way the doc claims), prefer the exact `find_definition`/`find_references`/`hover_info` tools (recently added, LSP/compiler-backed) over `search_hdl` or grep — reserve `search_hdl`/`search_knowledge` for the conceptual "what covers this topic" lookups.
+Use `corvidex-mcp` when available to cross-check architecture, module docs, VHDL symbols and related source. Exact current project artifacts remain authoritative. Use `get_source` before quoting or relying on exact implementation behavior. When cross-checking a specific, already-named symbol (e.g. confirming a generic/port referenced in a module doc actually resolves the way the doc claims), prefer the exact `find_definition`/`find_references`/`hover_info` tools (LSP/compiler-backed) over `search_hdl` or grep — reserve `search_hdl`/`search_knowledge` for the conceptual "what covers this topic" lookups. See `shared/McpToolPolicy.md`'s routing table; a concept search that looks thin doesn't mean the topic isn't covered — cross-check with `find_symbol` before concluding that.
 
 ## Goal
 
