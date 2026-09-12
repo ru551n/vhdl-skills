@@ -44,14 +44,14 @@ tool usage. This skill owns the VHDL + Python.
 1. Check `vunit-mcp` `vunit_status` / the project's `run.py` imports /
    installed package version.
 2. If the project is on VUnit 4.x, write against VUnit 4 (see
-   `shared/Vunit.md` §14 deltas) and state which version the code targets.
+   `shared/Vunit.md` §15 deltas) and state which version the code targets.
 3. If `vunit-mcp` is the backend, target VUnit 5 (`ru551n/vunit` fork):
    `add_vhdl_builtins()` is required, `-- vunit: .name` attribute syntax.
    Pitfall: the attribute scanner matches the `vunit:` substring in any
    comment, not just real pragmas — prose naming a Python hook as
    `setup_vunit:` gets misparsed as an attribute and fails with an
    `Invalid attribute` error for a name that appears nowhere in the file
-   (`shared/Vunit.md` §9). Write `setup_vunit()` instead.
+   (`shared/Vunit.md` §10). Write `setup_vunit()` instead.
 
 ## run.py rules (VUnit 5)
 
@@ -76,20 +76,20 @@ tool usage. This skill owns the VHDL + Python.
 - **Watchdog always**: `test_runner_watchdog(runner, <real budget>);` as a
   **concurrent statement at architecture level** (after `end process;`,
   outside the test process — a sequential call inside the test process
-  blocks the test body; `shared/Vunit.md` §2/§13). Real budget: a few ×
+  blocks the test body; `shared/Vunit.md` §2/§14). Real budget: a few ×
   expected worst-case runtime, never a placeholder like `100 s`.
 - Named test cases: `while test_suite loop` + `run("test_*")`, one per
   functional scenario; cover the test-plan scenarios (reset, nominal,
   min/max, backpressure, boundaries, errors).
 - Self-checking: VUnit `check_*` procedures only (see `shared/Vunit.md`
-  §8 for the complete VUnit-5 `check_pkg`; VUnit-4 helpers like
+  §9 for the complete VUnit-5 `check_pkg`; VUnit-4 helpers like
   `check_zero`/`check_range` do not exist here).
 - **Seeds**: declare `variable rnd : RandomPType;` and
   `rnd.InitSeed(get_string_seed(runner_cfg));` once in the test process;
   report the seed on failure so the run is replayable with `--seed`.
 - Scoreboards: write DUT outputs into a `memory_t` and call
   `check_expected_was_written` at cleanup — not ad-hoc comparisons
-  (`shared/Vunit.md` §12).
+  (`shared/Vunit.md` §13).
 - Back-pressure by default on all slave-side interfaces (random stall
   probability + random latencies with verification components).
 - **Premade VCs/BFMs only.** Every AXI4/AXI4-Lite/AXI4-Stream side of a
@@ -109,7 +109,7 @@ tool usage. This skill owns the VHDL + Python.
 ## Checker process rules (mandatory)
 
 Any checker/scoreboard process with pending work at end-of-simulation
-must respect the test phases — pick one, per `shared/Vunit.md` §7.1/§7.2:
+must respect the test phases — pick one, per `shared/Vunit.md` §8.1/§8.2:
 
 - **Pending work before exit** (drain, final checks with a queue): use
   the **phase gate lock** — `lock(runner, get_entry_key(test_runner_cleanup), logger)`
@@ -146,7 +146,7 @@ Never claim tests pass unless the actual backend reports success.
 
 ## Migration VUnit 4 → 5 (this fork)
 
-Per `shared/Vunit.md` §14:
+Per `shared/Vunit.md` §15:
 1. `add_vhdl` → `add_source_file`/`add_source_files`.
 2. Add `PROJ.add_vhdl_builtins()` after `VUnit.from_argv()`.
 3. `-- vunit_attr -- key: value` → `-- vunit: .key` (user attributes
@@ -164,7 +164,7 @@ Per `shared/Vunit.md` §14:
 
 - `run.py` compiles and `vunit_list_tests` discovers every intended test.
 - Every testbench has a watchdog, seeded RNG, and `test_runner_cleanup`.
-- Every checker process uses §7.1 or §7.2 discipline (state which).
+- Every checker process uses §8.1 or §8.2 discipline (state which).
 - All scenarios from the test plan covered by named `run("test_*")`.
 - Suite green through the real backend (or status `BLOCKED` with the
   exact failing backend output quoted).

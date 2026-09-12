@@ -28,7 +28,7 @@ Read:
 3. `shared/CodingStyle.md`
 4. `shared/DesignPatterns.md` and `shared/TimingAndResources.md` (read §2 "per-command configuration", §5 "freezing a pipeline", §7 "inference is template-sensitive" before writing any datapath, and §9 "design for verifiability" before writing its tests)
 5. `shared/Axi4.md` when the module exposes an AXI4/AXI4-Stream interface
-6. **Under the TDD policy (`shared/Vunit.md` §15, default)**: the module's
+6. **Under the TDD policy (`shared/Vunit.md` §16, default)**: the module's
    testbench already exists and is currently failing/red — it was written
    by `vhtestgen` *before* this skill ran. Read it before implementing;
    treat it as an executable spec alongside the proposal, not as something
@@ -89,7 +89,7 @@ True up `doc/<module>.md` if actual latency, reset values, interfaces, or behavi
 
 ## Step 2 — Unit testbench
 
-**Under the TDD policy (default, `shared/Vunit.md` §15)**: the unit
+**Under the TDD policy (default, `shared/Vunit.md` §16)**: the unit
 testbench for this module was already created by `vhtestgen` before this
 skill ran (red-first). This step is normally a no-op — do not regenerate or
 duplicate it. Only add to it here if implementation surfaces a gap

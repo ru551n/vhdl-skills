@@ -59,7 +59,7 @@ per the normal Availability probing rule below, not as guaranteed present.
 1. Architecture — `vharch`
 2. Module design — `vhdesign`
 3. Per-module TDD loop (`vhtestgen` → `vhfill`, repeated per module) —
-   per `shared/Vunit.md` §15, generate the module's unit testbench from
+   per `shared/Vunit.md` §16, generate the module's unit testbench from
    its `<module>_req.md` first (red), then implement with `vhfill` until
    that same testbench passes (green). `vhtestgen` and `vhfill` alternate
    per module here; they are not two separate whole-project passes.

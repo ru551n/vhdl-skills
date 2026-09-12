@@ -37,7 +37,7 @@ Decompose functionality into small, single-responsibility submodules rather
 than one large monolithic entity — this applies to genuinely new behavior
 just as much as it does to reused behavior. A modular design is easier to
 test (each submodule gets its own focused testbench under the TDD loop, see
-`Vunit.md` §15), easier to reuse in future designs, easier to reason about
+`Vunit.md` §16), easier to reuse in future designs, easier to reason about
 and document, and easier to close timing on piece by piece.
 
 Guidance:

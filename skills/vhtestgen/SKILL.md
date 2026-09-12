@@ -16,7 +16,7 @@ Read `shared/Vunit.md` (VUnit-5 API: runner, phases, gate locks, checks, seeds, 
 ## Test-first (TDD) — default execution order
 
 **Run this skill before `vhfill` for a given module, not after.** Per
-`shared/Vunit.md` §15 ("Test-driven development (TDD) for RTL modules"),
+`shared/Vunit.md` §16 ("Test-driven development (TDD) for RTL modules"),
 the default project-wide policy is: generate the module's VUnit testbench
 from its `<module>_req.md` first, confirm it is red (fails to elaborate
 against a stub, or fails for the expected "not implemented yet" reason),
@@ -81,7 +81,7 @@ the `vhunit` skill: VHDL-2008, `vunit_context` + `runner_cfg`, named
 `run("test_*")` cases, self-checking via `check_pkg`, a watchdog with a real
 budget, seeded RNG, `run.py` in the VUnit-5 style with
 `add_vhdl_builtins()`, and checker processes that respect the test phases
-(gate locks / `runner_phase` events per `shared/Vunit.md` §7).
+(gate locks / `runner_phase` events per `shared/Vunit.md` §8).
 
 The testbench skeleton, `check_pkg` reference, randomization/queue/VC
 references, and VUnit 4 vs 5 deltas live in `shared/Vunit.md` — do not
@@ -89,7 +89,7 @@ duplicate them here.
 
 ## Verification components (VCs)
 
-Per `shared/Vunit.md` §12 ("Verification components (VCs)"):
+Per `shared/Vunit.md` §13 ("Verification components (VCs)"):
 
 - **Always use a premade VC/BFM; never hand-roll one unless it truly does
   not exist.** Built-in VUnit VCs (`axi_stream_master`/`axi_stream_slave`/
@@ -129,13 +129,13 @@ Per `shared/Vunit.md` §12 ("Verification components (VCs)"):
   blocking => false)`, and non-blocking `pop_axi_stream(..., reference)` +
   a later `await_pop_axi_stream_reply`. Reserve the blocking forms for a
   directed test that must inspect a value before deciding what to drive
-  next. Full verified blocking/non-blocking table in `shared/Vunit.md` §12.
+  next. Full verified blocking/non-blocking table in `shared/Vunit.md` §13.
 - **If a custom VC genuinely is needed**, follow the handle-record +
   message-passing (`com`/`net`) pattern (not raw signal-poking from the test
   process) and implement any applicable VCI adapter (`as_stream`/`as_sync`,
   ...) so generic testbench code can still drive it. Full skeleton and the
   `vc_pkg.create_std_cfg` (id/logger/checker/unexpected-msg-policy) pattern
-  in `shared/Vunit.md` §12 ("Writing a custom VC"). Expect this to be rare
+  in `shared/Vunit.md` §13 ("Writing a custom VC"). Expect this to be rare
   on this project — AXI4-Stream links are already covered by the raw
   built-in VC per the wrapper caveat above.
 - **Give every VC instance driving/checking a real `tready`/`tvalid` link
@@ -145,7 +145,7 @@ Per `shared/Vunit.md` §12 ("Verification components (VCs)"):
   what actually exercises the DUT's elastic/backpressure implementation,
   not just its steady-state datapath. Include one directed zero-stall
   (`null_stall_config`) sanity case too. Full API and rationale in
-  `shared/Vunit.md` §12 ("Randomized backpressure via `stall_config`").
+  `shared/Vunit.md` §13 ("Randomized backpressure via `stall_config`").
 
 ## Test plan
 
