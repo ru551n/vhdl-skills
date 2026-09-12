@@ -392,7 +392,7 @@ end architecture;
 `output_path` generic (optional) is filled too. `core_pkg.stop(status)`
 aborts immediately.
 
-## 7. Python FFI (`python_call`/`python_execute`)
+## 7. Python FFI (`python_pkg`: `call`/`exec_file`)
 
 Runs Python code *inside the simulator process, during simulation* — a
 testbench can call into a live golden model, seed/verify large data, or
@@ -403,66 +403,106 @@ embedded interpreter, so module-level state in a loaded Python file is
 per-process — safe to cache in, never leaks between configs or persists
 across runs.
 
+Enabled in `run.py` with `vu.add_python()` **after** `vu.add_vhdl_builtins()`
+(there is no `add_vhdl_builtins(python=True)`), and reached from VHDL
+through `context vunit_lib.python_context` — `python_pkg` is not part of
+`vunit_context`.
+
 ```vhdl
 library vunit_lib;
 context vunit_lib.vunit_context;
-use vunit_lib.python_pkg.all;
+context vunit_lib.python_context;
 use vunit_lib.integer_array_pkg.all;
 ...
-variable discard : integer;
 variable arr : integer_array_t;
 begin
   test_runner_setup(runner, runner_cfg);
-  python_execute(file_name => tb_path(runner_cfg) & "python_bridge/my_bridge.py");
+  exec_file(tb_path(runner_cfg) & "python_bridge/my_bridge.py");
 
-  discard := python_call("select_case", arg => string'("case_name"));
-  arr := python_call("get_values");
+  call("select_case", arg("case_name"));          -- procedure: result ignored
+  arr := call("get_values");                      -- function: result type from target
   for i in 0 to length(arr) - 1 loop
     ... get(arr, i) ...
   end loop;
 
-  -- Multiple/named arguments: concatenate 'kw' calls.
-  discard := python_call("configure", kwargs => kw("width", 32) & kw("height", 16));
+  -- Positional and keyword arguments, freely mixed, at most 10 in total.
+  call("configure", arg(mode), kwarg("width", 32), kwarg("height", 16));
+
+  -- Keywords combined with '&' are ONE argument (**dict(...)), so any
+  -- number of them fits; wide registers and flags keep their own names.
+  call(
+    "check_result",
+    arg(export_data),
+    kwarg_unsigned("status", u_unsigned(status_slv)) &
+    kwarg("busy", status.busy) &
+    kwarg_unsigned("cycle_count", u_unsigned(cycle_count_slv))
+  );
 ```
 
-**`python_execute(file_name => ...)`**: loads and runs one Python file's
-module-level code inside the simulator's embedded interpreter. Call it
-exactly once per test process, right after `test_runner_setup` and before
-any `python_call` — calling it again is wasted work, not an error, since
-it just re-executes the module. Path convention: `tb_path(runner_cfg) &
-"python_bridge/<name>_bridge.py"`, a `python_bridge/` subdirectory next to
-the testbench file itself (`tb_path` is a VUnit-injected `runner_cfg` key,
-see §6 above).
+**`exec_file(file_name)`**: loads and runs one Python file's module-level
+code inside the simulator's embedded interpreter. Call it once per test
+process, right after `test_runner_setup` and before any `call`. Calling it
+again is **not** harmless: it re-runs the file's module-level code, which
+resets every module-level variable the file defines. A bridge that can be
+loaded more than once — for example by a verification component that loads
+its own bridge from every instance — must keep state that has to survive in
+an *imported* module (imports resolve through `sys.modules` and are not
+re-run), never at the bridge file's own top level. Without that, two
+instances of vhdl-ai-test's flash_model VC silently shared one device; see
+its `python/flash_model/registry.py`. The file's own directory goes on
+`sys.path` while it runs, so
+it can import its siblings. A relative path is relative to the run
+script's directory; the convention here is the absolute
+`tb_path(runner_cfg) & "python_bridge/<name>_bridge.py"`, a
+`python_bridge/` subdirectory next to the testbench file itself (`tb_path`
+is a VUnit-injected `runner_cfg` key, see §6 above). No `python_setup`
+call is needed on GHDL or NVC — the bridge starts the interpreter lazily on
+first use. `python_setup` is idempotent, so calling it anyway is harmless;
+it is required on Riviera-PRO/Active-HDL, which use VUnit's VHPI application
+instead of the bridge.
 
-**`python_call(function_name, ...)`**: calls one function already defined
-in that loaded module and blocks for its return value. Exactly one
-argument-passing form and one return per call:
-- Single positional argument: `arg => <value>` (string/integer/boolean/
-  unsigned/signed/real).
-- Multiple or named arguments: `kwargs => kw("name1", val1) &
-  kw("name2", val2) & ...` — `kw(...)` builds one entry, `&` concatenates
-  them into the full kwargs list.
-- No arguments: omit both `arg` and `kwargs`.
-- Return value: `integer`, `string`, `boolean`, or `integer_array_t` (an
-  opaque array handle from `integer_array_pkg` — index with `get(arr, i)`,
-  size with `length(arr)`; the Python side returns a NumPy array,
-  `np.array(values, dtype=np.int32)` or whatever dtype comfortably spans
-  the value range, not a plain Python list, matching this codebase's own
-  bridge modules). There is no "takes arguments, returns nothing" overload
-  — a pure side-effecting call (a selector, a configuration setter) still
-  needs a return value, so this codebase's convention is `return 0` on the
-  Python side, assigned to a throwaway `variable discard : integer` in
-  VHDL.
+**`call(identifier, ...)`**: calls one function already defined in that
+loaded module and blocks for its return value.
+- Arguments: `arg(value)` positional, `kwarg("name", value)` keyword,
+  **at most 10 in total** — but a *group* of keyword arguments combined
+  with `&` (`kwarg("a", 1) & kwarg("b", 2)`) is ONE argument, passed as
+  `**dict(...)`, so a call may carry any number of keywords. The group
+  must come after the positional arguments and must not repeat a keyword;
+  `null_arg` is its identity, and only keyword arguments can be combined.
+- Argument value types: `integer`, `string`, `boolean`, `real`,
+  `integer_vector`, `real_vector`, `integer_vector_ptr_t`,
+  `integer_array_t`, plus `std_ulogic` (→ Python `bool`; 1/H are True,
+  0/L False). A literal or aggregate needs a qualified expression:
+  `arg(integer_vector'(1, 2, 3))`.
+- **Values wider than `integer`** (a 32-bit CSR counter does not fit VHDL's
+  signed `integer`) go over as `unsigned`/`signed` through
+  `arg_unsigned`/`kwarg_unsigned` and `arg_signed`/`kwarg_signed`, which
+  give an exact Python `int` at any width. They have names of their own
+  rather than being `arg` overloads because a string literal belongs to
+  every character array type, which would make `arg("hi")` ambiguous —
+  same reason there is no `std_ulogic_vector` value (pass it as
+  `arg_unsigned(u_unsigned(slv))` or `arg(to_string(slv))`).
+- Result: selected by the **assignment target**, not by the call —
+  `integer`, `real`, `boolean`, `string`, `integer_vector`, `real_vector`,
+  `integer_array_t`, `integer_vector_ptr_t`. Inside an expression, where
+  there is no target to resolve from, qualify it: `integer'(call("f"))`.
+  For `integer_array_t` (an opaque handle from `integer_array_pkg` — index
+  with `get(arr, i)`, size with `length(arr)`) the Python side may return
+  a plain list or any integer-dtype NumPy array.
+- **Side-effecting calls use the `procedure` form**: `call("select_case",
+  arg(name));` as a statement, no result and no throwaway variable. A
+  zero-argument `call("f");` statement works too: there is a single
+  `procedure call` overload. (A Python `return 0` left over from the old API
+  is harmless — the procedure form discards whatever is returned.)
 
-**Errors: never wrap a `python_call` in `check_true`.** Let a Python
-exception propagate uncaught — `python_call` already turns it into a VUnit
-FAILURE carrying the full Python traceback, which pinpoints the exact
-line and cause far better than a generic `check_true(..., "some vague
-message")` ever could. This applies whether the exception is a real bug or
-a deliberate `raise` guarding a precondition (a bridge function called
-before its selector, an unknown case name, a case missing an optional
-field) — raise plainly in Python, do not invent a VHDL-side status code
-for it.
+**Errors: never wrap a `call` in `check_true`.** Let a Python exception
+propagate uncaught — `call` already turns it into a VUnit FAILURE carrying
+the full Python traceback, which pinpoints the exact line and cause far
+better than a generic `check_true(..., "some vague message")` ever could.
+This applies whether the exception is a real bug or a deliberate `raise`
+guarding a precondition (a bridge function called before its selector, an
+unknown case name, a case missing an optional field) — raise plainly in
+Python, do not invent a VHDL-side status code for it.
 
 **Bridge module design (the pattern every bridge in this codebase
 follows — `top_level_bridge.py`, `conv_core_bridge.py`,
@@ -474,15 +514,19 @@ the same underlying data), living in `test/python_bridge/`.
   then act" shape.
 - Every other function is a stateless, parameterless `get_*` reading off
   that global and returning exactly one scalar or flat array — because
-  one `python_call` only ever returns one value, a multi-field record
-  (like a descriptor's dozen scalar fields) is returned as ONE flat
+  one `call` only ever returns one value, a multi-field record (like a
+  descriptor's dozen scalar fields) is returned as ONE flat
   `integer_array_t` in a fixed, documented order (named index constants
   on the VHDL side, e.g. `c_df_opcode`, `c_df_flags`, ... — never a magic
   number at the call site) rather than one call per field.
+- The *argument* direction needs no such packing: a keyword group keeps
+  every value under its own name at the call site and in the Python
+  signature, however many there are (`top_level_bridge.check_result`
+  takes 24), so never trade names for a positional aggregate there.
 - Cache anything expensive (building a whole case registry, packing
   weights) in a module-level dict, computed lazily on first request, not
-  eagerly at `python_execute` time — the interpreter doesn't know which
-  case is actually wanted until the first `select_*` call.
+  eagerly at `exec_file` time — the interpreter doesn't know which case is
+  actually wanted until the first `select_*` call.
 - Name every function for exactly what it does — `get_weights_packed_flat`,
   not `get_data`; `select_hand_case`, not `set_case`. A vague name here
   costs a reader a trip into the Python file to find out what it actually
@@ -1325,7 +1369,7 @@ default recommendation here.
 
 **Mechanism: FFI-backed golden-model stand-in.** A `model` architecture's
 body can be a thin wrapper whose processes call
-`python_execute`/`python_call` (§7) into the same golden model already
+`exec_file`/`call` (§7) into the same golden model already
 used for verification — bit-correct behavior for almost no hand-written
 VHDL, reusing §7's own "one selector + many stateless `get_*` functions"
 bridge idiom (driving DUT-facing outputs here, rather than feeding a
