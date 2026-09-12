@@ -6,9 +6,9 @@ Core conventions:
 - `ieee.std_logic_1164` and `ieee.numeric_std`
 - no `std_logic_arith`, `std_logic_unsigned`, or `std_logic_signed`
 - use `unsigned` / `signed` for arithmetic
-- resetless-by-default (declaration initial values); when a runtime-restorable reset is needed, use synchronous active-high `reset = '1'` (see `shared/TsfpgaCodingConventions.md`)
+- resetless-by-default (declaration initial values); when a runtime-restorable reset is needed, use synchronous active-high `reset = '1'` (see `shared/HouseStyle.md`)
 - use `rising_edge(clk)`
-- architecture name `a` (RTL) / `tb` (testbench) unless the project says otherwise (see `shared/TsfpgaCodingConventions.md`)
+- architecture name `a` (RTL) / `tb` (testbench) unless the project says otherwise (see `shared/HouseStyle.md`)
 - prefer direct entity instantiation
 - preserve hand-owned requirement sections
 - `--@` marks unfinished design-direction code and must be removed once implemented

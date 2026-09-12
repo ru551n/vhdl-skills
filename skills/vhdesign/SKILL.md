@@ -9,7 +9,7 @@ allowed-tools: Read, Write, Bash, Grep, Glob
 
 # VHDL Designer
 
-Read `shared/ModernVHDL.md`, `shared/CodingStyle.md`, and `shared/TsfpgaCodingConventions.md`; they are authoritative for language revision, modern RTL practice, and concrete naming/style conventions.
+Read `shared/ModernVHDL.md`, `shared/CodingStyle.md`, and `shared/HouseStyle.md`; they are authoritative for language revision, modern RTL practice, and concrete naming/style conventions.
 
 
 Read `shared/McpToolPolicy.md`.
@@ -86,7 +86,7 @@ Generate valid VHDL-2008 that analyzes as far as practical while leaving explici
 Use:
 - required IEEE packages
 - exact entity generics/ports
-- `architecture a` (see `shared/TsfpgaCodingConventions.md`)
+- `architecture a` (see `shared/HouseStyle.md`)
 - type/signal declarations already decided by proposal where useful
 - direct entity instantiations for known submodules
 - `--@` implementation markers

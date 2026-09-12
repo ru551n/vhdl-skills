@@ -165,7 +165,7 @@ Reset behavior must be explicit per clock domain:
 Default project convention is resetless (declaration initial values, see
 "Initialization versus reset" / `FpgaInitialization.md`); when a
 runtime-restorable reset is genuinely needed, use active-high synchronous
-`reset` (see `TsfpgaCodingConventions.md` "Reset policy"), not active-low
+`reset` (see `HouseStyle.md` "Reset policy"), not active-low
 `rst_n`, unless a requirement or target-library constraint overrides that
 default.
 
@@ -622,7 +622,7 @@ Do not remove reset that has runtime/system semantics.
 
 ## Pipeline relative-stage naming
 
-Use the `_mN` / `_pN` convention defined in `CodingStyle.md`.
+Use the `_mN` / `_pN` convention defined in `HouseStyle.md`.
 
 The unsuffixed signal is relative stage 0. `_pN` is N stages after it and
 `_mN` is N stages before it. Keep transaction data, valid and sideband metadata

@@ -63,6 +63,28 @@ refresh if the upstreams drift.
   here specifically since it disambiguates a generate label from a same-named
   signal, but is not required practice upstream — do not extend the `g_`
   habit to generics or constants.
+- pipeline-stage signals: `_p1`/`_p2`/.../`_m1`/`_m2`/... relative-stage
+  coordinates — see "Pipeline relative-stage naming" below for the full
+  convention (11 real `_p1` instances in `hdl-modules/modules/common/src/
+  axi_stream_protocol_checker.vhd`).
+- directional record types/ports: suffix `_m2s`/`_s2m` (`stream_m2s_t`,
+  `m_axi_m2s`), or the project's own directional terminology
+  (`source`/`sink`, `request`/`response`) when that reads clearer than
+  master/slave naming — see `shared/InterfaceRecords.md` for when a
+  directional record is the right tool versus flat ports.
+- registered vs. combinational signals: suffix `_q` for a signal driven from
+  inside a clocked process (a register/latched value — `busy_q`, `cnt_cmd_q`),
+  with no suffix for a signal that is purely combinational (`effective_in_addr`,
+  driven by a plain concurrent assignment). **Project-specific, not evidenced
+  upstream** (`_q` does not appear anywhere in the audited `tsfpga`/
+  `hdl-modules` source — unlike every other bullet here, this one has no
+  upstream precedent to point to) — adopted in this project's own RTL because
+  the distinction is load-bearing where it is easy to get wrong: a validation
+  check that must see a same-cycle relocated address, for instance, breaks
+  silently if that address is accidentally registered (`_q`) instead of
+  combinational, one cycle later than the check expects. Do not use `_q` for
+  anything that is not itself the direct target of a clocked signal
+  assignment (`<=` inside `if rising_edge(clk) then`).
 
 This changes the following previously-documented defaults:
 
@@ -74,6 +96,151 @@ This changes the following previously-documented defaults:
 - `ModernVHDL.md`/`FpgaInitialization.md` code examples using `C_MAX_*`,
   `t_state`, `p_regs` → lowercase constants, `_t`-suffixed types, unprefixed
   process labels.
+- `CodingStyle.md`'s former "Pipeline relative-stage naming" and "Direction
+  markers" sections moved here verbatim (this is now the one copy); both
+  files still point at each other for the design-level context each retains
+  (`FpgaInitialization.md`, `TypeResolutionPolicy.md`, `CdcPolicy.md`, etc.).
+
+## Pipeline relative-stage naming
+
+Pipeline signal names use **relative stage coordinates** around the signal
+that is the local semantic reference point.
+
+- `_p1`, `_p2`, `_p3`, ... mean one, two, three, ... registered stages
+  **after** the reference signal (`p` = plus).
+- `_m1`, `_m2`, `_m3`, ... mean one, two, three, ... stages **before** the
+  reference signal (`m` = minus).
+- The unsuffixed name is the local reference stage (`0`).
+
+```vhdl
+signal sample_m2 : signed(15 downto 0);
+signal sample_m1 : signed(15 downto 0);
+signal sample    : signed(15 downto 0);
+signal sample_p1 : signed(15 downto 0);
+signal sample_p2 : signed(15 downto 0);
+```
+
+Conceptually:
+
+```text
+sample_m2 -> sample_m1 -> sample -> sample_p1 -> sample_p2
+    -2           -1          0          +1          +2
+```
+
+The coordinate is relative to the **chosen semantic reference signal**, not
+necessarily relative to an entity input or the first register in the module.
+
+Signals that describe the same transaction/sample must use matching stage
+coordinates:
+
+```vhdl
+signal data_p2  : unsigned(31 downto 0);
+signal valid_p2 : std_logic;
+signal last_p2  : std_logic;
+signal tag_p2   : tag_t;
+```
+
+Keep the functional name when the meaning changes rather than renaming every
+transformed value to the same base name merely to show pipeline depth:
+
+```vhdl
+signal multiplicand : signed(15 downto 0);
+signal product_p1   : signed(31 downto 0);
+signal rounded_p2   : signed(15 downto 0);
+signal result_p3    : signed(15 downto 0);
+```
+
+`_mN` is useful when logic is described relative to a sampled/reference
+point — FIR taps, alignment windows, delayed observations, or any notation
+that naturally has values before and after a reference sample:
+
+```vhdl
+y <= coeff_m1 * sample_m1 +
+     coeff    * sample +
+     coeff_p1 * sample_p1;
+```
+
+The names describe relative alignment, not physical time travel — an `_m1`
+signal must still be implemented from data actually available in the
+hardware architecture.
+
+For long, repetitive pipelines, an indexed array with a documented coordinate
+mapping may be clearer than many individual `_pN` declarations (use negative
+array indices only when the complete active toolchain is verified to support
+them cleanly):
+
+```vhdl
+type sample_pipe_t is array (integer range <>) of signed(15 downto 0);
+signal sample_pipe : sample_pipe_t(-2 to 3);
+```
+
+Rules:
+
+- Do not mix `_dN`, `_r`, `_rr`, `_regN`, `_stageN`, and `_pN` for the same
+  relative-delay concept in one module.
+- Prefer `_pN`/`_mN` for externally visible names, debug signals, and short
+  pipelines where relative alignment matters.
+- Pipeline coordinates must remain consistent for data, valid, sideband and
+  control signals.
+- Document the chosen stage-0 reference when it is not obvious.
+- When retiming changes physical register placement, update names if their
+  architectural relative-stage meaning changes.
+
+## Comment markers
+
+`--@` marks unfinished design-direction code that still needs a decision or
+an implementation:
+
+```vhdl
+--@ implement skid-buffer backpressure
+```
+
+A filled/complete module must not retain unresolved `--@` markers — treat
+one as a signal that the module isn't actually done yet, not decoration.
+
+## Declaration and port-map formatting
+
+Do not column-align the `:`/`:=`/`=>` delimiter across a block of port,
+generic, or signal declarations, or across a port map/generic map — one
+space either side, ragged columns left where they fall (confirmed real
+upstream practice, not just a preference: `hdl-modules/modules/fifo/src/
+fifo.vhd`'s own `generic`/`port` blocks and `fifo_wrapper.vhd`'s `port map`
+are both unaligned despite widely varying identifier lengths):
+
+```vhdl
+port (
+  clk : in std_ulogic;
+  write_ready : out std_ulogic := '1';
+  write_valid : in std_ulogic;
+  write_data : in std_ulogic_vector(width - 1 downto 0)
+);
+```
+
+not
+
+```vhdl
+port (
+  clk         : in std_ulogic;
+  write_ready : out std_ulogic := '1';
+  write_valid : in std_ulogic;
+  write_data  : in std_ulogic_vector(width - 1 downto 0)
+);
+```
+
+Same for port maps/generic maps:
+
+```vhdl
+port map (
+  clk_write => clk_write,
+  write_ready => write_ready,
+  write_almost_full => almost_full
+);
+```
+
+Aligned columns look tidy the day they're written but rot the moment any one
+name changes length, forcing a whitespace-only diff across every other line
+in the block just to re-align — not worth the churn, and not what upstream
+actually does.
 
 ## Architecture naming
 

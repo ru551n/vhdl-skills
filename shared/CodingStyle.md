@@ -23,7 +23,7 @@ Do not use:
 
 ## Naming
 
-Read `TsfpgaCodingConventions.md` — it is authoritative for concrete naming,
+Read `HouseStyle.md` — it is authoritative for concrete naming,
 derived from auditing the real `tsfpga`/`hdl-modules` source this project
 vendors and reuses. Summary:
 
@@ -94,7 +94,7 @@ end process;
 Reset only state that functionally requires initialization. Default is
 resetless (declaration initial values, `FpgaInitialization.md`); when a
 runtime-restorable reset is genuinely needed, use active-high synchronous
-`reset`, not active-low `rst_n` — see `TsfpgaCodingConventions.md` "Reset
+`reset`, not active-low `rst_n` — see `HouseStyle.md` "Reset
 policy".
 
 Prefer clock enables over gated clocks.
@@ -134,15 +134,7 @@ supported, and runtime assertions/checkers for important invariants.
 
 ## Direction markers
 
-`--@` marks unfinished design-direction code.
-
-Example:
-
-```vhdl
---@ implement skid-buffer backpressure
-```
-
-A filled module must not retain unresolved `--@` markers.
+See `HouseStyle.md` "Comment markers" for the `--@` convention.
 
 ## Verdicts
 
@@ -216,117 +208,9 @@ is required.
 
 ## Pipeline relative-stage naming
 
-Pipeline signal names use **relative stage coordinates** around the signal that
-is the local semantic reference point.
-
-- `_p1`, `_p2`, `_p3`, ... mean one, two, three, ... registered stages **after**
-  the reference signal (`p` = plus).
-- `_m1`, `_m2`, `_m3`, ... mean one, two, three, ... stages **before** the
-  reference signal (`m` = minus).
-- The unsuffixed name is the local reference stage (`0`).
-
-Example:
-
-```vhdl
-signal sample_m2 : signed(15 downto 0);
-signal sample_m1 : signed(15 downto 0);
-signal sample    : signed(15 downto 0);
-signal sample_p1 : signed(15 downto 0);
-signal sample_p2 : signed(15 downto 0);
-```
-
-Conceptually:
-
-```text
-sample_m2 -> sample_m1 -> sample -> sample_p1 -> sample_p2
-    -2           -1          0          +1          +2
-```
-
-The coordinate is relative to the **chosen semantic reference signal**, not
-necessarily relative to an entity input or the first register in the module.
-
-### Alignment
-
-Signals that describe the same transaction/sample must use matching stage
-coordinates.
-
-```vhdl
-signal data_p2  : unsigned(31 downto 0);
-signal valid_p2 : std_logic;
-signal last_p2  : std_logic;
-signal tag_p2   : tag_t;
-```
-
-If `data_p2` is aligned with `valid_p2`, they represent the same relative stage.
-
-### Functional transformations
-
-Keep the functional name when the meaning changes.
-
-```vhdl
-signal multiplicand : signed(15 downto 0);
-signal product_p1   : signed(31 downto 0);
-signal rounded_p2   : signed(15 downto 0);
-signal result_p3    : signed(15 downto 0);
-```
-
-Do not rename every transformed value to the same base name merely to show
-pipeline depth.
-
-### Negative stages
-
-`_mN` is useful when logic is described relative to a sampled/reference point,
-for example FIR taps, alignment windows, delayed observations, or algorithms
-whose notation naturally has values before and after a reference sample.
-
-Example:
-
-```vhdl
-y <= coeff_m1 * sample_m1 +
-     coeff    * sample +
-     coeff_p1 * sample_p1;
-```
-
-The names describe relative alignment, not physical time travel. An `_m1`
-signal must still be implemented from data that is actually available in the
-hardware architecture.
-
-### Long homogeneous pipelines
-
-For long repetitive pipelines, an indexed array may be clearer than many
-individual declarations:
-
-```vhdl
-type sample_pipe_t is array (integer range <>) of signed(15 downto 0);
-signal sample_pipe : sample_pipe_t(-2 to 3);
-```
-
-Then the index has the same semantic coordinate:
-
-```vhdl
-sample_pipe(-2)
-sample_pipe(-1)
-sample_pipe(0)
-sample_pipe(1)
-sample_pipe(2)
-sample_pipe(3)
-```
-
-Use negative array indices only when supported cleanly by the complete active
-toolchain; otherwise use named `_mN` / `_pN` signals or a zero-based storage
-array with documented coordinate mapping.
-
-### Rules
-
-- Do not mix `_dN`, `_r`, `_rr`, `_regN`, `_stageN`, and `_pN` for the same
-  relative-delay concept.
-- Prefer `_pN` / `_mN` for externally visible names, debug signals, and short
-  pipelines where relative alignment matters.
-- Pipeline coordinates must remain consistent for data, valid, sideband and
-  control signals.
-- Document the chosen stage-0 reference when it is not obvious.
-- When retiming changes physical register placement, update names if their
-  architectural relative-stage meaning changes.
+See `HouseStyle.md` "Pipeline relative-stage naming" for the
+full `_pN`/`_mN` convention (moved there — it's a naming rule, not a
+language-level one).
 
 ## Resolved/unresolved types
 

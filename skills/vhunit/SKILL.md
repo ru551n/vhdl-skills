@@ -21,7 +21,7 @@ folder) rather than plain hand-added libraries, read
 gotchas on top of what `Vunit.md` already covers.
 
 Testbench VHDL (architecture name `tb`, process/signal naming, etc.) still
-follows `shared/CodingStyle.md` and `shared/TsfpgaCodingConventions.md`.
+follows `shared/CodingStyle.md` and `shared/HouseStyle.md`.
 
 Read `shared/McpToolPolicy.md` for tool fallbacks.
 

@@ -7,19 +7,10 @@ complex internal signal groups, not merely an option to reach for when it
 
 ## Directional records
 
-For bidirectional protocols, use directional records such as:
-
-```text
-*_m2s
-*_s2m
-```
-
-where:
-- `m2s` = master/producer to slave/consumer
-- `s2m` = slave/consumer to master/producer
-
-Use the project's terminology (`source/sink`, `request/response`, etc.) if that
-is clearer than master/slave naming.
+For bidirectional protocols, use directional records — naming convention
+(`*_m2s`/`*_s2m`, or the project's own `source/sink`/`request/response`
+terminology when clearer than master/slave) is in
+`HouseStyle.md`'s Naming section.
 
 Example:
 

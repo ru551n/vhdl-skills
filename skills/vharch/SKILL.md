@@ -9,7 +9,7 @@ allowed-tools: Read, Write, Bash, Grep, Glob
 
 # VHDL Architect
 
-Read `shared/ModernVHDL.md`, `shared/CodingStyle.md`, and `shared/TsfpgaCodingConventions.md`; they are authoritative for language revision, modern RTL practice, and concrete naming/style conventions.
+Read `shared/ModernVHDL.md`, `shared/CodingStyle.md`, and `shared/HouseStyle.md`; they are authoritative for language revision, modern RTL practice, and concrete naming/style conventions.
 
 
 Read `shared/McpToolPolicy.md`.
@@ -110,7 +110,7 @@ Create `rtl/<ip>_top.vhd`.
 Requirements:
 - VHDL-2008 context clauses
 - entity with architecture-defined generics/ports
-- `architecture a` (see `shared/TsfpgaCodingConventions.md`)
+- `architecture a` (see `shared/HouseStyle.md`)
 - internal `signal` declarations
 - direct entity instantiations using `entity work.<module>(a)`
 - `generic map` and `port map`
@@ -226,7 +226,7 @@ modes, NoC, PS ports), SLR assignment, and the per-family device facts.
 
 ## Reset policy decision
 
-Resetless-by-default (`shared/TsfpgaCodingConventions.md`) only applies when
+Resetless-by-default (`shared/HouseStyle.md`) only applies when
 the architecture actually supports it — it is not a blanket default to apply
 without checking. Per module/clock-domain, determine whether:
 - every register's declaration initial value already gives the correct

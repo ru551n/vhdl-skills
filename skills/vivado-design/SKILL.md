@@ -296,7 +296,7 @@ The rules follow:
    `INIT` (declaration initial value; zero unless FDSE/FDPE), so a global
    power-up reset is unnecessary. The house convention is resetless by
    default with declaration initial values —
-   `shared/TsfpgaCodingConventions.md`, "Reset policy", and the decision
+   `shared/HouseStyle.md`, "Reset policy", and the decision
    rule in `shared/FpgaInitialization.md` (for Vivado targets condition
    3 of that rule is satisfied by GSR; the others are design questions).
 2. **Reset control, not data.** Resets "might be required on the control
@@ -312,7 +312,7 @@ The rules follow:
    asynchronous one cannot. UG901: describe clock-enable, set and reset
    as active-High; an active-low reset costs an inverter LUT on every
    control set. The house form is `reset : in std_ulogic := '0'`
-   (`shared/TsfpgaCodingConventions.md`).
+   (`shared/HouseStyle.md`).
 4. **Why asynchronous resets hurt, specifically:** registers with an
    asynchronous reset are not absorbed into DSP or block RAM (UG949's
    multiplier example: AREG/BREG/MREG all 0, product emulated with
@@ -2157,7 +2157,7 @@ Load alongside this skill:
 - `shared/SynthesizableVHDL.md` — the synthesizable/tool-dependent/
   simulation-only split; Vivado's VHDL-2008 subset (A2) is the
   "tool-dependent" boundary for this target.
-- `shared/FpgaInitialization.md` and `shared/TsfpgaCodingConventions.md`
+- `shared/FpgaInitialization.md` and `shared/HouseStyle.md`
   — the resetless-by-default policy that A4 grounds in GSR.
 - `shared/TsfpgaModules.md` — module layout that A13's
   `scoped_constraints/` and `module_*.py` build projects live in.
