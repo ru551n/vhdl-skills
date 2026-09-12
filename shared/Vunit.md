@@ -134,7 +134,10 @@ plain Python, prefer a **Python reference model** as the single source of
 expected-behavior truth over hand-computing expected values inside the
 testbench or re-deriving them ad hoc per test case.
 
-Pattern:
+Pattern (moving the stimulus/expected exchange itself onto live FFI, per
+§7 below, is now preferred over the `pre_config`/file-based transport
+described next — the model design guidance in this whole section applies
+equally either way; only how its output reaches VHDL should change):
 
 - `<module>_model.py` (or `<ip>_model.py` for a full-pipeline/integration
   test) next to `run.py`, implementing the same integer/fixed-point
@@ -145,7 +148,8 @@ Pattern:
 - Keep the model importable both from `run.py`/test configs and
   standalone (e.g. from a plain `pytest` unit test of the model itself) —
   do not embed it only as inline closures inside `run.py`.
-- `pre_config(output_path, ...)`: call the model with the same
+- Older transport (file-based, superseded by §7 for new testbenches):
+  `pre_config(output_path, ...)` calls the model with the same
   generics/seed the VUnit `add_config` uses, to generate stimulus and the
   model's precomputed expected-output file(s) into `output_path` before
   the simulation runs. The testbench reads the stimulus file back
@@ -388,7 +392,131 @@ end architecture;
 `output_path` generic (optional) is filled too. `core_pkg.stop(status)`
 aborts immediately.
 
-## 7. VUnit phases
+## 7. Python FFI (`python_call`/`python_execute`)
+
+Runs Python code *inside the simulator process, during simulation* — a
+testbench can call into a live golden model, seed/verify large data, or
+fetch pre-generated test vectors, without either side ever touching a
+file. Not the same Python process `run.py` itself runs in: each VUnit
+test config is its own OS process (GHDL/NVC invocation) with its own
+embedded interpreter, so module-level state in a loaded Python file is
+per-process — safe to cache in, never leaks between configs or persists
+across runs.
+
+```vhdl
+library vunit_lib;
+context vunit_lib.vunit_context;
+use vunit_lib.python_pkg.all;
+use vunit_lib.integer_array_pkg.all;
+...
+variable discard : integer;
+variable arr : integer_array_t;
+begin
+  test_runner_setup(runner, runner_cfg);
+  python_execute(file_name => tb_path(runner_cfg) & "python_bridge/my_bridge.py");
+
+  discard := python_call("select_case", arg => string'("case_name"));
+  arr := python_call("get_values");
+  for i in 0 to length(arr) - 1 loop
+    ... get(arr, i) ...
+  end loop;
+
+  -- Multiple/named arguments: concatenate 'kw' calls.
+  discard := python_call("configure", kwargs => kw("width", 32) & kw("height", 16));
+```
+
+**`python_execute(file_name => ...)`**: loads and runs one Python file's
+module-level code inside the simulator's embedded interpreter. Call it
+exactly once per test process, right after `test_runner_setup` and before
+any `python_call` — calling it again is wasted work, not an error, since
+it just re-executes the module. Path convention: `tb_path(runner_cfg) &
+"python_bridge/<name>_bridge.py"`, a `python_bridge/` subdirectory next to
+the testbench file itself (`tb_path` is a VUnit-injected `runner_cfg` key,
+see §6 above).
+
+**`python_call(function_name, ...)`**: calls one function already defined
+in that loaded module and blocks for its return value. Exactly one
+argument-passing form and one return per call:
+- Single positional argument: `arg => <value>` (string/integer/boolean/
+  unsigned/signed/real).
+- Multiple or named arguments: `kwargs => kw("name1", val1) &
+  kw("name2", val2) & ...` — `kw(...)` builds one entry, `&` concatenates
+  them into the full kwargs list.
+- No arguments: omit both `arg` and `kwargs`.
+- Return value: `integer`, `string`, `boolean`, or `integer_array_t` (an
+  opaque array handle from `integer_array_pkg` — index with `get(arr, i)`,
+  size with `length(arr)`; the Python side returns a NumPy array,
+  `np.array(values, dtype=np.int32)` or whatever dtype comfortably spans
+  the value range, not a plain Python list, matching this codebase's own
+  bridge modules). There is no "takes arguments, returns nothing" overload
+  — a pure side-effecting call (a selector, a configuration setter) still
+  needs a return value, so this codebase's convention is `return 0` on the
+  Python side, assigned to a throwaway `variable discard : integer` in
+  VHDL.
+
+**Errors: never wrap a `python_call` in `check_true`.** Let a Python
+exception propagate uncaught — `python_call` already turns it into a VUnit
+FAILURE carrying the full Python traceback, which pinpoints the exact
+line and cause far better than a generic `check_true(..., "some vague
+message")` ever could. This applies whether the exception is a real bug or
+a deliberate `raise` guarding a precondition (a bridge function called
+before its selector, an unknown case name, a case missing an optional
+field) — raise plainly in Python, do not invent a VHDL-side status code
+for it.
+
+**Bridge module design (the pattern every bridge in this codebase
+follows — `top_level_bridge.py`, `conv_core_bridge.py`,
+`depth_to_space_bridge.py`)**: one Python file per testbench (or shared
+across a small family of closely related testbenches, when they consume
+the same underlying data), living in `test/python_bridge/`.
+- A single `set_test_case`/`select_*` function picks which case a module-
+  global variable currently refers to, mirroring VHDL's own "configure
+  then act" shape.
+- Every other function is a stateless, parameterless `get_*` reading off
+  that global and returning exactly one scalar or flat array — because
+  one `python_call` only ever returns one value, a multi-field record
+  (like a descriptor's dozen scalar fields) is returned as ONE flat
+  `integer_array_t` in a fixed, documented order (named index constants
+  on the VHDL side, e.g. `c_df_opcode`, `c_df_flags`, ... — never a magic
+  number at the call site) rather than one call per field.
+- Cache anything expensive (building a whole case registry, packing
+  weights) in a module-level dict, computed lazily on first request, not
+  eagerly at `python_execute` time — the interpreter doesn't know which
+  case is actually wanted until the first `select_*` call.
+- Name every function for exactly what it does — `get_weights_packed_flat`,
+  not `get_data`; `select_hand_case`, not `set_case`. A vague name here
+  costs a reader a trip into the Python file to find out what it actually
+  returns, every single time it's called from VHDL.
+
+**When to reach for this instead of a file.** This supersedes the older
+pattern of a VUnit `pre_config` hook writing vector files (`.csv`, `.txt`)
+into a per-config `output_path`, with the testbench then doing its own
+`file_open`/`readline`/`read` to load them back — every cnn_accel
+testbench in this repo (`tb_cnn_accel_top.vhd`, `tb_cnn_accel_streaming.
+vhd`, `tb_cnn_accel_conv_core.vhd`, `tb_cnn_accel_pe_array_from_vectors.
+vhd`) has migrated off that pattern onto this one. Prefer live FFI
+whenever:
+- the expected/reference data already comes from a Python golden model
+  (§2's own "Python reference models (golden models)") — computing it
+  live means the model and the RTL check can never silently disagree
+  about a stale generated file's format;
+- the data is naturally described in Python (packing, quantization,
+  compiler output) and would otherwise need a hand-written VHDL parser
+  for a bespoke text format, one more place the two languages' idea of
+  the format can drift apart.
+
+Still a legitimate reason to keep `pre_config`/a real file: interop with
+something that has its own externally meaningful, checked-elsewhere file
+format (e.g. this repo's compiler-generated vectors, which a Python-side
+bridge function still reads back with ordinary `open()` — never VHDL file
+I/O — precisely because that file-writing function has its own dedicated
+test suite and other potential consumers). When in doubt, ask whether a
+VHDL testbench would otherwise have to parse the file itself; if yes,
+route it through a bridge function instead, even if Python still writes
+an intermediate file somewhere nobody but that same Python process ever
+reads.
+
+## 8. VUnit phases
 
 Phases a testbench traverses, in order:
 `test_runner_entry` → `test_runner_setup` → `test_suite_setup` →
@@ -400,7 +528,7 @@ The `runner` signal carries the `runner_phase` event, which is activated on
 halts on its entry/exit gates while any gate lock is held — that is the
 mechanism below.
 
-### 7.1 Phase gate locks — checker processes that must finish before exit
+### 8.1 Phase gate locks — checker processes that must finish before exit
 
 For any process with pending work at end-of-simulation (scoreboards, data
 checkers, drain logic): lock the entry gate of `test_runner_cleanup` so
@@ -451,7 +579,7 @@ Rules:
   (high cohesion) and makes no assumptions about runner timing (low
   coupling).
 
-### 7.2 Phase transition events — final checks that must not block exit
+### 8.2 Phase transition events — final checks that must not block exit
 
 For checkers that must **not** delay the simulation but need a last chance
 to verify a final-state invariant (e.g. the AXI4-Stream
@@ -475,7 +603,7 @@ end process;
 - Use the gate-lock form (7.1) instead when the check could still be
   running or needs to drain data.
 
-## 8. Checks (`check_pkg` — VUnit 5, complete)
+## 9. Checks (`check_pkg` — VUnit 5, complete)
 
 Every check has variants: plain, `pass: out boolean`, with `checker: in
 checker_t`, and as impure function returning boolean. Common args: `msg`
@@ -522,7 +650,7 @@ Note: the VUnit-4 helpers `check_equal_strict`, `check_range`,
 - `checker_stat_t(n_checks, n_failed, n_passed)` with `+`, `-`, `to_string`
 - `to_integer` / `to_checker` conversions
 
-## 9. Attributes, requirements & traceability
+## 10. Attributes, requirements & traceability
 
 VUnit 5 (this fork):
 - Syntax: `-- vunit: <name>` in a comment, placed after the `run("...")`
@@ -556,7 +684,7 @@ Usage:
   [{file_name, library_name}], tests: [{name, location: {file_name,
   offset, length}, attributes: {name: value}}]}`.
 
-## 10. Randomization & seeds
+## 11. Randomization & seeds
 
 - The **base seed** is a 64-bit value VUnit derives from time + thread;
   every test gets a distinct one. Pass `--seed <16-hex>` (e.g. `--seed
@@ -598,7 +726,7 @@ The `impure function` forms (no `rnd` parameter) use a shared RNG seeded
 from the test seed — convenient for one-offs, but prefer an explicit
 `RandomPType` for reproducible sequences.
 
-## 11. Queues & data types
+## 12. Queues & data types
 
 `vunit_lib.data_types_context` (pulled in by `add_vhdl_builtins()`):
 `queue_pkg`, `dict_pkg`, `id_pkg`, `integer_array_pkg`,
@@ -625,7 +753,7 @@ encode(q, encoder) / decode(q, decoder, value);
 ```
 
 Queues are the standard workhorse for reference-data pipelines in BFMs
-(see §12) and scoreboard designs.
+(see §13) and scoreboard designs.
 
 ### `integer_array_t` / `integer_vector_t` / `dict_t` / `id_t`
 
@@ -643,7 +771,7 @@ use vunit_lib.dict_pkg.all;                -- associative map: insert/get/delete
 use vunit_lib.id_pkg.all;                  -- unique id_t (get_id, increment)
 ```
 
-## 12. Verification components (VCs)
+## 13. Verification components (VCs)
 
 VUnit ships behavioral testbench components in
 `vunit/vhdl/verification_components/` (package + entity per IP). Requires
@@ -834,7 +962,7 @@ case that wants an initial no-stall "sanity" pass before switching to a
 randomized-backpressure pass in the same run.
 
 - **Seed `stall_probability`/`min_stall_cycles`/`max_stall_cycles` from the
-  test's own seeded RNG** (`get_string_seed(runner_cfg)`, see §10), not a
+  test's own seeded RNG** (`get_string_seed(runner_cfg)`, see §11), not a
   fixed literal, so different seeded runs exercise different stall
   patterns and a failure is reproducible via `--seed`. hdl-modules'
   `tb_axi_stream_bfm` pattern (`rnd.Uniform(0, 90)` percent, `min=1,
@@ -897,7 +1025,7 @@ deliberately narrow project-specific field.
 ### Writing a custom VC (only when no adequate built-in/wrapper exists)
 
 Per the VC-preference rule above, only write a custom VC after confirming no
-built-in VC/VCI (§12 lists) and no thin wrapper around one covers the
+built-in VC/VCI (§13 lists) and no thin wrapper around one covers the
 interface — for this project's AXI4-Stream links, that bar is essentially
 never met (raw `vunit_lib.axi_stream_master`/`axi_stream_slave` already
 handle arbitrary `user_length`, see the BFM-wrapper caveat above), so expect
@@ -1006,7 +1134,7 @@ equivalent for a set of project-local custom VCs (one `context` declaration
 in a shared package) so testbenches pull them in with one `context work.*`
 line instead of per-package `use` clauses.
 
-## 13. Good practices (tsfpga + hdl-modules)
+## 14. Good practices (tsfpga + hdl-modules)
 
 1. **Watchdog in every testbench**:
    `test_runner_watchdog(runner, <budget>);` as a **concurrent statement at
@@ -1032,7 +1160,7 @@ line instead of per-package `use` clauses.
 7. **Checker processes** (scoreboard/protocol monitors running in their
    own process) must respect the test phases: either lock the
    `test_runner_cleanup` gate until their pending checks are done
-   (§7.1) or wait on `runner_phase` events (§7.2). Never finish a
+   (§8.1) or wait on `runner_phase` events (§8.2). Never finish a
    checker process without checking the final DUT state, and never let
    it race `test_runner_cleanup`.
 8. **No-loss / no-bubble by construction**: queue-driven BFM generics
@@ -1042,7 +1170,7 @@ line instead of per-package `use` clauses.
    compiles RTL for simulation too, so a compile error in a "sim-only"
    file still breaks the run.
 
-## 14. VUnit 4 vs 5 differences
+## 15. VUnit 4 vs 5 differences
 
 This stack targets **VUnit 5** (`ru551n/vunit` fork 5.0.0.dev12, `--waves`).
 When a project is on a stable VUnit 4.x, these are the deltas to check:
@@ -1062,7 +1190,7 @@ add `add_vhdl_builtins()`, convert `vunit_attr` comments to
 `-- vunit: .name`, and re-implement removed `check_*` helpers with
 `check_equal`/`check_robust` or plain `assert`.
 
-## 15. Test-driven development (TDD) for RTL modules
+## 16. Test-driven development (TDD) for RTL modules
 
 Default workflow for a new module (project-wide policy, not just a
 suggestion): **write the VUnit testbench from the requirement doc before
@@ -1100,17 +1228,17 @@ than running as two separate whole-project passes.
 Combine with the rest of this document by default for every generated
 testbench under this policy:
 - prefer built-in VUnit verification components over a hand-rolled
-  driver/checker (§12); write a custom VC only when no built-in one fits,
+  driver/checker (§13); write a custom VC only when no built-in one fits,
   and verify a candidate wrapper's generic-range assertions against the
   actual interface width before reusing it (see the `bfm.axi_stream_*`
-  byte-alignment caveat in §12) — do not discover a mismatched assertion
+  byte-alignment caveat in §13) — do not discover a mismatched assertion
   only after wiring the whole testbench around it.
 - prefer non-blocking VC calls (`push_axi_stream`, `check_axi_stream(...,
   blocking => false)`, non-blocking `pop_axi_stream(..., reference)`) for
-  generating stimulus/verification data (§12).
+  generating stimulus/verification data (§13).
 - give every VC instance driving or checking a real `tready`/`tvalid`
   link a non-zero randomized `stall_config` by default, seeded from the
-  test's own RNG (§12).
+  test's own RNG (§13).
 - use a Python reference model via `pre_config`/`post_check` instead of
   hand-computed expected values whenever the module implements a
   specifiable numeric/algorithmic transform (§"Python reference models").
