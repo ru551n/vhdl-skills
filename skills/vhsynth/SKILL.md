@@ -33,7 +33,7 @@ Do not describe `tsfpga-mcp` resource synthesis as vendor timing closure.
 
 When the question is about design structure — instance hierarchy,
 generate-block expansion, resolved generics — rather than resource counts,
-prefer `tsfpga_hierarchy` (recently added) over a full `tsfpga_synthesize`
+prefer `tsfpga_hierarchy` over a full `tsfpga_synthesize`
 run or manually reading source/`ghdl`-elaborating by hand: it runs GHDL
 elaboration (generics resolved) without paying for full technology-mapping
 synthesis, so it is far cheaper for a pure hierarchy/structure question.
@@ -195,7 +195,7 @@ Resolve every `Notes:` ambiguity by asking the user before synthesizing.
 
 If the goal is understanding/verifying the design's instance hierarchy
 (generate-block-expanded instance names, resolved generics) rather than
-producing resource counts, call `tsfpga_hierarchy` (recently added) instead
+producing resource counts, call `tsfpga_hierarchy` instead
 of proceeding to a full synthesis run — it is a much cheaper way to answer
 that specific question.
 

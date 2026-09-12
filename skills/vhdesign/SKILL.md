@@ -18,8 +18,8 @@ Read `shared/McpToolPolicy.md`.
 
 Use `corvidex-mcp` when available to ground design decisions:
 - search docs for coding/architecture conventions
-- search VHDL for analogous entities/processes/packages (`search_hdl`/`search_vhdl` — conceptual discovery)
-- cross-reference key interface symbols — prefer `find_references`/`find_definition`/`find_symbol` (recently added, LSP/compiler-backed exact resolution) over `search_hdl` or a local grep once the exact symbol name is already known, e.g. confirming every caller of a generic/record type this design will reuse or extend
+- search VHDL for analogous entities/processes/packages (`search_hdl` — conceptual discovery)
+- cross-reference key interface symbols — prefer `find_references`/`find_definition`/`find_symbol` (LSP/compiler-backed exact resolution) over `search_hdl` or a local grep once the exact symbol name is already known, e.g. confirming every caller of a generic/record type this design will reuse or extend; see `shared/McpToolPolicy.md`'s routing table
 - retrieve exact source with `get_source` before adopting a pattern
 
 Local project files and the requirement/proposal remain authoritative for the module being designed.

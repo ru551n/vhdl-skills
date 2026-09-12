@@ -13,7 +13,19 @@ Claude Code example from the upstream project:
 claude mcp add corvidex-mcp -- uvx --from git+https://github.com/ru551n/corvidex-mcp.git corvidex-mcp
 ```
 
-Configure its repository index in `~/.config/corvidex/config.toml`.
+Configure its repository index in `~/.config/corvidex/config.toml`. With no
+`[[repositories]]` entry there, the repository is auto-named
+`<dirname>-<8 hex hash>` (e.g. `vhdl-ai-test-582e8509`), not the plain
+directory name — read the real name from `repository_status` before passing
+`repository=` to any tool.
+
+If your launcher runs the server via `uv` instead of `uvx`, use
+`uv --project DIR run ...`, not `uv --directory DIR run ...` — the latter
+changes the server's working directory, so corvidex silently indexes its
+own source tree instead of the target project. `CORVIDEX_MCP_PROJECT_DIR`
+overrides the project directory when the launcher command can't be edited.
+Confirm with `repository_status` that the indexed repository is the target
+project, not `corvidex-mcp` itself.
 
 ## vunit-mcp
 
