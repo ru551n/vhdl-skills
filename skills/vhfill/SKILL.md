@@ -16,8 +16,8 @@ Read `shared/McpToolPolicy.md`.
 
 ## MCP preference
 
-- Use `corvidex-mcp` for precedent/convention lookup when implementation details need grounding; prefer `find_definition`/`find_references` (recently added) over grep once the exact symbol is known.
-- Use `vunit-mcp` for compile and unit-test execution when a VUnit project exists; prefer `vunit_compile` + `vunit_elaborate` (recently added) over manually invoking `ghdl`/`run.py` via bash, and run `vunit_elaborate` liberally right after implementing/editing RTL to catch port/generic mismatches before a full simulation run.
+- Use `corvidex-mcp` for precedent/convention lookup when implementation details need grounding (`search_hdl`/`search_knowledge` for conceptual precedent); prefer `find_definition`/`find_references` over grep once the exact symbol is known — see `shared/McpToolPolicy.md`'s routing table.
+- Use `vunit-mcp` for compile and unit-test execution when a VUnit project exists; prefer `vunit_compile` + `vunit_elaborate` over manually invoking `ghdl`/`run.py` via bash, and run `vunit_elaborate` liberally right after implementing/editing RTL to catch port/generic mismatches before a full simulation run.
 - Use `peeper-mcp` for waveform-based failure analysis when a recorded waveform is available.
 
 ## Inputs
@@ -42,7 +42,7 @@ If `vunit-mcp` tools are exposed:
 1. Call `vunit_status`.
 2. Use `vunit_list_files` / `vunit_test_dependencies` as appropriate.
 3. Compile with `vunit_compile`.
-4. Elaborate with `vunit_elaborate` (recently added) before running a full
+4. Elaborate with `vunit_elaborate` before running a full
    test — it catches cross-unit port/generic/type mismatches that
    analyze-only `vunit_compile` cannot.
 5. Run the relevant unit test with `vunit_run_tests`.
@@ -122,7 +122,7 @@ Only create a standalone `<module>_tb.vhd` with `[FINISH] PASS/FAIL` when VUnit 
 
 - `vunit_status`
 - `vunit_compile`
-- `vunit_elaborate` (recently added) right after `vunit_compile` succeeds,
+- `vunit_elaborate` right after `vunit_compile` succeeds,
   before moving to Step 4 — `vunit_compile` is analyze-only and can report
   clean success on a cross-unit port/generic/type mismatch that only a real
   GHDL elaboration pass catches. Running `vunit_elaborate` here is cheap

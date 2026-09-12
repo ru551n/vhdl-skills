@@ -126,7 +126,7 @@ must respect the test phases — pick one, per `shared/Vunit.md` §8.1/§8.2:
 
 1. `vunit_status` → `vunit_compile` (fix compile/elaboration errors;
    common causes: missing `add_vhdl_builtins()`, VUnit-4 `add_vhdl`
-   calls, wrong context) → `vunit_elaborate` (recently added) to confirm a
+   calls, wrong context) → `vunit_elaborate` to confirm a
    real GHDL elaboration pass succeeds — `vunit_compile` is analyze-only
    and can pass cleanly even when a port/generic/type mismatch between
    units would fail elaboration; run `vunit_elaborate` before `run.py`/

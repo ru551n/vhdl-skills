@@ -24,35 +24,32 @@ over the equivalent manual/local approach whenever it is exposed in the
 current host (`shared/McpToolPolicy.md` is authoritative; this is a
 summary for the orchestrator):
 
-- **`corvidex-mcp`** — semantic search and exact code/doc navigation.
-  Prefer it over raw `grep`/`find`/manual file reads for anything in an
-  indexed repository. Use `search_hdl`/`search_vhdl`/`search_knowledge` for
-  conceptual discovery; use the recently added `find_definition`/
+- **`corvidex-mcp`** — semantic search and exact code/doc navigation. Route
+  by question type, not by habit — see `shared/McpToolPolicy.md`'s
+  cost-aware routing table: `search_hdl`/`search_knowledge` for conceptual
+  discovery (grep genuinely cannot do this); `find_definition`/
   `find_references`/`find_symbol`/`hover_info` (exact, LSP/compiler-backed)
-  instead of a fuzzy search or grep once the exact symbol name/location is
-  already known.
+  once the exact symbol name/location is already known — far cheaper than a
+  `search_hdl` guess; local `grep`/`find` for exhaustive literal-string
+  enumeration or material outside the index. A thin/empty concept-search
+  result is not proof something doesn't exist — cross-check with
+  `find_symbol` first.
 - **`vunit-mcp`** — VUnit project discovery, compile, elaborate, run,
   report/log/waveform retrieval. Prefer it over manually invoking
-  `ghdl`/`run.py` via `bash` or manually grepping VUnit logs. Use the
-  recently added `vunit_elaborate` liberally right after RTL is written or
-  edited — it is a real GHDL elaboration pass that catches cross-unit
-  port/generic/type mismatches `vunit_compile` (analyze-only) cannot, and
-  is cheap because it does not simulate anything.
+  `ghdl`/`run.py` via `bash` or manually grepping VUnit logs. Use
+  `vunit_elaborate` liberally right after RTL is written or edited — it is
+  a real GHDL elaboration pass that catches cross-unit port/generic/type
+  mismatches `vunit_compile` (analyze-only) cannot, and is cheap because it
+  does not simulate anything.
 - **`tsfpga-mcp`** — portable Yosys+GHDL synthesis/resource summaries and
   real per-project Vivado builds. Prefer it over manually shelling out to
   `yosys`/`ghdl`/`build_fpga.py` or manually reading generated report
-  files. Use the recently added `tsfpga_hierarchy` instead of a full
-  `tsfpga_synthesize` run when the question is about instance
-  hierarchy/generic resolution rather than resource counts — it is far
-  cheaper.
+  files. Use `tsfpga_hierarchy` instead of a full `tsfpga_synthesize` run
+  when the question is about instance hierarchy/generic resolution rather
+  than resource counts — it is far cheaper.
 - **`peeper-mcp`** — waveform inspection. Prefer it over manually parsing
   VCD/FST files or eyeballing a waveform viewer when the question is about
   signal timing/values/clock period/latency.
-
-`vunit_elaborate` and `tsfpga_hierarchy` (and corvidex-mcp's
-`find_definition`/`find_references`/`find_symbol`/`hover_info`) are recent
-additions to their respective upstream MCP servers; treat them as available
-per the normal Availability probing rule below, not as guaranteed present.
 
 ## Phases
 

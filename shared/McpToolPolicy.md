@@ -7,11 +7,13 @@ The VHDL flow is **MCP-first, local-tool fallback**.
 When an MCP server/tool is available in the current agent environment, prefer it for the task it was designed to perform.
 If it is unavailable, misconfigured, or cannot perform the requested operation, fall back to the local alternative listed below.
 
-This is not a soft preference: reaching for local `grep`/`find` on a repository
-that `corvidex-mcp` already has configured/indexed is a policy violation, not
-a stylistic choice, even when it "would also work". See the `corvidex-mcp`
-section below for the exact boundary of what still legitimately falls back
-to local tools.
+For `corvidex-mcp` specifically, "prefer" is a routing decision, not a
+blanket "always semantic search, never grep" rule: the right tool depends
+on what the question actually is (an already-known exact identifier vs. a
+concept/pattern vs. an exhaustive literal-string enumeration). See the
+`corvidex-mcp` section below for the routing table, the measurements it is
+based on, and the boundary of what still legitimately falls back to local
+tools.
 
 Never invent MCP availability or tool results. If the host exposes no corresponding MCP tool, treat it as unavailable.
 
@@ -33,37 +35,113 @@ Preferred for:
 Relevant tools when exposed:
 - `repository_status`
 - `search_hdl`
-- `search_vhdl`
+- `search_vhdl` — alias for `search_hdl(language="vhdl")`. A pending
+  upstream tool-selection-clarity PR removes this alias in favor of the
+  explicit form; prefer `search_hdl(language="vhdl")` in new usage, but the
+  alias still works until that PR merges.
 - `search_docs`
 - `search_code`
 - `search_knowledge`
 - `get_source`
 - `sync_repositories`
 - `reindex_repository`
-- `find_definition` — recently added (upstream `corvidex-mcp` PR #27, not
-  yet merged at the time this policy was written); exact, LSP/compiler-backed
-  go-to-definition via `vhdl_ls`/Veridian
-- `find_references` — recently added, same PR; exact find-all-usages
-- `hover_info` — recently added, same PR; exact type/signature info at a
-  location
-- `find_symbol` — recently added, same PR; exact symbol-name search
-  (workspace symbol lookup), not similarity search
+- `find_definition` — exact, LSP/compiler-backed go-to-definition via
+  `vhdl_ls`/Veridian
+- `find_references` — exact find-all-usages
+- `hover_info` — exact type/signature info at a location
+- `find_symbol` — exact symbol-name search (workspace symbol lookup), not
+  similarity search
+
+Cost-aware routing — pick the tool by what kind of question this is, not by
+habit or by "corvidex first, always". Measured on a real project (empirical
+review, 2026-09-12): looking up a known identifier
+(`cnn_accel_bias_requant`) cost 0.62 s / ~54.8 KB (~13,700 tokens) / 8
+chunks across 5 files via `search_hdl`, vs. <0.1 s / ~16 KB / 180 lines
+across 38 files via `grep -rn` (*more* complete, for that case), vs. 2.5 s /
+421 chars (~105 tokens) via `find_symbol` — the exact declaration with
+context, and the clear winner whenever the name is already known.
+`find_references` on a signal was similarly cheap and exact (~385 tokens,
+file:line:col). Route like this:
+
+- **Exact identifier already known** (you have the name and want its
+  declaration, its callers, its type, or "does this exist") →
+  `find_symbol` / `find_definition` / `find_references` / `hover_info`
+  first. Cheapest and exact. Never run a `search_*` query for a name you
+  already know.
+- **Concept, pattern, or "where/how does X happen"** (no exact name yet) →
+  `search_hdl`/`search_knowledge`. This is what the semantic index is for;
+  `grep` genuinely cannot answer this kind of question.
+- **Cross-domain question spanning docs, RTL, and tests** →
+  `search_knowledge`. Measurably excellent: a single `DEPTH_TO_SPACE` query
+  mapped that opcode across the compiler, the model, the tests, and the RTL
+  in one call.
+- **Exhaustive mechanical enumeration of a literal string across every file
+  type** (completeness matters more than ranking, including files outside
+  the index) → local `grep` is a legitimate, often better, choice — use it
+  and say so, rather than treating it as a last resort. See the exclusion
+  list under Fallback below for other cases where local tools are the
+  right call, not just an allowed one.
+
+This replaces a blanket "always prefer corvidex over grep" rule: that rule
+was too blunt, because for an already-known identifier `search_hdl` burns
+roughly two orders of magnitude more tokens than `find_symbol` for a worse
+answer. The spirit survives — do not bypass the semantic index for a
+genuinely semantic/conceptual question just because grep is more familiar —
+but grep is not automatically the wrong choice.
+
+Known retrieval weaknesses (measured, not hypothetical) — treat a thin,
+empty, or oddly ranked concept-search result as inconclusive, not as proof
+the thing doesn't exist:
+- A "reset synchroniser" concept query surfaced *none* of the 8 `resync_*`
+  entities that exist in the indexed `hdl-modules` submodule, while
+  `find_symbol("resync")` listed all of them immediately.
+- An "AXI stream FIFO with backpressure" concept query ranked a testbench
+  architecture above the actual `axi_stream_fifo` entity.
+- Mitigation: when a concept search looks thin, empty, or suspiciously
+  ranked, cross-check with `find_symbol` on the likely entity/signal name
+  before concluding the target does not exist in the repository.
+
+Zero-config repository naming: with no `[[repositories]]` entry configured,
+the repository is auto-named `<dirname>-<8 hex hash>` (e.g.
+`vhdl-ai-test-582e8509`), not the plain directory name. Any call that takes
+a `repository=` argument must read the real name from `repository_status`
+first — guessing the plain directory name (e.g. `vhdl-ai-test`) fails with
+an unknown-repository error.
+
+Launcher trap: registering the server with `uv --directory DIR run ...`
+changes the server process's working directory to `DIR`; for corvidex that
+means it indexes its *own* source tree instead of the target project —
+silently, with no error. Use `uv --project DIR run ...` instead (this does
+not change the working directory), or set `CORVIDEX_MCP_PROJECT_DIR` when
+the launcher command can't be edited. After setup, confirm with
+`repository_status` that the indexed repository is the target project, not
+`corvidex-mcp` itself.
+
+Pending-PR-dependent behavior — do not describe these as current until the
+named PR is confirmed merged:
+- **Once upstream PR #31 lands** (compact search results): `search_hdl`/
+  `search_docs`/`search_code`/`search_knowledge` results will carry 1-based
+  line-number gutters, bodies capped to ~40 lines with a `get_source(...)`
+  follow-up marker for anything longer, and a weak-match warning when
+  relevance is low. The line numbers are what makes a search →
+  `find_definition`/`find_references` handoff practical — but the
+  navigation tools take 0-based line numbers, so pass (displayed line
+  number − 1).
+- **Once upstream PR #32 lands** (multi-library `vhdl_ls` config):
+  library-qualified instantiations (`entity cnn_accel.foo`, tsfpga's
+  per-module-folder convention) will resolve correctly in all four
+  navigation tools. Before that fix, `find_definition`/`find_references`/
+  `find_symbol`/`hover_info` silently return "No definition found" (or an
+  equivalent empty result) on such references — treat an empty result on a
+  library-qualified instantiation as suspect, not as proof the target
+  doesn't exist, until that PR is confirmed merged.
 
 Usage rule:
-1. Call `repository_status` when repository/index health matters.
-2. Choose the right tool for the question, not just the familiar one:
-   - **Conceptual/natural-language discovery** ("find the AXI FIFO reference
-     implementation", "how does this project usually structure a CDC
-     handshake") → `search_hdl`/`search_vhdl`/`search_knowledge` (fuzzy
-     semantic+lexical search).
-   - **Exact symbol already known, precise resolution needed** ("who else
-     instantiates `foo_fifo`", "where is `FIFO_DEPTH` declared", "what is
-     the type of this port") → `find_references`, `find_definition`,
-     `find_symbol`, `hover_info`. These are LSP/compiler-backed exact
-     resolution, not similarity search, and are strictly more accurate than
-     a grep-based or fuzzy-search-based lookup for this case — prefer them
-     over `search_hdl`/`grep` whenever the exact name/location is already
-     the input, not the thing being discovered.
+1. Call `repository_status` when repository/index health matters, and
+   always to get the real (possibly zero-config-generated) repository name
+   before passing `repository=` to any other tool.
+2. Choose the right tool per the cost-aware routing table above, not just
+   the familiar one.
 3. Search at topic granularity, not module granularity and not item
    granularity. Neither extreme works well: one query for "the whole
    module" returns a diffuse mix of unrelated chunks, but one query per
@@ -81,26 +159,26 @@ Usage rule:
    trying to cover the whole file.
 4. Use `get_source` for exact source before copying or relying on an implementation detail.
 5. Do not assume indexed material is current if status reports sync/index errors.
+6. When a concept/semantic search result looks thin, empty, or oddly
+   ranked, cross-check with `find_symbol` before concluding the thing
+   you're looking for doesn't exist (see "known retrieval weaknesses"
+   above) — don't take a weak `search_hdl`/`search_knowledge` result as
+   the final word.
 
-**ALWAYS prefer `corvidex-mcp` over local `grep`/`find`/`git grep` for any code,
-docs, or knowledge that lives in a repository the server has configured/indexed**
-(check `repository_status` for the configured repository list). This applies
-even when the local checkout is also present on disk and grep "would work" —
-searching it locally anyway is exactly the anti-pattern this policy exists to
-prevent: it bypasses the semantic index, skips commit attribution, and
-duplicates work the MCP server already does better. Reach for local
-`Read`/`Glob`/`Grep` only for:
+Local `Read`/`Glob`/`Grep`/`git grep`/`find` are the right call, not just an
+allowed fallback, for:
+- an exhaustive mechanical enumeration of a literal string across every
+  file type (per the routing table above),
 - material the server does not index at all for this project (e.g. Python
   build/config scripts like `run.py`/`module_*.py`, non-HDL project files),
 - the current in-progress, uncommitted working tree of the project actively
   being authored (not yet sync-able into the index),
 - confirmed server unavailability/unhealth (per the Availability decision
   below) or a `repository_status` sync error for the repository in question.
-When in doubt whether something is covered, call `repository_status`/
-`search_hdl`/`search_docs`/`search_code`/`search_knowledge` first rather than
-defaulting to grep.
+For a conceptual question or an already-known exact identifier, route per
+the table above rather than defaulting to grep out of habit.
 
-Fallback (only per the exclusions above):
+Fallback:
 - project-local `Read`, `Glob`, `Grep`
 - `git grep`
 - `find`
@@ -127,9 +205,8 @@ Relevant tools when exposed:
 - `vunit_list_tests`
 - `vunit_list_files`
 - `vunit_compile`
-- `vunit_elaborate` — recently added (upstream `vunit-mcp` PR #13, not yet
-  merged at the time this policy was written); runs VUnit's `--elaborate`
-  flag, a real GHDL elaboration pass
+- `vunit_elaborate` — runs VUnit's `--elaborate` flag, a real GHDL
+  elaboration pass
 - `vunit_run_tests`
 - `vunit_get_report`
 - `vunit_get_test_log`
@@ -222,11 +299,9 @@ Relevant tools when exposed:
 - `tsfpga_status`
 - `tsfpga_targets`
 - `tsfpga_inspect`
-- `tsfpga_hierarchy` — recently added (upstream `tsfpga-mcp` PR #13, not yet
-  merged at the time this policy was written); a GHDL-elaborated,
-  generics-resolved instance/hierarchy tree (generate-block-expanded
-  instance names, resolved generics) **without** running full
-  technology-mapping synthesis
+- `tsfpga_hierarchy` — a GHDL-elaborated, generics-resolved
+  instance/hierarchy tree (generate-block-expanded instance names, resolved
+  generics) **without** running full technology-mapping synthesis
 - `tsfpga_synthesize`
 - `tsfpga_project_status`
 - `tsfpga_project_list_builds`

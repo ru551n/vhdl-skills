@@ -19,9 +19,9 @@ Read `shared/McpToolPolicy.md`.
 Before inventing a new block, use `corvidex-mcp` when available:
 1. `repository_status`
 2. `search_knowledge` for relevant standards/design guidance
-3. `search_vhdl` / `search_hdl` for reusable or precedent entities (conceptual/natural-language discovery, e.g. "existing AXI FIFO implementation")
+3. `search_hdl` (language="vhdl") for reusable or precedent entities (conceptual/natural-language discovery, e.g. "existing AXI FIFO implementation") — this is what the index is for, not something grep can do
 4. `get_source` for exact candidate implementations
-5. Once a candidate name is known (e.g. deciding whether a generic name like `FIFO_DEPTH` is already used elsewhere, or who else instantiates a candidate reuse target), prefer the exact `find_definition`/`find_references`/`find_symbol` tools (recently added, LSP/compiler-backed) over a `search_hdl` guess or a local grep — this is precise navigation, not similarity search.
+5. Once a candidate name is known (e.g. deciding whether a generic name like `FIFO_DEPTH` is already used elsewhere, or who else instantiates a candidate reuse target), prefer the exact `find_definition`/`find_references`/`find_symbol` tools (LSP/compiler-backed) over a `search_hdl` guess or a local grep — cheapest and exact for an already-known name; see `shared/McpToolPolicy.md`'s routing table.
 
 If unavailable, search `lib/`, `rtl/`, `doc/`, and `ddoc/` locally with Read/Glob/Grep.
 

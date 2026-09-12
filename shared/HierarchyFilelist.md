@@ -64,7 +64,7 @@ If `corvidex-mcp` is available, it may be used to locate package/entity sources,
 
 If the actual goal is understanding instance hierarchy/generate-block
 expansion/resolved generics rather than a compile-order filelist, prefer
-`tsfpga-mcp`'s `tsfpga_hierarchy` tool (recently added) over manually
+`tsfpga-mcp`'s `tsfpga_hierarchy` tool over manually
 tracing instantiations through the source — it runs GHDL elaboration
 (generics resolved) without the cost of full synthesis and answers that
 question directly.

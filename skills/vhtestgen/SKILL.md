@@ -22,7 +22,7 @@ from its `<module>_req.md` first, confirm it is red (fails to elaborate
 against a stub, or fails for the expected "not implemented yet" reason),
 then hand off to `vhfill` to implement until that same testbench goes
 green. When `vunit-mcp` is available, confirm the "fails to elaborate"
-case with `vunit_elaborate` (recently added) rather than a full
+case with `vunit_elaborate` rather than a full
 `vunit_run_tests` — it runs a real GHDL elaboration pass and is the cheaper
 way to establish the red baseline when the expected failure is structural
 (missing entity/port/generic against a stub), reserving `vunit_run_tests`
@@ -60,7 +60,7 @@ Use:
 - top entity
 - requirements
 - register/protocol docs
-- relevant precedent from `corvidex-mcp` when available (`search_hdl`/`search_vhdl` for conceptual precedent; prefer `find_definition`/`find_references` over grep once an exact port/generic/type name from the DUT is already known, e.g. confirming every consumer of a shared record type the test must construct)
+- relevant precedent from `corvidex-mcp` when available (`search_hdl` for conceptual precedent; prefer `find_definition`/`find_references` over grep once an exact port/generic/type name from the DUT is already known, e.g. confirming every consumer of a shared record type the test must construct — see `shared/McpToolPolicy.md`'s routing table)
 
 ## Recommended VUnit structure
 
