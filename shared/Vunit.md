@@ -506,7 +506,7 @@ Python, do not invent a VHDL-side status code for it.
 
 **Bridge module design (the pattern every bridge in this codebase
 follows — `top_level_bridge.py`, `conv_core_bridge.py`,
-`depth_to_space_bridge.py`)**: one Python file per testbench (or shared
+`flash_model_bridge.py`)**: one Python file per testbench (or shared
 across a small family of closely related testbenches, when they consume
 the same underlying data), living in `test/python_bridge/`.
 - A single `set_test_case`/`select_*` function picks which case a module-
