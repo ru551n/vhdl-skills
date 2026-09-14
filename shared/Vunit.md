@@ -448,8 +448,10 @@ loaded more than once — for example by a verification component that loads
 its own bridge from every instance — must keep state that has to survive in
 an *imported* module (imports resolve through `sys.modules` and are not
 re-run), never at the bridge file's own top level. Without that, two
-instances of vhdl-ai-test's flash_model VC silently shared one device; see
-its `python/flash_model/registry.py`. The file's own directory goes on
+instances of a VC that loaded its own bridge silently shared one device
+(vhdl-ai-test's former flash_model). A VC is better served by a Python
+session of its own per instance, as awesome-vunit-vcs does with
+`new_vc_session(get_id(handle), logger)`. The file's own directory goes on
 `sys.path` while it runs, so
 it can import its siblings. A relative path is relative to the run
 script's directory; the convention here is the absolute
@@ -505,8 +507,7 @@ unknown case name, a case missing an optional field) — raise plainly in
 Python, do not invent a VHDL-side status code for it.
 
 **Bridge module design (the pattern every bridge in this codebase
-follows — `top_level_bridge.py`, `conv_core_bridge.py`,
-`flash_model_bridge.py`)**: one Python file per testbench (or shared
+follows — `top_level_bridge.py`, `conv_core_bridge.py`)**: one Python file per testbench (or shared
 across a small family of closely related testbenches, when they consume
 the same underlying data), living in `test/python_bridge/`.
 - A single `set_test_case`/`select_*` function picks which case a module-
