@@ -1,0 +1,892 @@
+"""The vunit_* tools: drive a VUnit project through its own run.py.
+
+The server shells out to the project's run.py (VUnit has no standalone CLI,
+and VUnit.main() calls sys.exit()). It never imports vunit at all:
+vhdl-tools vunit test-dependencies needs VUnit's internal API, so it runs
+dependency_probe.py under the project's own interpreter — see
+project_model.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import json
+import os
+import shutil
+import time
+from pathlib import Path
+
+from ..registry import ToolRegistry
+
+from .checks import count_passed_checks, parse_check_results, render_check_summary
+from .config import Config, ConfigError, effective_simulator, load_config
+from .export_cache import get_export_json
+from .models import (
+    ElaborateInput,
+    GetReportInput,
+    GetTestLogInput,
+    GetTestWaveformInput,
+    RunTestsInput,
+    TestDependenciesInput,
+)
+from .parsing import (
+    JUnitReport,
+    count_lines,
+    error_excerpt,
+    find_simulator_error,
+    is_vunit_builtin,
+    parse_file_list,
+    parse_junit,
+    parse_mapping_file,
+    parse_test_list,
+    read_tail,
+    resolve_test_log,
+)
+from .project_model import InternalProject, InternalProjectError
+from .runner import (
+    RunTimeoutError,
+    resolve_junit_path,
+    run_subprocess_sync,
+    run_vunit,
+)
+from .waveform import (
+    canonical_waveform_format,
+    find_anchor_from_log,
+    find_waveform_file,
+    format_seconds,
+    help_supports_wave_flag,
+    run_waveform_args,
+    waveform_unavailable_reason,
+)
+
+tools = ToolRegistry(
+    "vhdl_tools.vunit",
+    instructions=(
+        "Drive a VUnit (HDL unit-testing) project: list tests, compile, run "
+        "tests, and inspect results/logs. Start with vhdl-tools vunit status if anything "
+        "is unclear. Test names look like lib.entity[.test_case]. "
+        "vhdl-tools vunit test-dependencies answers 'which files do I need to implement "
+        "this test?' "
+        "Waveforms are not always available: recording them headlessly needs "
+        "the --wave flag (upstream VUnit PR #1101), and the VUnit that must "
+        "have it is the *project's own*, not vhdl-tools' own -- vhdl-tools "
+        "installs no VUnit at all. vhdl-tools vunit status reports whether the project's "
+        "VUnit has it. Without it, GHDL can still record but NVC cannot, so "
+        "check vhdl-tools vunit status before promising a user any waveform."
+    ),
+    error_prefixes=("Error: ", "Run FAILED.", "Elaboration FAILED."),
+)
+
+_config: Config | None = None
+
+# Output dir of the most recent vhdl-tools vunit run-tests. The report/log/waveform
+# tools read from here so a per-run output_dir override is honored (falls
+# back to the configured default until the first run). Updated only when a
+# run completes with a fresh JUnit — a failed run must not make the
+# previous results unreachable.
+_last_output_dir: Path | None = None
+
+# vhdl-tools vunit run-tests is serialized: concurrent runs interleave VUnit's build
+# output (the same vunit_out by default) and would each report the
+# other's JUnit. One run at a time per server (the server is per-project
+# by config).
+_run_lock = asyncio.Lock()
+
+
+# Each CLI call is its own process, so the last completed run's output dir
+# is kept on disk (relative to the project dir) instead of only in memory.
+_LAST_OUTPUT_POINTER = Path(".vunit-mcp-cache") / "last_output_dir"
+
+
+def get_config() -> Config:
+    global _config, _last_output_dir
+    if _config is None:
+        _config = load_config()
+        with contextlib.suppress(OSError):
+            saved = Path(
+                (_config.project_dir / _LAST_OUTPUT_POINTER).read_text().strip()
+            )
+            if saved.is_dir():
+                _last_output_dir = saved
+    return _config
+
+
+def _project_lock() -> Path:
+    """Serializes compile/run/elaborate per project across CLI processes
+    (not inside vunit_out, which --clean deletes)."""
+    return get_config().project_dir / ".vunit-mcp-cache" / "run.lock"
+
+
+def _effective_output_dir(config: Config) -> Path:
+    return _last_output_dir if _last_output_dir is not None else config.output_dir
+
+
+# Whether the project's VUnit has the new --wave flag (upstream PR #1101:
+# headless waveform generation for GHDL and NVC). Probed once from
+# run.py --help and cached for the server's lifetime (the config, and with
+# it the VUnit install, is fixed per server).
+_wave_flag_supported: bool | None = None
+
+
+async def supports_wave_flag(config: Config) -> bool | None:
+    """Whether this VUnit advertises the new --wave flag (upstream PR #1101).
+
+    Probes ``run.py --help`` once and caches the result. Returns True/False
+    on a successful probe; None when the probe itself failed (callers should
+    treat that as "assume legacy" for runs, and report it for status). A
+    failed probe is not cached, so a later call retries.
+    """
+    global _wave_flag_supported
+    if _wave_flag_supported is None:
+        err, out = await _probe(config, ["--help"])
+        if err is None:
+            _wave_flag_supported = help_supports_wave_flag(out or "")
+    return _wave_flag_supported
+
+
+def _err(exc: Exception) -> str:
+    """Render a config/timeout error as an actionable tool result.
+
+    Convention: every failure-shaped string returned by a tool in this
+    module starts with "Error: " so an agent (or a test) can reliably
+    detect failure by prefix — tools here never raise/set isError, they
+    just return a plain string.
+    """
+    if isinstance(exc, ConfigError):
+        return f"Error: Configuration error: {exc}"
+    return f"Error: {exc}"
+
+
+def _short_tail(text: str, lines: int = 10) -> str:
+    """Last N lines of raw output, for fallbacks where parsing found nothing."""
+    return "\n".join(text.strip().splitlines()[-lines:])
+
+
+def _failing_checks(output_dir: Path, test_name: str) -> int:
+    """Count ERROR/FAILURE check lines in a test's log (0 if no log).
+
+    VUnit stops the simulation on the first check error, so failures sit
+    within read_tail's 24 KB cap.
+    """
+    log_path = resolve_test_log(output_dir, test_name)
+    if not log_path:
+        return 0
+    try:
+        tail = read_tail(log_path)
+    except OSError:
+        return 0
+    return sum(
+        1 for h in parse_check_results(tail) if h.severity in ("ERROR", "FAILURE")
+    )
+
+
+SIMULATORS = ("ghdl", "nvc", "vsim", "rival", "activehdl", "mti", "incisive")
+
+
+def _no_simulator_message(sim: str) -> str:
+    return (
+        f"Error: No simulator available to VUnit. It reported:\n  {sim}\n"
+        "Install a simulator (e.g. ghdl or nvc) or set "
+        "VUNIT_MCP_SIMULATOR to a VUnit-supported simulator name."
+    )
+
+
+async def _probe(
+    config: Config, args: list[str], timeout: float | None = None
+) -> tuple[str | None, str | None]:
+    """Run run.py. Returns (error_message, stdout); exactly one is None."""
+    try:
+        result = await run_vunit(config, args, timeout=timeout)
+    except (RunTimeoutError, ConfigError) as exc:
+        return _err(exc), None
+    if not result.ok:
+        sim = find_simulator_error(result.stdout, result.stderr)
+        if sim:
+            return _no_simulator_message(sim), None
+        msg = f"Error: run.py failed (exit {result.returncode}):\n{result.summary()}"
+        return msg, None
+    return None, result.stdout
+
+
+@tools.tool()
+async def vunit_status() -> str:
+    """Report configuration: project dir, run script, interpreter,
+    VUnit version, whether a simulator appears available, and which
+    waveform-recording flags the VUnit install supports. Call this first
+    when diagnosing setup problems. The waveform-flag support check is
+    probed on every call."""
+    try:
+        config = get_config()
+    except ConfigError as exc:
+        return _err(exc)
+
+    vunit_version = "not found"
+    try:
+        probe = run_subprocess_sync(
+            config,
+            [
+                config.python,
+                "-c",
+                "import vunit; print(vunit.__version__)",
+            ],
+        )
+        vunit_version = probe.stdout.strip() or f"error: {probe.stderr.strip()}"
+    except RunTimeoutError as exc:
+        vunit_version = f"probe failed: {exc}"
+
+    supported = await supports_wave_flag(config)
+    if supported is None:
+        wave_note = "waveform probe failed (could not read run.py --help)"
+    elif supported:
+        wave_note = (
+            "new --wave flag: headless waveforms — records vcd on GHDL, fst on NVC"
+        )
+    else:
+        sim = effective_simulator(config)
+        if sim and sim.strip().lower() == "nvc":
+            wave_note = (
+                "no headless waveforms: NVC on this VUnit needs the --wave "
+                "release (or --gui); use GHDL to record waveforms"
+            )
+        else:
+            wave_note = (
+                "legacy --gtkwave-fmt: GHDL only, headless; NVC needs a newer VUnit"
+            )
+
+    sims = [s for s in SIMULATORS if shutil.which(s)]
+    if config.simulator:
+        sims_note = f"VUNIT_MCP_SIMULATOR={config.simulator} (passthrough)"
+    elif os.environ.get("VUNIT_SIMULATOR"):
+        # Effective simulator via VUnit's own env var (not overridden by us).
+        sims_note = f"VUNIT_SIMULATOR={os.environ['VUNIT_SIMULATOR']}"
+    elif sims:
+        sims_note = "on PATH: " + ", ".join(sims)
+    else:
+        sims_note = (
+            "none detected on PATH — compile/run tools will fail until a "
+            "simulator (ghdl, nvc, vsim, ...) is installed, or "
+            "VUNIT_MCP_SIMULATOR is set"
+        )
+
+    venv_note = str(config.venv) if config.venv else "none (not activated)"
+    if config.venv_notes:
+        venv_note += " — " + "; ".join(config.venv_notes)
+
+    return "\n".join(
+        [
+            "vunit-mcp status",
+            f"- project dir : {config.project_dir}",
+            f"- run script  : {config.run_script}",
+            f"- virtualenv  : {venv_note}",
+            f"- interpreter : {config.python}",
+            f"- vunit       : {vunit_version}",
+            f"- simulator   : {sims_note}",
+            f"- output dir  : {config.output_dir}",
+            f"- waveform    : {wave_note}",
+            "                (probed on every call)",
+            f"- timeout     : {config.timeout:.0f}s",
+        ]
+    )
+
+
+@tools.tool()
+async def vunit_list_tests() -> str:
+    """List all test cases (lib.entity[.test_case]) the project knows about.
+    Does not require a simulator."""
+    try:
+        config = get_config()
+    except ConfigError as exc:
+        return _err(exc)
+    err, out = await _probe(config, ["--list"])
+    if err or out is None:
+        return err or "Error: Empty output"
+    names = parse_test_list(out)
+    if not names:
+        return (
+            "Error: No tests found (run.py --list returned no test names).\n"
+            + _short_tail(out)
+        )
+    return f"{len(names)} tests:\n" + "\n".join(f"- {n}" for n in names)
+
+
+@tools.tool()
+async def vunit_list_files() -> str:
+    """List all source files in compile order. Does not require a simulator."""
+    try:
+        config = get_config()
+    except ConfigError as exc:
+        return _err(exc)
+    err, out = await _probe(config, ["--files"])
+    if err or out is None:
+        return err or "Error: Empty output"
+    files = parse_file_list(out)
+    if not files:
+        return "Error: No files listed.\n" + _short_tail(out)
+    project = [f for f in files if not is_vunit_builtin(f)]
+    builtins = len(files) - len(project)
+    text = f"{len(project)} project file(s) (compile order):\n" + "\n".join(project)
+    if builtins:
+        text += (
+            f"\n(+ {builtins} VUnit built-in library files omitted — they "
+            "come from the installed vunit package, not the project)"
+        )
+    return text
+
+
+@tools.tool(lock=_project_lock)
+async def vunit_compile(simulator: str | None = None) -> str:
+    """Compile all sources in the VUnit project (--compile). Requires a
+    simulator. Safe to re-run. ``simulator`` (e.g. 'nvc' or 'ghdl')
+    overrides the server-level VUNIT_MCP_SIMULATOR for this compile only."""
+    try:
+        config = get_config()
+    except ConfigError as exc:
+        return _err(exc)
+    try:
+        result = await run_vunit(config, ["--compile"], simulator=simulator)
+    except RunTimeoutError as exc:
+        return _err(exc)
+    if result.ok:
+        # Success output is mostly per-file progress; keep it to a short tail.
+        return "Compile succeeded.\n" + _short_tail(result.summary(), 10)
+    sim = find_simulator_error(result.stdout, result.stderr)
+    if sim:
+        return f"Error: No simulator available to VUnit. It reported:\n  {sim}"
+    # Analyzer errors appear at the HEAD of the output; extract from the full
+    # (untruncated) text — the tail-keeping summary() can miss them.
+    return "Error: Compile failed:\n" + error_excerpt(result.full_text)
+
+
+def _run_args(input: ElaborateInput, output_dir: Path) -> list[str]:
+    # Waveform args are added by the caller: they depend on the one-time
+    # --wave capability probe (see supports_wave_flag).
+    args = ["-x", str(output_dir / "junit.xml")]
+    if input.num_threads:
+        args += ["-p", str(input.num_threads)]
+    if input.clean:
+        args.append("--clean")
+    if input.verbose:
+        args.append("--verbose")
+    if input.fail_fast:
+        args.append("--fail-fast")
+    # VUnit takes the attribute name as the flag's value, repeated per
+    # attribute (argparse action="append").
+    for name in input.with_attributes:
+        args += ["--with-attributes", name]
+    for name in input.without_attributes:
+        args += ["--without-attributes", name]
+    args += input.test_patterns
+    return args
+
+
+@tools.tool(lock=_project_lock)
+async def vunit_run_tests(
+    input: RunTestsInput = RunTestsInput(),  # noqa: B008 (FastMCP pattern)
+) -> str:
+    """Run VUnit tests and return a pass/fail summary plus the list of
+    failing tests. Patterns default to ['*'] (run everything). A JUnit XML
+    is always written next to the output dir for vhdl-tools vunit get-report.
+    Requires a simulator. Pass ``simulator`` to run with a specific
+    simulator for this call only (e.g. 'nvc'), overriding the
+    VUNIT_MCP_SIMULATOR environment variable. Set waveform_format to record one waveform per
+    test: 'vcd'/'ghw' work on GHDL with any VUnit, but headless recording
+    on NVC needs the --wave flag (upstream PR #1101) in the *project's*
+    VUnit — vhdl-tools has no VUnit of its own, so the project's install
+    alone decides. vhdl-tools vunit status reports whether the flag is there. It
+    records a canonical format per simulator — vcd on GHDL, fst on
+    NVC — and normalizes any other choice to it, saying so in the result.
+    With NVC set (VUNIT_SIMULATOR/VUNIT_MCP_SIMULATOR) and no --wave, the
+    tests still run but no waveform is recorded (it says so in the
+    result). vhdl-tools vunit get-test-waveform then returns the file path for
+    vhdl-tools wave to measure signal behavior. Concurrent runs in one
+    project are serialized with a lock file — a second call waits for the first
+    to finish before starting, and the result says so when that happened."""
+    # Runs are serialized (see _run_lock) so two interleaved runs can't
+    # cross-report each other's JUnit files.
+    waited_for_prior_run = _run_lock.locked()
+    async with _run_lock:
+        result = await _vunit_run_tests(input)
+    if waited_for_prior_run:
+        result = (
+            "Note: a run/compile was already in progress; this call waited "
+            "for it to finish before starting.\n" + result
+        )
+    return result
+
+
+@tools.tool(lock=_project_lock)
+async def vunit_elaborate(
+    input: ElaborateInput = ElaborateInput(),  # noqa: B008
+) -> str:
+    """Elaborate test benches without running them (run.py --elaborate)
+    and return a pass/fail summary per test, like vhdl-tools vunit run-tests. Same
+    test selection as vhdl-tools vunit run-tests; no waveforms. Requires a simulator.
+    A fast check that the design and test benches compile and elaborate."""
+    return await _vunit_run_tests(input, elaborate=True)
+
+
+async def _vunit_run_tests(input: ElaborateInput, elaborate: bool = False) -> str:
+    try:
+        config = get_config()
+    except ConfigError as exc:
+        return _err(exc)
+    global _last_output_dir
+    if input.output_dir:
+        output_dir = Path(input.output_dir).expanduser()
+        if not output_dir.is_absolute():
+            # Relative against the project dir, not the server's cwd (which
+            # is wherever the MCP host launched us).
+            output_dir = config.project_dir / output_dir
+        output_dir = output_dir.resolve()
+    else:
+        output_dir = config.output_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
+    args = ["-o", str(output_dir), *_run_args(input, output_dir)]
+    if elaborate:
+        args.append("--elaborate")
+    wave_note = None
+    recorded_fmt = None
+    fmt = getattr(input, "waveform_format", None)
+    if fmt:
+        sim = effective_simulator(config)
+        # A failed probe yields None; treat that as "assume legacy" so a
+        # flaky --help probe never blocks an otherwise-valid run.
+        wave_flag = bool(await supports_wave_flag(config))
+        reason = waveform_unavailable_reason(sim, wave_flag)
+        if reason is None:
+            # The server records a canonical format per simulator (vcd on
+            # GHDL, fst on NVC): fst is the compact machine-readable format
+            # external waveform MCPs prefer, and it is NVC's native one. An
+            # explicit other choice is overridden, not passed through
+            # silently. Normalization is skipped when no waveform will be
+            # recorded at all, so the result never claims a format the run
+            # does not record.
+            canonical = canonical_waveform_format(sim)
+            if canonical is not None and canonical != fmt and sim is not None:
+                wave_note = (
+                    f"Waveform format normalized: recording {canonical} "
+                    f"(canonical for {sim.strip().lower()}) instead of {fmt}"
+                )
+                fmt = canonical
+            try:
+                args += run_waveform_args(fmt, wave_flag)
+            except ValueError as exc:
+                return f"Error: Waveform recording not available: {exc}"
+            recorded_fmt = fmt
+        else:
+            # e.g. NVC on a legacy VUnit: the run is still valid, but no
+            # waveform will be recorded. Don't pass the (ignored) flag.
+            wave_note = f"Waveform not recorded ({fmt}): {reason}"
+    start = time.time()
+    try:
+        result = await run_vunit(
+            config, args, timeout=input.timeout, simulator=input.simulator
+        )
+    except RunTimeoutError as exc:
+        return _err(exc)
+
+    report_path = await resolve_junit_path(output_dir)
+    # VUnit leaves the JUnit file untouched when it runs no tests (e.g. a
+    # pattern matched nothing); never report a file older than this run.
+    fresh_report = (
+        report_path
+        if report_path is not None
+        and report_path.is_file()
+        and report_path.stat().st_mtime >= start
+        else None
+    )
+    # A fresh JUnit means the run completed and its results are
+    # authoritative. VUnit echoes test output to the console, so a
+    # "no simulator" line in a completed run's output is just test noise;
+    # the marker only matters when the run produced no report at all
+    # (e.g. it died before simulating).
+    if fresh_report is None:
+        sim = find_simulator_error(result.stdout, result.stderr)
+        if sim:
+            return (
+                f"Error: No simulator available to VUnit. It reported:\n  {sim}\n"
+                "Install a simulator or set VUNIT_MCP_SIMULATOR."
+            )
+    if fresh_report is not None:
+        # A completed run: point the report/log/waveform tools at this
+        # output dir. (A run without a fresh JUnit keeps the previous
+        # pointer, so the last completed run stays reachable.)
+        _last_output_dir = output_dir
+        with contextlib.suppress(OSError):
+            pointer = config.project_dir / _LAST_OUTPUT_POINTER
+            pointer.parent.mkdir(parents=True, exist_ok=True)
+            pointer.write_text(str(output_dir))
+        try:
+            report = parse_junit(fresh_report)
+            if not report.tests:
+                return (
+                    "Error: No tests were run — none of the patterns matched any "
+                    "test. Use vhdl-tools vunit list-tests to see available names.\n"
+                    + result.summary()
+                )
+            status = "FAILED" if (not result.ok or report.failed) else "PASSED"
+            out = (
+                f"{'Elaboration' if elaborate else 'Run'} {status}.\n"
+                f"{report.summary()}\n"
+                f"JUnit: {fresh_report}\n"
+                f"Logs: {output_dir} (use vhdl-tools vunit get-test-log for details)"
+            )
+            if wave_note is not None:
+                out += f"\n{wave_note}"
+            if recorded_fmt and report.failed:
+                out += (
+                    f"\nWaveforms recorded ({recorded_fmt.upper()}) "
+                    "— for a failing test, run vhdl-tools vunit get-test-waveform "
+                    "--test-name <test> to get the waveform file path for "
+                    "vhdl-tools wave."
+                )
+            return out
+        except Exception as exc:
+            return (
+                f"Error: Run finished (exit {result.returncode}) "
+                f"but JUnit parse failed: {exc}\n{result.summary()}"
+            )
+    if report_path and report_path.is_file():
+        return (
+            f"Error: Run finished (exit {result.returncode}) but no fresh JUnit "
+            f"was written (a stale {report_path} from an earlier run was "
+            "ignored).\n" + error_excerpt(result.full_text) + "\n" + result.summary()
+        )
+    return (
+        f"Error: Run finished with exit code {result.returncode} "
+        f"(no JUnit file found in {output_dir}).\n"
+        + error_excerpt(result.full_text)
+        + "\n"
+        + result.summary()
+    )
+
+
+async def _load_report(config: Config) -> JUnitReport | str:
+    output_dir = _effective_output_dir(config)
+    report_path = await resolve_junit_path(output_dir)
+    if not report_path or not report_path.is_file():
+        return (
+            f"Error: No JUnit report found in {output_dir}. Run vhdl-tools vunit run-tests first."
+        )
+    try:
+        return parse_junit(report_path)
+    except Exception as exc:
+        return f"Error: Failed to parse {report_path}: {exc}"
+
+
+@tools.tool()
+async def vunit_get_report(
+    input: GetReportInput = GetReportInput(),  # noqa: B008 (FastMCP pattern)
+) -> str:
+    """Answers "which tests passed/failed in the last run?" — the run-wide
+    overview. Re-reads the last run's JUnit XML from the output dir: fast,
+    no simulation, no re-run, safe to call repeatedly. Returns every test's
+    status, plus the number of failing VUnit checks for each failing test.
+    Pass only_failing=true to skip passing tests in the per-test listing
+    when a suite is large (the summary line still counts every test).
+    Pass slowest=N to append the N slowest tests by wall time, useful for
+    spotting runaway tests without re-running anything. Do NOT use this
+    for details — pick a failing test and call vhdl-tools vunit get-test-log on it
+    to see WHY it failed. Also see vhdl-tools vunit export-json /
+    vhdl-tools vunit test-dependencies for other read-only lookups (they don't
+    follow the get_ naming, but are the same kind of tool)."""
+    try:
+        config = get_config()
+    except ConfigError as exc:
+        return _err(exc)
+    report = await _load_report(config)
+    if isinstance(report, str):
+        return report
+    output_dir = _effective_output_dir(config)
+    tests = report.failed if input.only_failing else report.tests
+    header = "Failing tests:" if input.only_failing else "Per-test:"
+    lines = [report.summary(), "", header]
+    if input.only_failing and not tests:
+        lines.append("(none)")
+    for t in tests:
+        line = f"- [{t.status.upper()}] {t.fullname} ({t.time:.3f}s)"
+        # Only failing tests can have failing checks; skip the log read
+        # entirely for everything else.
+        if t.status in ("failed", "error"):
+            n = _failing_checks(output_dir, t.fullname)
+            if n:
+                line += f" — {n} failing check(s)"
+        lines.append(line)
+        if t.message:
+            lines.append(f"    {t.message}")
+    if input.slowest:
+        lines.append("")
+        lines.append(f"Slowest {input.slowest}:")
+        lines.extend(
+            f"- {t.fullname} ({t.time:.3f}s) [{t.status.upper()}]"
+            for t in report.slowest(input.slowest)
+        )
+    return "\n".join(lines)
+
+
+@tools.tool()
+async def vunit_get_test_log(input: GetTestLogInput) -> str:
+    """Answers "why did this one test fail?" — the raw output of a single
+    test (its output.txt). Use only for a specific test: test_name is the
+    full name from vhdl-tools vunit list-tests or a failing test from
+    vhdl-tools vunit get-report. For run-wide questions (which tests failed) use
+    vhdl-tools vunit get-report instead. Returns the last 100 lines by default
+    (failure info appears at the end); pass a larger `lines` for more
+    context. When the log contains failing VUnit checks, a structured
+    "Check results" section is appended after the log. Also see
+    vhdl-tools vunit export-json / vhdl-tools vunit test-dependencies for other read-only
+    lookups (they don't follow the get_ naming, but are the same kind
+    of tool)."""
+    try:
+        config = get_config()
+    except ConfigError as exc:
+        return _err(exc)
+    output_dir = _effective_output_dir(config)
+    log_path = resolve_test_log(output_dir, input.test_name)
+    if log_path is None:
+        known = sorted(parse_mapping_file(output_dir))
+        hint = ""
+        if known:
+            hint = "\nKnown tests (last run):\n" + "\n".join(f"- {n}" for n in known)
+        return (
+            f"Error: No log found for test {input.test_name!r} in {output_dir}.{hint}"
+        )
+    shown = input.lines or 0
+    text = read_tail(log_path, shown if shown else None)
+    total, exact = count_lines(log_path)
+    shown_lines = shown or len(text.splitlines())
+    header = f"Log for {input.test_name} ({log_path})"
+    if total > shown_lines:
+        header += (
+            f" — showing last {shown_lines} of {total}"
+            f"{'+' if not exact else ''} lines; raise `lines` for more"
+        )
+    out = f"{header}:\n---\n{text}"
+    summary = render_check_summary(parse_check_results(text), count_passed_checks(text))
+    if summary:
+        out += f"\n\n{summary}\n(line numbers refer to the log shown above)"
+    return out
+
+
+_WAVEFORM_USE = {
+    ".vcd": (
+        "Pass this path to vhdl-tools wave commands "
+        "(they read VCD and FST) to read signal values, search signal "
+        "names, or zoom in around the failing time — do not dump the raw "
+        "VCD into the conversation."
+    ),
+    ".fst": (
+        "Pass this path to vhdl-tools wave commands "
+        "(they read VCD and FST) to read signal values, search signal "
+        "names, or zoom in around the failing time — do not dump the raw "
+        "FST into the conversation. FST is NVC's default, compact "
+        "machine-readable format (GTKWave can open it too)."
+    ),
+    ".ghw": (
+        "An agent cannot open GHW itself. For vhdl-tools wave analysis, "
+        're-run the test with waveform_format="vcd" or "fst" and call this '
+        "tool again. GHW is otherwise meant for a human to open in the "
+        "gtkwave GUI — tell the user the path if they want to do that."
+    ),
+}
+
+
+def _human_size(num: int) -> str:
+    value = float(num)
+    unit = "B"
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if value < 1024 or unit == "TiB":
+            break
+        value /= 1024
+    return f"{value:,.0f} {unit}" if unit == "B" else f"{value:,.1f} {unit}"
+
+
+@tools.tool()
+async def vunit_get_test_waveform(input: GetTestWaveformInput) -> str:
+    """Resolves the waveform file recorded for a test by vhdl-tools vunit run-tests
+    (waveform_format 'vcd', 'ghw', or 'fst') and returns its path — pass a
+    VCD/FST path to vhdl-tools wave; for a GHW file, re-run
+    with waveform_format='vcd' or 'fst' instead for vhdl-tools wave analysis, or
+    tell the human user to open the GHW file in the gtkwave GUI themselves
+    (an agent cannot do that). Also reports the failing check's simulation
+    time from the test log when present, so you know where to look. No
+    re-simulation, no waveform parsing. Also see vhdl-tools vunit export-json /
+    vhdl-tools vunit test-dependencies for other read-only lookups (they don't follow
+    the get_ naming, but are the same kind of tool)."""
+    try:
+        config = get_config()
+    except ConfigError as exc:
+        return _err(exc)
+
+    output_dir = _effective_output_dir(config)
+    mapping = parse_mapping_file(output_dir)
+    test_dir = mapping.get(input.test_name)
+    if test_dir is None:
+        known = sorted(mapping)
+        hint = ""
+        if known:
+            hint = "\nKnown tests (last run):\n" + "\n".join(f"- {n}" for n in known)
+        return f"Error: No data for test {input.test_name!r} in {output_dir}.{hint}"
+
+    wave = find_waveform_file(test_dir, input.waveform_format)
+    if wave is None:
+        return (
+            f"Error: No waveform recorded for {input.test_name}. Run "
+            "vhdl-tools vunit run-tests with waveform_format to record one (vcd on GHDL, "
+            "fst on NVC), then call this tool again."
+        )
+
+    try:
+        size = _human_size(wave.stat().st_size)
+    except OSError:
+        return f"Error: Waveform file disappeared while being reported: {wave}"
+    lines = [
+        f"Waveform for {input.test_name}:",
+        f"Path: {wave}",
+        f"Format: {wave.suffix.lstrip('.').upper()}",
+        f"Size: {size}",
+    ]
+    log_path = test_dir / "output.txt"
+    if log_path.is_file():
+        secs, msg = find_anchor_from_log(read_tail(log_path))
+        if secs is not None:
+            lines.append(f'Failing check at {format_seconds(secs)}: "{msg[:120]}"')
+    lines += ["", _WAVEFORM_USE.get(wave.suffix, "")]
+    return "\n".join(lines).rstrip()
+
+
+@tools.tool()
+async def vunit_export_json() -> str:
+    """Export the project model (source files, all tests, attributes) as
+    JSON via --export-json. Attributes carry requirement/traceability data.
+    The export is cached at .vunit-mcp-cache/export.json in the project and
+    re-run only when the project's sources change. Does not require a
+    simulator. A read-only lookup, same as vhdl-tools vunit get-report /
+    vhdl-tools vunit get-test-log / vhdl-tools vunit get-test-waveform, even though it doesn't
+    follow their get_ naming."""
+    try:
+        config = get_config()
+    except ConfigError as exc:
+        return _err(exc)
+    outcome = await get_export_json(config)
+    if outcome.error or outcome.data is None:
+        return outcome.error or "Error: Empty output"
+    cache_note = (
+        " (cached — project unchanged since last export)" if outcome.reused else ""
+    )
+    data = outcome.data
+    # Keep the response bounded: counts + names if larger than the cap.
+    files = data.get("files", [])
+    tests = data.get("tests", [])
+    rendered = json.dumps(data, indent=2)
+    if len(rendered) > 8_000:
+        names = [t["name"] for t in tests]
+        project_files = [
+            f"{f['file_name']} (lib: {f['library_name']})"
+            for f in files
+            if not is_vunit_builtin(f["file_name"])
+        ]
+        builtins = len(files) - len(project_files)
+        text = (
+            f"Export: {len(files)} files, {len(tests)} tests{cache_note}.\n\n"
+            f"Project files (compile order):\n" + "\n".join(project_files)
+        )
+        if builtins:
+            text += f"\n(+ {builtins} VUnit built-in library files omitted)"
+        text += (
+            "\n\nTest names:\n"
+            + "\n".join(names)
+            + f"\n\nFull JSON (with attributes): {outcome.path}"
+        )
+        return text
+    return rendered + cache_note
+
+
+@tools.tool()
+async def vunit_test_dependencies(input: TestDependenciesInput) -> str:
+    """Return the ordered list of source files needed to implement one
+    test case: the files it depends on to elaborate, grouped by library
+    in compile order (VUnit built-in files summarized as a count). Does
+    not compile and needs no simulator. A read-only lookup, same as
+    vhdl-tools vunit get-report / vhdl-tools vunit get-test-log / vhdl-tools vunit get-test-waveform, even
+    though it doesn't follow their get_ naming."""
+    try:
+        config = get_config()
+    except ConfigError as exc:
+        return _err(exc)
+    outcome = await get_export_json(config)
+    if outcome.error or outcome.data is None:
+        return outcome.error or "Error: Empty output"
+    data = outcome.data
+    try:
+        project = InternalProject.load(config, data)
+        matches = project.resolve_test(input.test_name)
+        if not matches:
+            names = project.test_names
+            listed = names[:50]
+            msg = (
+                f"Error: No test matches {input.test_name!r}.\n"
+                f"Available tests ({len(names)}):\n"
+                + "\n".join(f"- {n}" for n in listed)
+            )
+            if len(names) > 50:
+                msg += f"\n(+ {len(names) - 50} more)"
+            return msg
+        if len(matches) > 1:
+            names = [t["name"] for t in matches]
+            listed = names[:50]
+            msg = (
+                f"Error: Pattern {input.test_name!r} matches {len(names)} tests "
+                "— pass an exact name:\n" + "\n".join(f"- {n}" for n in listed)
+            )
+            if len(names) > 50:
+                msg += f"\n(+ {len(names) - 50} more)"
+            return msg
+
+        # Off the event loop: this shells out to the project's interpreter,
+        # which parses all project sources on a cold cache -- seconds to
+        # minutes on a real project.
+        subset, answer_reused = await asyncio.to_thread(
+            project.implementation_subset, matches[0]
+        )
+        by_lib: dict[str, list[str]] = {}
+        for lib, path in subset:
+            by_lib.setdefault(lib, []).append(path)
+        project_files = sum(1 for _, p in subset if not is_vunit_builtin(p))
+        builtins = len(subset) - project_files
+
+        reused_parts = []
+        if outcome.reused:
+            reused_parts.append("export")
+        if answer_reused:
+            reused_parts.append("dependencies")
+        cache_note = (
+            f" ({' and '.join(reused_parts)} reused from cache)" if reused_parts else ""
+        )
+
+        lines = [
+            (
+                f"Files needed to implement {matches[0]['name']}{cache_note} "
+                f"(compile order):"
+            ),
+            "",
+        ]
+        for lib, files in by_lib.items():
+            lines.append(f"{lib}:")
+            skipped = 0
+            for p in files:
+                if is_vunit_builtin(p):
+                    skipped += 1
+                    continue
+                lines.append(f"  {p}")
+            if skipped:
+                lines.append(f"  (+ {skipped} VUnit built-in files omitted)")
+        lines.append(
+            f"Total: {project_files} project file(s) + {builtins} "
+            "VUnit built-in file(s)."
+        )
+        return "\n".join(lines)
+    except InternalProjectError as exc:
+        return f"Error: {exc}"
+

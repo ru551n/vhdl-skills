@@ -1,0 +1,161 @@
+"""Pydantic v2 input models for the vunit tools."""
+
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+
+class ElaborateInput(BaseModel):
+    """Input for vhdl-tools vunit elaborate (test selection shared with vhdl-tools vunit run-tests)."""
+
+    test_patterns: list[str] = Field(
+        default=["*"],
+        description=(
+            "VUnit test patterns (lib.entity[.test_case]). Default ['*'] runs "
+            "everything. Supports VUnit wildcards."
+        ),
+    )
+    num_threads: int | None = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Number of parallel test threads (-p). Defaults to VUnit's own default."
+        ),
+    )
+    output_dir: str | None = Field(
+        default=None,
+        description=(
+            "Output directory (-o). Relative paths resolve against the "
+            "project dir. Defaults to VUNIT_MCP_OUTPUT_DIR."
+        ),
+    )
+    timeout: float | None = Field(
+        default=None,
+        gt=0,
+        description="Max seconds for the run. Defaults to VUNIT_MCP_TIMEOUT.",
+    )
+    simulator: str | None = Field(
+        default=None,
+        description=(
+            "Simulator for this run only (e.g. 'nvc', 'ghdl'). Overrides "
+            "the server-level VUNIT_MCP_SIMULATOR for this call; if neither "
+            "is set, VUnit auto-detects from PATH."
+        ),
+    )
+    clean: bool = Field(
+        default=False, description="Clean build before running (--clean)."
+    )
+    verbose: bool = Field(
+        default=False, description="Verbose simulator output (--verbose)."
+    )
+    fail_fast: bool = Field(
+        default=False, description="Stop on first failure (--fail-fast)."
+    )
+    with_attributes: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Only run tests with these attributes set (--with-attributes "
+            "<name>, repeatable)."
+        ),
+    )
+    without_attributes: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Only run tests without any of these attributes set "
+            "(--without-attributes <name>, repeatable)."
+        ),
+    )
+
+
+class RunTestsInput(ElaborateInput):
+    """Input for vhdl-tools vunit run-tests."""
+
+    waveform_format: Literal["vcd", "ghw", "fst"] | None = Field(
+        default=None,
+        description=(
+            "Record waveforms during the run. The server records a "
+            "canonical format per simulator — 'vcd' on GHDL, 'fst' on NVC "
+            "(compact, machine-readable; best for external waveform MCPs) — "
+            "and normalizes any other explicit choice to it, saying so in "
+            "the result. REQUIRES the --wave flag (upstream VUnit PR #1101) "
+            "in the *project's* VUnit for headless recording; this server "
+            "ships no VUnit of its own. Without --wave, GHDL still records "
+            "but NVC records nothing and the run says so. Call vhdl-tools vunit status "
+            "to see whether the project's VUnit has the flag before "
+            "promising a waveform."
+        ),
+    )
+
+
+class GetTestWaveformInput(BaseModel):
+    """Input for vhdl-tools vunit get-test-waveform."""
+
+    test_name: str = Field(
+        description=(
+            "Full test name as listed by vhdl-tools vunit list-tests (lib.entity.test_case)."
+        ),
+    )
+    waveform_format: Literal["vcd", "ghw", "fst"] | None = Field(
+        default=None,
+        description=(
+            "Which recorded waveform to resolve ('vcd', 'fst', or 'ghw'). "
+            "Default: VCD if recorded, then FST, then GHW."
+        ),
+    )
+
+
+class GetReportInput(BaseModel):
+    """Input for vhdl-tools vunit get-report."""
+
+    only_failing: bool = Field(
+        default=False,
+        description=(
+            "Only list failing/error tests in the per-test breakdown (the "
+            "summary line still counts every test). Use for large suites "
+            "where a full pass/fail listing is too long to be useful."
+        ),
+    )
+    slowest: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Also list the N slowest tests by wall time, descending. 0 "
+            "(default) omits this section. Useful for spotting runaway "
+            "tests or simulation-time regressions without re-running "
+            "anything."
+        ),
+    )
+
+
+class GetTestLogInput(BaseModel):
+    """Input for vhdl-tools vunit get-test-log."""
+
+    test_name: str = Field(
+        description=(
+            "Full test name as listed by vhdl-tools vunit list-tests (lib.entity.test_case)."
+        ),
+    )
+    lines: int | None = Field(
+        default=100,
+        ge=1,
+        description=(
+            "Return only the last N lines of the log (default 100, since "
+            "failure info appears at the end). Pass a larger value for more "
+            "context; the response is always size-capped (~24 KB max)."
+        ),
+    )
+
+
+class TestDependenciesInput(BaseModel):
+    """Input for vhdl-tools vunit test-dependencies."""
+
+    test_name: str = Field(
+        description=(
+            "Full test name as listed by vhdl-tools vunit list-tests "
+            "(lib.entity.test_case), or a wildcard pattern (e.g. "
+            "lib.entity.*). An ambiguous pattern returns the list of "
+            "matches instead."
+        )
+    )

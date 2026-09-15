@@ -1,0 +1,33 @@
+[project]
+name = "vhdl-tools"
+version = "0.1.0"
+description = "CLI for VUnit projects, Yosys+GHDL/tsfpga synthesis and VCD/FST waveforms (port of vunit-mcp, tsfpga-mcp, peeper-mcp)"
+requires-python = ">=3.10"
+# No vunit-hdl: the vunit group runs the HDL project's own run.py with the
+# project's own interpreter.
+dependencies = [
+    "pydantic>=2.12",
+    "tsfpga @ git+https://github.com/ru551n/tsfpga.git@main",
+    "pywellen==0.25.6",
+    "numpy>=1.26",
+    "matplotlib>=3.8",
+]
+
+[project.scripts]
+vhdl-tools = "vhdl_tools.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[dependency-groups]
+dev = ["pytest", "pytest-asyncio"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-m 'not perf'"
+markers = ["perf: performance-gate tests (opt-in, slow; run with -m perf)"]

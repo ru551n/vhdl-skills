@@ -1,0 +1,217 @@
+"""Tests for env-var configuration (vhdl_tools.synth.project_config)."""
+
+from __future__ import annotations
+
+import os
+import shutil
+from pathlib import Path
+
+import pytest
+
+from vhdl_tools.synth.project_config import ProjectConfigError, load_project_config
+
+
+@pytest.fixture(autouse=True)
+def _clean_env(monkeypatch):
+    """No TSFPGA_MCP_* env may leak in from the developer's environment."""
+    for key in list(os.environ):
+        if key.startswith("TSFPGA_MCP_"):
+            monkeypatch.delenv(key, raising=False)
+
+
+@pytest.fixture
+def project(tmp_path: Path) -> Path:
+    d = tmp_path / "proj"
+    d.mkdir()
+    (d / "build.py").write_text("", encoding="utf-8")
+    return d
+
+
+def test_project_dir_defaults_to_cwd(monkeypatch, project):
+    monkeypatch.chdir(project)
+    cfg = load_project_config()
+    assert cfg.project_dir == project.resolve()
+    assert cfg.build_script == project.resolve() / "build.py"
+
+
+def test_project_dir_not_a_dir(monkeypatch, tmp_path):
+    monkeypatch.setenv("TSFPGA_MCP_PROJECT_DIR", str(tmp_path / "nope"))
+    with pytest.raises(ProjectConfigError, match="not a directory"):
+        load_project_config()
+
+
+def test_build_script_missing(monkeypatch, project):
+    (project / "build.py").unlink()
+    monkeypatch.setenv("TSFPGA_MCP_PROJECT_DIR", str(project))
+    with pytest.raises(ProjectConfigError, match="Build script not found"):
+        load_project_config()
+
+
+def test_defaults(monkeypatch, project):
+    monkeypatch.setenv("TSFPGA_MCP_PROJECT_DIR", str(project))
+    cfg = load_project_config()
+    assert cfg.project_dir == project
+    assert cfg.build_script == project / "build.py"
+    assert cfg.python
+    assert cfg.projects_path == project / "tsfpga_mcp_out" / "projects"
+    assert cfg.timeout == 600.0
+    assert cfg.extra_args == []
+
+
+def test_env_overrides(monkeypatch, project):
+    (project / "custom").mkdir()
+    (project / "custom" / "build.py").write_text("", encoding="utf-8")
+    monkeypatch.setenv("TSFPGA_MCP_PROJECT_DIR", str(project))
+    monkeypatch.setenv("TSFPGA_MCP_BUILD_SCRIPT", "custom/build.py")
+    monkeypatch.setenv("TSFPGA_MCP_PROJECT_PYTHON", "/usr/bin/python3")
+    monkeypatch.setenv("TSFPGA_MCP_PROJECTS_PATH", "custom_out/projects")
+    monkeypatch.setenv("TSFPGA_MCP_PROJECT_TIMEOUT", "42")
+    monkeypatch.setenv("TSFPGA_MCP_PROJECT_EXTRA_ARGS", "--no-color -p 4")
+    cfg = load_project_config()
+    assert cfg.build_script == project / "custom" / "build.py"
+    assert cfg.python == "/usr/bin/python3"
+    assert cfg.projects_path == project / "custom_out" / "projects"
+    assert cfg.timeout == 42.0
+    assert cfg.extra_args == ["--no-color", "-p", "4"]
+
+
+def test_build_script_defaults_to_build_fpga_py_if_no_build_py(monkeypatch, tmp_path):
+    d = tmp_path / "fpga_proj"
+    d.mkdir()
+    (d / "build_fpga.py").write_text("", encoding="utf-8")
+    monkeypatch.setenv("TSFPGA_MCP_PROJECT_DIR", str(d))
+    cfg = load_project_config()
+    assert cfg.build_script == d / "build_fpga.py"
+
+
+def test_build_script_prefers_build_py_over_build_fpga_py(monkeypatch, tmp_path):
+    d = tmp_path / "both_proj"
+    d.mkdir()
+    (d / "build.py").write_text("", encoding="utf-8")
+    (d / "build_fpga.py").write_text("", encoding="utf-8")
+    monkeypatch.setenv("TSFPGA_MCP_PROJECT_DIR", str(d))
+    cfg = load_project_config()
+    assert cfg.build_script == d / "build.py"
+
+
+def test_build_script_absolute_path(monkeypatch, project, tmp_path):
+    other = tmp_path / "elsewhere.py"
+    other.write_text("", encoding="utf-8")
+    monkeypatch.setenv("TSFPGA_MCP_PROJECT_DIR", str(project))
+    monkeypatch.setenv("TSFPGA_MCP_BUILD_SCRIPT", str(other))
+    cfg = load_project_config()
+    assert cfg.build_script == other.resolve()
+
+
+def test_invalid_timeout(monkeypatch, project):
+    monkeypatch.setenv("TSFPGA_MCP_PROJECT_DIR", str(project))
+    monkeypatch.setenv("TSFPGA_MCP_PROJECT_TIMEOUT", "not-a-number")
+    with pytest.raises(ProjectConfigError, match="must be a number of seconds"):
+        load_project_config()
+
+
+def test_non_positive_timeout(monkeypatch, project):
+    monkeypatch.setenv("TSFPGA_MCP_PROJECT_DIR", str(project))
+    monkeypatch.setenv("TSFPGA_MCP_PROJECT_TIMEOUT", "0")
+    with pytest.raises(ProjectConfigError, match="must be positive"):
+        load_project_config()
+
+
+def test_vivado_env_override(monkeypatch, project, tmp_path):
+    fake = tmp_path / "vivado"
+    fake.write_text("", encoding="utf-8")
+    monkeypatch.setenv("TSFPGA_MCP_PROJECT_DIR", str(project))
+    monkeypatch.setenv("TSFPGA_MCP_VIVADO", str(fake))
+    cfg = load_project_config()
+    assert cfg.vivado == str(fake)
+
+
+def test_vivado_defaults_to_path_lookup(monkeypatch, project):
+    monkeypatch.setenv("TSFPGA_MCP_PROJECT_DIR", str(project))
+    monkeypatch.delenv("TSFPGA_MCP_VIVADO", raising=False)
+    cfg = load_project_config()
+    # Whatever shutil.which("vivado") finds (likely None in this sandbox);
+    # just check it's not left unset/crashing and matches PATH lookup.
+    assert cfg.vivado == shutil.which("vivado")
+
+
+def test_python_prefers_project_venv(monkeypatch, project):
+    venv_bin = project / ".venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    py = venv_bin / "python3"
+    py.write_text("", encoding="utf-8")
+    monkeypatch.setenv("TSFPGA_MCP_PROJECT_DIR", str(project))
+    cfg = load_project_config()
+    assert cfg.python == str(py)
+
+
+# --- project virtualenv -------------------------------------------------------
+
+
+def _make_venv(root: Path) -> Path:
+    (root / "bin").mkdir(parents=True)
+    (root / "pyvenv.cfg").write_text("home = /usr\n", encoding="utf-8")
+    exe = root / "bin" / "python3"
+    exe.write_text("", encoding="utf-8")
+    exe.chmod(0o755)
+    return exe
+
+
+def test_existing_project_venv_is_used_and_recorded(monkeypatch, project):
+    exe = _make_venv(project / ".venv")
+    monkeypatch.setenv("TSFPGA_MCP_PROJECT_DIR", str(project))
+    cfg = load_project_config()
+    assert cfg.venv == project / ".venv"
+    assert cfg.python == str(exe)
+    assert cfg.venv_notes == ()
+
+
+def test_no_venv_and_nothing_to_create_from(monkeypatch, project):
+    """Degrades to the PATH interpreter, with a note explaining why."""
+    monkeypatch.setenv("TSFPGA_MCP_PROJECT_DIR", str(project))
+    cfg = load_project_config()
+    assert cfg.venv is None
+    assert cfg.python
+    assert any("requirements.txt" in note for note in cfg.venv_notes)
+
+
+def test_auto_venv_off_skips_creation(monkeypatch, project):
+    (project / "requirements.txt").write_text("", encoding="utf-8")
+    monkeypatch.setenv("TSFPGA_MCP_PROJECT_DIR", str(project))
+    monkeypatch.setenv("TSFPGA_MCP_PROJECT_AUTO_VENV", "0")
+    cfg = load_project_config()
+    assert cfg.venv is None
+    assert not (project / ".venv").exists()
+    assert cfg.venv_notes == ("virtualenv auto-creation disabled",)
+
+
+def test_explicit_python_never_provisions_but_still_activates(monkeypatch, project):
+    """TSFPGA_MCP_PROJECT_PYTHON is authoritative; if it lives in a venv,
+    that venv is activated for the subprocess rather than merely executed."""
+    exe = _make_venv(project / "other_venv")
+    (project / "requirements.txt").write_text("", encoding="utf-8")
+    monkeypatch.setenv("TSFPGA_MCP_PROJECT_DIR", str(project))
+    monkeypatch.setenv("TSFPGA_MCP_PROJECT_PYTHON", str(exe))
+    cfg = load_project_config()
+    assert cfg.python == str(exe)
+    assert cfg.venv == project / "other_venv"
+    assert not (project / ".venv").exists()
+
+
+@pytest.mark.parametrize("value", ["abc", "0", "-5"])
+def test_invalid_venv_timeout(monkeypatch, project, value):
+    (project / "requirements.txt").write_text("", encoding="utf-8")
+    monkeypatch.setenv("TSFPGA_MCP_PROJECT_DIR", str(project))
+    monkeypatch.setenv("TSFPGA_MCP_PROJECT_VENV_TIMEOUT", value)
+    with pytest.raises(ProjectConfigError, match="TSFPGA_MCP_PROJECT_VENV_TIMEOUT"):
+        load_project_config()
+
+
+@pytest.mark.skipif(shutil.which("uv") is None, reason="uv is not installed")
+def test_missing_venv_is_created_from_requirements(monkeypatch, project):
+    (project / "requirements.txt").write_text("", encoding="utf-8")
+    monkeypatch.setenv("TSFPGA_MCP_PROJECT_DIR", str(project))
+    cfg = load_project_config()
+    assert cfg.venv == project / ".venv"
+    assert cfg.python.startswith(str(project / ".venv"))
+    assert any("created" in note for note in cfg.venv_notes)

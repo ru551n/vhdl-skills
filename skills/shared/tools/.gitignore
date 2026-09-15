@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.vunit-mcp-cache/
+vunit_out/
+tsfpga_mcp_out/
