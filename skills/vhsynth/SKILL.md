@@ -1,52 +1,44 @@
 ---
 name: vhsynth
-description: Synthesize a VHDL module or full IP using tsfpga-mcp when available, with local Yosys+GHDL fallback
-allowed-tools: Read, Write, Bash, Grep, Glob
+description: Use when synthesizing VHDL or answering questions about FPGA resources or timing — LUT, FF, BRAM or DSP counts, failed RAM or DSP inference, Yosys+GHDL or Vivado/tsfpga builds, Fmax and timing closure, critical paths, XDC constraints, utilization or DRC reports, or AMD/Xilinx device specifics (7-series, UltraScale+, Versal). Typical requests include "synthesize...", "how big is this", "does this meet timing", "why is timing failing".
 ---
-> **Path note:** `shared/*.md` files live in the skills' `shared/` directory — a *sibling* of this skill's directory (resolve against the skills root, e.g. `<skills-root>/shared/CodingStyle.md`), not inside the skill directory.
 
-# VHDL Synthesizer
+# VHDL Synthesis and Timing
 
-Read `shared/ModernVHDL.md`, `shared/CodingStyle.md`, and `shared/HouseStyle.md`; they are authoritative for language revision, modern RTL practice, and concrete naming/style conventions.
+## Before you start
 
+- `shared/` means the `shared/` folder next to this skill's folder (`../shared/`). Those docs are large: run `grep -n '^#' shared/<Doc>.md` and read only the sections the task touches.
+- The project's own conventions win. If the repository has a style guide, CLAUDE.md/AGENTS.md rules, or existing modules to copy, follow them over `shared/HouseStyle.md`.
+- Flow files are optional. If `ddoc/`, `*_req.md`, `*_proposal.md`, `issue/` or `flow_status.md` exist, use and update them. Otherwise work from the request and the source files, report in the reply, and create flow files only when the user asks or `vhflow` is driving.
+- Tools: `vhdl-tools` (`shared/bin/vhdl-tools`) for synthesis, Vivado builds and reports, and `corvidex-mcp` when connected; `shared/ToolPolicy.md` has the commands and fallbacks. Never report a compile, test, synthesis or timing result that no tool produced.
 
-Read `shared/McpToolPolicy.md`.
+## References by topic
 
-Load the `vivado-gotchas` skill before any Vivado-backed synthesis, timing
-estimate, constraint, or place-and-route work (whether via `tsfpga-mcp`, a
-project's own `build_fpga.py`, or a raw `VivadoProject`/`VivadoNetlistProject`)
-— it collects Vivado/tsfpga-specific behaviors (post-synthesis hook
-reliability, XDC parsing restrictions, the `analyze_synthesis_timing`
-ordering bug, DSP inference template sensitivity, etc.) that are easy to get
-silently wrong. Load the `vivado-design` skill alongside it for the
-design-time decisions behind a Vivado build (inference templates,
-attributes, reset/clocking/CDC methodology, timing-closure report reading,
-per-family CLB/BRAM/URAM/DSP facts) — it is the positive methodology the
-gotchas skill assumes.
+- Any Vivado or tsfpga Vivado build, timing estimate, XDC or report: `shared/VivadoGotchas.md`. Read it before trusting a Vivado number; its failure modes are silent.
+- AMD/Xilinx methodology, inference templates, attributes and per-family device facts: `shared/VivadoDesign.md`
+- Vendor-neutral timing and resource rules: `shared/TimingAndResources.md`
+- RAM inference failures: the "Memory" section of `shared/ModernVHDL.md` (`grep -n Memory`)
+- Source sets for synthesis: `shared/HierarchyFilelist.md`
 
 ## Backend priority
 
-1. **`tsfpga-mcp`** for portable VHDL synthesis/resource summaries.
-2. **local Yosys + GHDL plugin** when MCP is unavailable.
+1. **`vhdl-tools synth synthesize`** for portable VHDL synthesis and resource summaries.
+2. **Yosys with the GHDL plugin, by hand**, when `vhdl-tools` cannot run.
 
-Do not describe `tsfpga-mcp` resource synthesis as vendor timing closure.
+Do not describe resource synthesis as vendor timing closure.
 
-When the question is about design structure — instance hierarchy,
-generate-block expansion, resolved generics — rather than resource counts,
-prefer `tsfpga_hierarchy` over a full `tsfpga_synthesize`
-run or manually reading source/`ghdl`-elaborating by hand: it runs GHDL
-elaboration (generics resolved) without paying for full technology-mapping
-synthesis, so it is far cheaper for a pure hierarchy/structure question.
-
-`tsfpga-mcp` only reports aggregated resource counts (LUTs, FFs, DSPs, block RAMs, or raw cell
-counts for `chip=generic`) — never a per-port netlist dump.
+`vhdl-tools synth synthesize` reports aggregated resource counts (LUTs, FFs,
+DSPs, block RAMs, or raw cell counts for `--chip generic`), never a
+per-port netlist dump. `vhdl-tools synth inspect` lists entities,
+architectures and generics; for instance hierarchy or resolved generics,
+read the source or use `corvidex-mcp` navigation.
 
 ## Per-module smoke check (run after every module goes green)
 
 Do not defer all synthesis to the final IP-level phase. As soon as a
-module's testbench goes green (`vhfill`/`vhtestgen` loop passes), run a
-quick `tsfpga_synthesize`/local-fallback pass on that module alone (its own
-entity as `top`, `chip=generic` is enough — no need for a specific
+module's testbench goes green (`vhfill`/`vhtest` loop passes), run a
+quick `vhdl-tools synth synthesize` (or local fallback) pass on that module alone (its own
+entity as `--top`, `--chip generic` is enough — no need for a specific
 vendor/family at this stage) before moving to the next module. Purpose:
 catch synthesis-only failures (constructs that simulate fine but don't
 synthesize) and resource-count blow-ups (e.g. an accidental full-width
@@ -69,7 +61,7 @@ netlist ends up. A failed block-RAM inference in one module has produced a
 cells, ~23700 LUTs), and Yosys' runtime degrades badly at that cell count.
 Source size did not predict this; only the utilization report would have.
 For a real Vivado project build, retrieve it with
-`tsfpga_project_get_utilization_report` rather than manually opening/
+`vhdl-tools synth project-get-utilization-report` rather than manually opening/
 grepping the generated report file. See `shared/ModernVHDL.md`'s "Memory:
 infer the intended RAM type, and prove it" for the failure mode that causes
 this class of blowup.
@@ -82,13 +74,13 @@ synthesizing everything on every iteration:
   the whole project, and not the top level.
 - Run the full set of builds only at integration points: before a commit
   that touches a shared package or more than one module, and in CI.
-- Filter instead of building all: `tsfpga_project_list_builds` and
-  `tsfpga_project_build` take `project_filters` (wildcards, e.g.
-  `["*window_gen*"]`) — use it to target the module(s) at hand rather than
+- Filter instead of building all: `vhdl-tools synth project-list-builds` and
+  `project-build` take `--project-filters` (wildcards, e.g.
+  `'*window_gen*'`) — use it to target the module(s) at hand rather than
   running every netlist build in the project.
-- Leave `use_existing_project` at its default (`true`) while iterating; it
+- Leave `--use-existing-project` at its default (on) while iterating; it
   reuses the project directory instead of forcing a clean re-create. Pass
-  `false` only when the project definition itself changed (module set,
+  `--no-use-existing-project` only when the project definition itself changed (module set,
   generics, constraints), not on every rebuild.
 - Treat a sudden jump in synthesis time as a design signal, not an
   annoyance: it usually means a netlist blowup (failed RAM/DSP inference,
@@ -134,7 +126,7 @@ pay that cost to answer a question the leaves already answer.
   numbers are not vendor-accurate and shift between Yosys versions (a local
   dev build has measured ~2.7x fewer LUTs than the release build CI used for
   the same RTL) — treat Yosys LUT counts as trend data, not baselines.
-- **Vendor synthesis (Vivado etc.) via `tsfpga-mcp` project mode / a
+- **Vendor synthesis (Vivado etc.) via `vhdl-tools synth project-build` / a
   `VivadoNetlistProject`**: use for integration-level and top-level builds,
   and for any number that will become a committed CI checker limit.
 - Yosys and vendor numbers are **not comparable**. When a checker limit
@@ -155,7 +147,7 @@ pay that cost to answer a question the leaves already answer.
   log to a file and parse a summary line out of it rather than reading it —
   Yosys logs are large enough to be a problem on their own.
 - Keep long or known-slow builds out of the tight edit-test loop. The
-  simulation regression (`vhunit`/`vhtestgen`) is the fast gate; synthesis
+  simulation regression (`vhtest`) is the fast gate; synthesis
   is the slower structural gate and belongs at module-done and integration
   boundaries, not on every edit.
 
@@ -171,68 +163,70 @@ Must know:
 
 Never infer a required target, family or generic value.
 
-If the top entity has more than one architecture, ask which one to synthesize — `tsfpga-mcp` has
-no architecture-selection parameter, so the only way to pick one is to include only that
-architecture's source file in the synthesis source set.
+If the top entity has more than one architecture, ask which one to synthesize.
+`vhdl-tools synth synthesize` has no architecture option, so the only way to
+pick one is to include only that architecture's source file.
 
-## Preferred workflow — tsfpga-mcp
+## Preferred workflow — `vhdl-tools synth`
 
 ### 1. Status
 
-Call `tsfpga_status`.
+Run `vhdl-tools synth status`.
 
-If the GHDL plugin, Yosys flow, or required environment is unavailable, either fix/report configuration or use a fallback backend.
+If the GHDL plugin, the Yosys flow or the required environment is unavailable, fix or report the configuration, or use a fallback backend.
 
 ### 2. Inspect sources
 
-Use `tsfpga_inspect` when:
+Run `vhdl-tools synth inspect --sources <files>` when:
 - the top entity is uncertain
 - generics need discovery
-- multiple architectures are present
-- source ambiguity is possible (e.g. a unit declared in both VHDL and Verilog)
+- several architectures are present
+- a unit may be declared in both VHDL and Verilog
 
 Resolve every `Notes:` ambiguity by asking the user before synthesizing.
 
-If the goal is understanding/verifying the design's instance hierarchy
-(generate-block-expanded instance names, resolved generics) rather than
-producing resource counts, call `tsfpga_hierarchy` instead
-of proceeding to a full synthesis run — it is a much cheaper way to answer
-that specific question.
-
 ### 3. Choose target
 
-If the user did not already provide a valid target, call `tsfpga_targets`.
+If the user did not already give a valid target, run `vhdl-tools synth targets`.
 
-If several materially different targets fit and the choice affects the answer, require an explicit target rather than guessing. `family` is only accepted for `chip=xilinx`/`intel`/`microchip`, never for `chip=generic`.
+If several materially different targets fit and the choice affects the answer, require an explicit target rather than guessing. `--family` is only accepted with `--chip xilinx`, `intel` or `microchip`, never with `generic`.
 
-### 4. Resolve complete source set
+### 4. Resolve the complete source set
 
 Preferred:
-- `vunit_list_files` when `vunit-mcp` is available and sources are registered
+- `vhdl-tools vunit list-files` when the sources are registered in a VUnit project
 - otherwise `shared/HierarchyFilelist.md`
 
-All dependencies must be passed because synthesis does not rely on persistent work-library state.
+Pass every dependency: synthesis does not use persistent work-library state.
 
 ### 5. Synthesize
 
-Use `tsfpga_synthesize` with:
-- `sources`, `top`, `chip`
-- `family` if required by the chosen chip
-- `generics` if supplied (VHDL top only; the type from `tsfpga_inspect` decides interpretation)
-- `vhdl_entities` when `top` is a Verilog/SystemVerilog module (or the design has no VHDL top): the VHDL entity names it instantiates
-- `discard_ffinit` only for `chip=microchip`, when flip-flop initial values fail legalization
+Run `vhdl-tools synth synthesize` with:
+- `--sources`, `--top`, `--chip`
+- `--family` when the chip requires it
+- `--generics '<json>'` when supplied (VHDL top only; the type `inspect` reports decides how values are read)
+- `--libraries '<json>'` instead of `--sources` for designs spanning several VHDL libraries
+- `--vhdl-entities` when `--top` is a Verilog/SystemVerilog module: the VHDL entities it instantiates
+- `--discard-ffinit` only with `--chip microchip`, when flip-flop initial values fail legalization
 
-Record the returned:
-- backend/flow
+Record:
+- backend and flow
 - resource counts
 - synthesis diagnostics
 
+For a tsfpga project's own builds, use `vhdl-tools synth project-list-builds`,
+`project-build`, and the `project-get-timing-report`,
+`project-get-utilization-report` and `project-get-drc-report` commands (those
+three need `vivado`). Read `shared/VivadoGotchas.md` before trusting their
+numbers.
+
 ## Scope
 
-`tsfpga-mcp` and local Yosys+GHDL produce portable synthesis/resource feedback.
-Post-route timing, vendor Fmax, site utilization, power estimation, and
-place-and-route are out of scope; state that in the report instead of
-fabricating results.
+Resource synthesis (`vhdl-tools synth synthesize`, or Yosys with GHDL) gives
+portable resource feedback, not timing. Post-route timing, site utilization
+and power come only from a vendor build: for a tsfpga project,
+`vhdl-tools synth project-build` and its report commands. Never fabricate
+any of them.
 
 ### Fast post-synthesis timing estimate vs full place-and-route closure
 
@@ -249,15 +243,14 @@ a report:
   so it is optimistic/inaccurate versus the final routed result and must
   never be reported as "meets timing" or as an Fmax number. Label it
   explicitly as an estimate in any report or checker.
-- Do not assume a project's `tsfpga-mcp`-style "analyze synthesis timing"
+- Do not assume a project's "analyze synthesis timing"
   flag covers this: such flags commonly check only clock-domain-crossing
   and pulse-width constraint violations, not setup/hold slack — verify
   what a given flag actually reports before relying on it, and add a
   custom post-synthesis TCL hook when a slack number is actually needed.
-  When a real per-project Vivado build was run through `tsfpga-mcp`'s
-  project-mode tools, retrieve the resulting number with
-  `tsfpga_project_get_timing_report` rather than manually parsing
-  `timing.rpt`; see `vivado-gotchas` for the hook-reliability caveats
+  When a tsfpga project's Vivado build has run, retrieve the number with
+  `vhdl-tools synth project-get-timing-report` rather than manually parsing
+  `timing.rpt`; see `shared/VivadoGotchas.md` for the hook-reliability caveats
   behind where that report data actually comes from.
 - **Full timing closure** requires place-and-route (and, for signoff,
   the vendor's static timing analysis on the routed design). Reserve this
@@ -269,19 +262,18 @@ a report:
 
 ## Outputs
 
-Write `synth/<module>/synth_report.md` containing:
-- date/backend
-- source set/top
+Report in the reply:
+- date and backend
+- source set and top
 - target chip/family
 - generics
 - synthesis result
 - resources
 - diagnostics
 
-Backend-specific raw artifacts may be stored beside the report.
+When flow files are in use (`synth/` exists, or `vhflow` is driving), also write this to `synth/<module>/synth_report.md`, with backend-specific raw artifacts beside it.
 
 Never fabricate synthesis, timing, Fmax, utilization or power.
-
 
 ## Modern synthesis checks
 

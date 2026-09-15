@@ -1,10 +1,3 @@
----
-name: vhunit
-description: Author, repair, and migrate VUnit runners (run.py) and VHDL-2008 testbenches — direct VUnit work, VUnit 4 to 5 migration
-allowed-tools: Read, Write, Bash, Grep, Glob
----
-> **Path note:** `shared/*.md` files live in the skills' `shared/` directory — a *sibling* of this skill's directory (resolve against the skills root, e.g. `<skills-root>/shared/CodingStyle.md`), not inside the skill directory.
-
 # VUnit Authoring & Migration
 
 Read `shared/Vunit.md` first — it is authoritative for the VUnit-5 API
@@ -23,7 +16,7 @@ gotchas on top of what `Vunit.md` already covers.
 Testbench VHDL (architecture name `tb`, process/signal naming, etc.) still
 follows `shared/CodingStyle.md` and `shared/HouseStyle.md`.
 
-Read `shared/McpToolPolicy.md` for tool fallbacks.
+Read `shared/ToolPolicy.md` for tool fallbacks.
 
 ## When this skill applies
 
@@ -34,18 +27,17 @@ Read `shared/McpToolPolicy.md` for tool fallbacks.
 - Adding verification components (scoreboards, AXI/stream BFMs, memory
   models) to an existing testbench.
 
-`vhtestgen` owns the test-plan flow (tc_list, test planning) and delegates
-the actual authoring to this skill's rules and `shared/Vunit.md`.
-`vhtestrun` owns running/reporting. Upstream `vunit-mcp` owns its own
-tool usage. This skill owns the VHDL + Python.
+`planning.md` covers test planning (test lists, what to cover) and uses
+this file's rules for the actual authoring; `running.md` covers running
+and reporting. This file owns the VHDL and Python.
 
 ## Determine the VUnit version first
 
-1. Check `vunit-mcp` `vunit_status` / the project's `run.py` imports /
+1. Check `vhdl-tools vunit status` / the project's `run.py` imports /
    installed package version.
 2. If the project is on VUnit 4.x, write against VUnit 4 (see
    `shared/Vunit.md` §15 deltas) and state which version the code targets.
-3. If `vunit-mcp` is the backend, target VUnit 5 (`ru551n/vunit` fork):
+3. On VUnit 5 (including the `ru551n/vunit` fork):
    `add_vhdl_builtins()` is required, `-- vunit: .name` attribute syntax.
    Pitfall: the attribute scanner matches the `vunit:` substring in any
    comment, not just real pragmas — prose naming a Python hook as
@@ -99,7 +91,7 @@ tool usage. This skill owns the VHDL + Python.
   scoreboard). Never hand-roll a slave/master/memory/response process;
   if a BFM lacks one behavior (e.g. a non-OKAY response on one beat), keep
   the BFM and passively override that one field on the wire between BFM
-  and DUT. See `vhtestgen` "Verification components" for the full rule
+  and DUT. See `planning.md` "Verification components" for the full rule
   and the real rewrite it cost.
 - **Generated vectors are never checked in.** Golden-model stimulus/
   expected files are produced per config in `pre_config` into
@@ -124,21 +116,21 @@ must respect the test phases — pick one, per `shared/Vunit.md` §8.1/§8.2:
 
 ## Verification
 
-1. `vunit_status` → `vunit_compile` (fix compile/elaboration errors;
-   common causes: missing `add_vhdl_builtins()`, VUnit-4 `add_vhdl`
-   calls, wrong context) → `vunit_elaborate` to confirm a
-   real GHDL elaboration pass succeeds — `vunit_compile` is analyze-only
-   and can pass cleanly even when a port/generic/type mismatch between
-   units would fail elaboration; run `vunit_elaborate` before `run.py`/
-   `vunit_run_tests` whenever a runner or testbench was just authored or
-   repaired.
-2. `vunit_run_tests` with the smallest relevant test pattern; pass
-   `waveform_format` (`vcd` on GHDL, `fst` on NVC) so failures can be
-   diagnosed at signal level — without it no waveform is recorded.
-3. `vunit_get_report` → on failure `vunit_get_test_log` → waveform
-   (`vunit_get_test_waveform` + `peeper-mcp`) when signal-level diagnosis
-   is needed.
-4. Fallback per `shared/McpToolPolicy.md`: run the project's `run.py`
+1. `vhdl-tools vunit status` → `vhdl-tools vunit compile` (fix compile
+   errors; common causes: missing `add_vhdl_builtins()`, VUnit-4
+   `add_vhdl` calls, wrong context) → `vhdl-tools vunit elaborate` to
+   confirm elaboration succeeds. `compile` only analyzes and can pass
+   cleanly even when a port, generic or type mismatch between units would
+   fail elaboration; elaborate whenever a runner or testbench was just
+   authored or repaired.
+2. `vhdl-tools vunit run-tests --test-patterns '<pattern>'` with the
+   smallest relevant pattern; add `--waveform-format vcd` (GHDL) or `fst`
+   (NVC) so failures can be diagnosed at signal level — without it no
+   waveform is recorded.
+3. `vhdl-tools vunit get-report` → on failure `get-test-log --test-name
+   <test>` → `get-test-waveform --test-name <test>` plus `vhdl-tools wave`
+   when signal-level diagnosis is needed.
+4. Fallback per `shared/ToolPolicy.md`: run the project's `run.py`
    directly (note: `--waves`/`--wave --viewer-fmt` for waveforms on the
    fork; `--stop-on-failure` does not exist, use `--fail-fast`).
 
@@ -162,7 +154,7 @@ Per `shared/Vunit.md` §15:
 
 ## Completion quality gate
 
-- `run.py` compiles and `vunit_list_tests` discovers every intended test.
+- `run.py` compiles and `vhdl-tools vunit list-tests` discovers every intended test.
 - Every testbench has a watchdog, seeded RNG, and `test_runner_cleanup`.
 - Every checker process uses §8.1 or §8.2 discipline (state which).
 - All scenarios from the test plan covered by named `run("test_*")`.

@@ -24,8 +24,8 @@ Do not use:
 ## Naming
 
 Read `HouseStyle.md` — it is authoritative for concrete naming,
-derived from auditing the real `tsfpga`/`hdl-modules` source this project
-vendors and reuses. Summary:
+derived from auditing the real `tsfpga`/`hdl-modules` source that tsfpga-based
+projects vendor and reuse. Summary:
 
 - entities, architectures, signals, ports, generics, **and constants**:
   `lower_snake_case`, no prefix (not `C_UPPER_SNAKE_CASE`, not `g_*`/`c_*`)

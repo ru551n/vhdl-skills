@@ -1,49 +1,33 @@
----
-name: vhdesign
-description: Generate a VHDL design proposal, module documentation, and entity/architecture backbone from a module requirement
-allowed-tools: Read, Write, Bash, Grep, Glob
----
-> **Path note:** `shared/*.md` files live in the skills' `shared/` directory — a *sibling* of this skill's directory (resolve against the skills root, e.g. `<skills-root>/shared/CodingStyle.md`), not inside the skill directory.
-> **Layout note:** `ddoc/`, `rtl/`, `doc/`, `lib/` are the conventional tsfpga layout. When the project uses a different layout (e.g. `modules/<name>/{src,test,doc}`), follow the project's layout and keep the same file-naming conventions (`<ip>_arch.md`, `<module>_req.md`, `<module>.md`, `<module>.vhd`).
-
-
 # VHDL Designer
-
-Read `shared/ModernVHDL.md`, `shared/CodingStyle.md`, and `shared/HouseStyle.md`; they are authoritative for language revision, modern RTL practice, and concrete naming/style conventions.
-
-
-Read `shared/McpToolPolicy.md`.
 
 ## MCP preference
 
 Use `corvidex-mcp` when available to ground design decisions:
 - search docs for coding/architecture conventions
 - search VHDL for analogous entities/processes/packages (`search_hdl` — conceptual discovery)
-- cross-reference key interface symbols — prefer `find_references`/`find_definition`/`find_symbol` (LSP/compiler-backed exact resolution) over `search_hdl` or a local grep once the exact symbol name is already known, e.g. confirming every caller of a generic/record type this design will reuse or extend; see `shared/McpToolPolicy.md`'s routing table
+- cross-reference key interface symbols — prefer `find_references`/`find_definition`/`find_symbol` (LSP/compiler-backed exact resolution) over `search_hdl` or a local grep once the exact symbol name is already known, e.g. confirming every caller of a generic/record type this design will reuse or extend; see `shared/ToolPolicy.md`'s routing table
 - retrieve exact source with `get_source` before adopting a pattern
 
 Local project files and the requirement/proposal remain authoritative for the module being designed.
 
 Before designing new logic, check `shared/ReusableRTL.md` ("Reuse before authoring new RTL"): search `lib/`/`modules/*/src/`/vendored dependencies for an existing module first. A thin wrapper around an existing module is allowed and preferred over a fork or a rewrite.
 
-If the module being designed is a top-level (`<ip>_top`) or otherwise bundles more than one distinct responsibility, prefer splitting it into smaller single-responsibility submodules per `shared/ReusableRTL.md` ("Prefer modular decomposition") rather than implementing a monolithic entity — flag this back to `vharch` (a new architecture/submodule-table decision) rather than silently absorbing extra responsibility into one module's VHDL backbone.
+If the module being designed is a top-level (`<ip>_top`) or otherwise bundles more than one distinct responsibility, prefer splitting it into smaller single-responsibility submodules per `shared/ReusableRTL.md` ("Prefer modular decomposition") rather than implementing a monolithic entity — flag this back to `vhdesign` (a new architecture/submodule-table decision) rather than silently absorbing extra responsibility into one module's VHDL backbone.
 
 ## Input
 
-`ddoc/<module>_req.md`
-
-Derive `<module>` by removing a trailing `_req`.
+The module's requirement: `ddoc/<module>_req.md` when it exists (derive `<module>` by removing the trailing `_req`), otherwise the requirement as the user stated it.
 
 ## Outputs
 
-- `ddoc/<module>_proposal.md`
-- `doc/<module>.md`
-- `rtl/<module>.vhd`
+- a design proposal: `ddoc/<module>_proposal.md` when flow files are in use, otherwise in the reply or wherever the user asks
+- module documentation: `doc/<module>.md`, or the project's own documentation location
+- the VHDL backbone, in the project's source layout (`rtl/<module>.vhd` in the conventional layout)
 
 ## Preconditions
 
-Stop if the requirement file does not exist. Do not design from a module name alone.
-Do not operate on the IP `_top` entity; the top integration skeleton belongs to `vharch`.
+Stop and ask when there is no requirement at all, written or stated. Do not design from a module name alone.
+Do not operate on the IP `_top` entity; the top-level skeleton comes from `architecture.md`.
 
 ## Re-run safety
 
@@ -73,7 +57,7 @@ The proposal must capture:
 - verification plan
 - `## Implementation Notes (vhfill)` section, initially empty
 
-Do not rename or reinterpret ports/generics fixed by `vharch`.
+Do not rename or reinterpret ports/generics fixed by `vhdesign`.
 
 ## Step 2 — Module documentation
 
@@ -200,7 +184,7 @@ Before using a vendor attribute, primitive, or IP, check whether portable
 inference is sufficient, classify the portability level, document why
 escalation is required, and isolate the dependency where practical.
 
-When the target is an AMD/Vivado part, load the `vivado-design` skill
+When the target is an AMD/Vivado part, load `shared/VivadoDesign.md`
 before this gate: it holds the inference templates, attribute semantics,
 reset/clocking/CDC methodology and per-family device facts the proposal
 must be written against.

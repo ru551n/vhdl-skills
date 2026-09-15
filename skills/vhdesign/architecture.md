@@ -1,18 +1,4 @@
----
-name: vharch
-description: Decompose an IP requirement into VHDL submodules, interfaces, requirement files, and a top-level VHDL skeleton
-allowed-tools: Read, Write, Bash, Grep, Glob
----
-> **Path note:** `shared/*.md` files live in the skills' `shared/` directory — a *sibling* of this skill's directory (resolve against the skills root, e.g. `<skills-root>/shared/CodingStyle.md`), not inside the skill directory.
-> **Layout note:** `ddoc/`, `rtl/`, `doc/`, `lib/` are the conventional tsfpga layout. When the project uses a different layout (e.g. `modules/<name>/{src,test,doc}`), follow the project's layout and keep the same file-naming conventions (`<ip>_arch.md`, `<module>_req.md`, `<module>.md`, `<module>.vhd`).
-
-
 # VHDL Architect
-
-Read `shared/ModernVHDL.md`, `shared/CodingStyle.md`, and `shared/HouseStyle.md`; they are authoritative for language revision, modern RTL practice, and concrete naming/style conventions.
-
-
-Read `shared/McpToolPolicy.md`.
 
 ## MCP preference
 
@@ -21,19 +7,19 @@ Before inventing a new block, use `corvidex-mcp` when available:
 2. `search_knowledge` for relevant standards/design guidance
 3. `search_hdl` (language="vhdl") for reusable or precedent entities (conceptual/natural-language discovery, e.g. "existing AXI FIFO implementation") — this is what the index is for, not something grep can do
 4. `get_source` for exact candidate implementations
-5. Once a candidate name is known (e.g. deciding whether a generic name like `FIFO_DEPTH` is already used elsewhere, or who else instantiates a candidate reuse target), prefer the exact `find_definition`/`find_references`/`find_symbol` tools (LSP/compiler-backed) over a `search_hdl` guess or a local grep — cheapest and exact for an already-known name; see `shared/McpToolPolicy.md`'s routing table.
+5. Once a candidate name is known (e.g. deciding whether a generic name like `FIFO_DEPTH` is already used elsewhere, or who else instantiates a candidate reuse target), prefer the exact `find_definition`/`find_references`/`find_symbol` tools (LSP/compiler-backed) over a `search_hdl` guess or a local grep — cheapest and exact for an already-known name; see `shared/ToolPolicy.md`'s routing table.
 
 If unavailable, search `lib/`, `rtl/`, `doc/`, and `ddoc/` locally with Read/Glob/Grep.
 
 ## Input
 
-A top-level requirement such as `ddoc/<ip>_req.md`.
+A top-level requirement: `ddoc/<ip>_req.md` when it exists, otherwise the requirement as the user stated it.
 
 ## Outputs
 
-- `ddoc/<ip>_arch.md` — canonical structural source of truth.
-- `ddoc/<submodule>_req.md` — one per new submodule.
-- `rtl/<ip>_top.vhd` — structural top-level VHDL skeleton.
+- the architecture document: `ddoc/<ip>_arch.md` when flow files are in use (then it is the canonical structural source of truth), otherwise in the reply or wherever the user asks
+- one requirement per new submodule: `ddoc/<submodule>_req.md` with flow files, otherwise a section per submodule in the architecture document
+- a structural top-level VHDL skeleton, in the project's source layout (`rtl/<ip>_top.vhd` in the conventional layout)
 
 ## Workflow
 
@@ -191,7 +177,6 @@ For each architecture interface row verify:
 
 Report changed, unchanged, and orphaned requirement files on re-run.
 
-
 ## Modern architecture checklist
 
 The architecture document must identify, where applicable:
@@ -226,7 +211,7 @@ Record:
 
 If target/family is not known, do not assume initialization support.
 
-When the target is an AMD/Vivado part, load the `vivado-design` skill for
+When the target is an AMD/Vivado part, load `shared/VivadoDesign.md` for
 the architecture-level decisions it constrains: clock-domain and reset
 planning, CDC structure and constraints, hard-block use (BRAM/URAM/DSP
 modes, NoC, PS ports), SLR assignment, and the per-family device facts.

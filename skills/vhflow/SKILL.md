@@ -1,73 +1,47 @@
 ---
 name: vhflow
-description: Scan and orchestrate the complete MCP-first VHDL RTL design flow
-allowed-tools: Read, Write, Bash, Grep, Glob
+description: Use when taking a whole VHDL IP through design, implementation, verification, synthesis and documentation across several modules, or when resuming or checking the status of such multi-phase work recorded in flow_status.md. Typical requests include "build this IP end to end", "run the full flow", "where are we in the flow", "continue the flow".
 ---
-> **Path note:** `shared/*.md` files live in the skills' `shared/` directory — a *sibling* of this skill's directory (resolve against the skills root, e.g. `<skills-root>/shared/CodingStyle.md`), not inside the skill directory.
-> **Layout note:** `ddoc/`, `rtl/`, `doc/`, `lib/` are the conventional tsfpga layout. When the project uses a different layout (e.g. `modules/<name>/{src,test,doc}`), follow the project's layout and keep the same file-naming conventions (`<ip>_arch.md`, `<module>_req.md`, `<module>.md`, `<module>.vhd`).
 
 # VHDL Flow Orchestrator
 
-Read `shared/ModernVHDL.md`, `shared/CodingStyle.md`, and `shared/HouseStyle.md`; they are authoritative for language revision, modern RTL practice, and concrete naming/style conventions.
+## Before you start
 
-
-Read `shared/McpToolPolicy.md`.
+- `shared/` means the `shared/` folder next to this skill's folder (`../shared/`). Those docs are large: run `grep -n '^#' shared/<Doc>.md` and read only the sections the task touches.
+- The project's own conventions win. If the repository has a style guide, CLAUDE.md/AGENTS.md rules, or existing modules to copy, follow them over `shared/HouseStyle.md`.
+- This skill owns `flow_status.md` and the flow files (`ddoc/`, `doc/`, `issue/`, `synth/`); create them as the phases run. Follow the project's existing layout when it differs from the conventional one.
+- Tools: `vhdl-tools` (`shared/bin/vhdl-tools`) for VUnit, synthesis, Vivado reports and waveforms, and `corvidex-mcp` when connected; `shared/ToolPolicy.md` has the commands and fallbacks. Never report a compile, test, synthesis or timing result that no tool produced.
 
 ## Purpose
 
-Inspect the project, detect available MCP backends, and maintain a resumable `flow_status.md`.
+Inspect the project, check which tools work, and maintain a resumable `flow_status.md`.
 
-## General principle: MCP-first, local-tool fallback
+## Tools by phase
 
-Every phase below has a corresponding MCP server that is strictly preferred
-over the equivalent manual/local approach whenever it is exposed in the
-current host (`shared/McpToolPolicy.md` is authoritative; this is a
-summary for the orchestrator):
-
-- **`corvidex-mcp`** — semantic search and exact code/doc navigation. Route
-  by question type, not by habit — see `shared/McpToolPolicy.md`'s
-  cost-aware routing table: `search_hdl`/`search_knowledge` for conceptual
-  discovery (grep genuinely cannot do this); `find_definition`/
-  `find_references`/`find_symbol`/`hover_info` (exact, LSP/compiler-backed)
-  once the exact symbol name/location is already known — far cheaper than a
-  `search_hdl` guess; local `grep`/`find` for exhaustive literal-string
-  enumeration or material outside the index. A thin/empty concept-search
-  result is not proof something doesn't exist — cross-check with
-  `find_symbol` first.
-- **`vunit-mcp`** — VUnit project discovery, compile, elaborate, run,
-  report/log/waveform retrieval. Prefer it over manually invoking
-  `ghdl`/`run.py` via `bash` or manually grepping VUnit logs. Use
-  `vunit_elaborate` liberally right after RTL is written or edited — it is
-  a real GHDL elaboration pass that catches cross-unit port/generic/type
-  mismatches `vunit_compile` (analyze-only) cannot, and is cheap because it
-  does not simulate anything.
-- **`tsfpga-mcp`** — portable Yosys+GHDL synthesis/resource summaries and
-  real per-project Vivado builds. Prefer it over manually shelling out to
-  `yosys`/`ghdl`/`build_fpga.py` or manually reading generated report
-  files. Use `tsfpga_hierarchy` instead of a full `tsfpga_synthesize` run
-  when the question is about instance hierarchy/generic resolution rather
-  than resource counts — it is far cheaper.
-- **`peeper-mcp`** — waveform inspection. Prefer it over manually parsing
-  VCD/FST files or eyeballing a waveform viewer when the question is about
-  signal timing/values/clock period/latency.
+| Phase | Tool | Fallback |
+|---|---|---|
+| Architecture, design, docs | `corvidex-mcp` search and navigation (routing in `shared/ToolPolicy.md`) | Read/Grep |
+| Compile and test | `vhdl-tools vunit compile`, `elaborate` (after every interface change), `run-tests` | the project's `run.py`, GHDL |
+| Waveform debug | `vhdl-tools wave` | GTKWave |
+| Synthesis | `vhdl-tools synth synthesize`; `project-build` and the report commands for Vivado | Yosys by hand, `build_fpga.py` |
 
 ## Phases
 
-1. Architecture — `vharch`
+1. Architecture — `vhdesign`
 2. Module design — `vhdesign`
-3. Per-module TDD loop (`vhtestgen` → `vhfill`, repeated per module) —
+3. Per-module TDD loop (`vhtest` → `vhfill`, repeated per module) —
    per `shared/Vunit.md` §16, generate the module's unit testbench from
    its `<module>_req.md` first (red), then implement with `vhfill` until
-   that same testbench passes (green). `vhtestgen` and `vhfill` alternate
+   that same testbench passes (green). `vhtest` and `vhfill` alternate
    per module here; they are not two separate whole-project passes.
    Once a module goes green, run `vhsynth`'s per-module smoke check
-   (`chip=generic` synthesis of that module alone) before moving to the
+   (`--chip generic` synthesis of that module alone) before moving to the
    next module — see `vhsynth`'s "Per-module smoke check" section. Do not
    defer this to phase 7; it is part of the per-module loop.
-4. IP-level test generation — `vhtestgen`, integration test(s) across
+4. IP-level test generation — `vhtest`, integration test(s) across
    already-green modules (e.g. a full-pipeline golden-model comparison)
-5. Regression — `vhtestrun`
-6. Debug loop — `vhdebug` → requested fix via `vhfill` → `vhtestrun`
+5. Regression — `vhtest`
+6. Debug loop — `vhdebug` → requested fix via `vhfill` → `vhtest`
 7. Synthesis — `vhsynth`
 8. Documentation — `vhdoc`
 
@@ -84,26 +58,14 @@ default per-module TDD loop in phase 3 above — it changes when true
 top-level integration testing (phase 4) starts, not whether phase 3
 still happens per module.
 
-## Backend preference by phase
+## Checking tools
 
-| Phase | Preferred MCP | Fallback |
-|---|---|---|
-| Architecture/design/docs | `corvidex-mcp` (`search_hdl`/`search_knowledge`, and `find_definition`/`find_references`/`find_symbol` for exact lookups) | Read/Grep |
-| Compile/test | `vunit-mcp` (`vunit_compile` then `vunit_elaborate` before a full run) | VUnit run.py / GHDL |
-| Waveform debug | `peeper-mcp` | GTKWave/manual |
-| Synthesis | `tsfpga-mcp` (`tsfpga_hierarchy` for structure-only questions, `tsfpga_synthesize` for resource counts) | local Yosys+GHDL |
+Check each tool before the first phase that needs it, not from documentation:
+- `vhdl-tools vunit status` and `vhdl-tools synth status`
+- `vhdl-tools wave open --file <path>`, once a waveform exists
+- corvidex `repository_status`, when retrieval is needed and it is connected
 
-## Availability probing
-
-Do not guess availability from documentation.
-
-If exposed in the current host:
-- `corvidex-mcp`: call `repository_status` when retrieval is needed
-- `vunit-mcp`: call `vunit_status`
-- `tsfpga-mcp`: call `tsfpga_status`
-- `peeper-mcp`: call `peeper_open` only after a waveform path exists
-
-If an MCP server is not exposed, use fallback without treating that as a project failure.
+A missing tool means using its fallback, not a project failure. Record it in `flow_status.md`.
 
 ## Subagent delegation
 
@@ -111,18 +73,18 @@ Delegate only when the host provides a subagent/task tool; otherwise run phases 
 
 Delegate self-contained phases:
 - `vhfill` for one module
-- `vhtestgen` for one module/IP test project
+- `vhtest` for one module/IP test project
 - `vhsynth` for one module
 - `vhdoc` for the IP doc
 
-Delegate independent modules in parallel. Never run two regressions against the same VUnit project at the same time (the vunit-mcp server serializes runs per project).
+Delegate independent modules in parallel only for work that neither builds nor simulates. Only one agent may compile, simulate or synthesize in a shared working tree at a time: separate output directories are not isolation, because every build reads the same, possibly half-edited, sources. Give each concurrent builder its own git worktree, or serialize.
 
 Each delegation prompt must contain:
 - IP and module name
 - the phase and its completion criteria from below
 - input paths to read (`ddoc/...`, `rtl/...`, current `flow_status.md`)
 - the expected outputs and the `backend:` record per tool phase
-- the instruction to use real tools, MCP-first per `shared/McpToolPolicy.md`
+- the instruction to use real tools per `shared/ToolPolicy.md`
 
 Do not delegate:
 - `flow_status.md` updates — the orchestrator verifies artifacts and records status
@@ -162,7 +124,7 @@ Include:
 - IP
 - phase status
 - affected modules
-- MCP availability/health
+- tool availability and health
 - actual backend used per completed tool phase
 - blockers
 - latest real verification/synthesis results

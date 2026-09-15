@@ -29,7 +29,7 @@ building blocks, ...) and to shared packages/record types
   intended RAM type, and prove it" in `ModernVHDL.md`.
 - Record the reuse decision in the architecture/proposal doc's submodule
   table (`new` / `reuse` / `new, generic wrapper around <module>`) so the
-  choice is auditable, per `vharch`'s submodule table convention.
+  choice is auditable, per `vhdesign`'s submodule table convention.
 
 ## Prefer modular decomposition
 
@@ -60,7 +60,7 @@ Guidance:
   up interfaces, with no significant standalone datapath logic implemented
   directly at the top level.
 - Record the decomposition rationale in the architecture doc's submodule
-  table (`vharch` step 3, "responsibility" column) so the granularity
+  table (`vhdesign` step 3, "responsibility" column) so the granularity
   choice is auditable, alongside the reuse (`new`/`reuse`/`new, generic
   wrapper around <module>`) decision.
 

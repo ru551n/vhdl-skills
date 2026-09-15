@@ -40,6 +40,16 @@ passing three says nothing about the fourth.
   is still statically checked by a synthesis front end. Every simulation
   passed; only the netlist build failed. Compute the next index in a
   wider intermediate and convert.
+- **A loop with a runtime-dependent range crashes GHDL synthesis.**
+  `for i in 0 to n - 1` with `n` a signal or variable simulates fine, but
+  GHDL's synthesis front end reports `limits of range are not constant`
+  and then dies on an internal assertion (`synth-vhdl_expr.adb`) instead of
+  a clean error. Loop over the constant maximum range and gate each
+  iteration with `if i < n`; that multiplexer is the hardware anyway.
+- **A conditional expression cannot be an operand in VHDL-2008.**
+  `a & (b when sel = '1' else c)` fails in GHDL with `'=>' is expected
+  instead of 'when'`, pointing at the `when` rather than the real problem.
+  Assign the conditional to its own signal or variable first.
 - **A free-running memory read port ignores your pipeline freeze.** A
   registered read with no clock enable keeps advancing while a
   clock-enabled pipeline that consumes it is held, and re-pairs data with

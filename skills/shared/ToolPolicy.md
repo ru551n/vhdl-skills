@@ -1,23 +1,36 @@
-# MCP Tool Policy
+# Tool Policy
 
 ## Principle
 
-The VHDL flow is **MCP-first, local-tool fallback**.
+Use the purpose-built tool before the manual equivalent:
 
-When an MCP server/tool is available in the current agent environment, prefer it for the task it was designed to perform.
-If it is unavailable, misconfigured, or cannot perform the requested operation, fall back to the local alternative listed below.
+- `vhdl-tools` (the skills' `shared/bin/vhdl-tools`) for VUnit, synthesis,
+  Vivado reports and waveforms. It runs the project's own VUnit and build
+  scripts and returns compact summaries, so prefer it over calling
+  `run.py`, `ghdl`, `yosys` or Vivado by hand and over reading raw logs,
+  reports or waveform files.
+- `corvidex-mcp`, when the host has it connected, for semantic search and
+  exact code navigation. "Prefer" is a routing decision there, not a
+  blanket "never grep" rule; see its section below.
 
-For `corvidex-mcp` specifically, "prefer" is a routing decision, not a
-blanket "always semantic search, never grep" rule: the right tool depends
-on what the question actually is (an already-known exact identifier vs. a
-concept/pattern vs. an exhaustive literal-string enumeration). See the
-`corvidex-mcp` section below for the routing table, the measurements it is
-based on, and the boundary of what still legitimately falls back to local
-tools.
+`vhdl-tools <group> <command> --help` shows every option, and
+`shared/tools/README.md` has the full command table. Every command also
+accepts `--json-input '<json>'`. Exit status is 0 on success, 1 when the
+tool reports a failure, 2 on invalid input, and 127 when `uv` is missing.
 
-Never invent MCP availability or tool results. If the host exposes no corresponding MCP tool, treat it as unavailable.
+Run it from the HDL project's root: the project directory defaults to the
+current directory. Configuration uses the environment variables the
+earlier MCP servers used (`VUNIT_MCP_PROJECT_DIR`, `VUNIT_MCP_SIMULATOR`,
+`TSFPGA_MCP_*`).
 
-## Preferred servers
+Only one compile, simulation or build runs per project at a time:
+`vhdl-tools` takes a lock file and says when it had to wait. Run long
+builds in a background shell.
+
+Never invent a tool result. When a tool is unavailable, say so and use the
+fallback listed for it.
+
+## Tools
 
 ### 1. `corvidex-mcp`
 
@@ -53,9 +66,8 @@ Relevant tools when exposed:
   similarity search
 
 Cost-aware routing — pick the tool by what kind of question this is, not by
-habit or by "corvidex first, always". Measured on a real project (empirical
-review, 2026-09-12): looking up a known identifier
-(`cnn_accel_bias_requant`) cost 0.62 s / ~54.8 KB (~13,700 tokens) / 8
+habit or by "corvidex first, always". Measured on a real project : looking up a known entity
+name cost 0.62 s / ~54.8 KB (~13,700 tokens) / 8
 chunks across 5 files via `search_hdl`, vs. <0.1 s / ~16 KB / 180 lines
 across 38 files via `grep -rn` (*more* complete, for that case), vs. 2.5 s /
 421 chars (~105 tokens) via `find_symbol` — the exact declaration with
@@ -103,9 +115,9 @@ the thing doesn't exist:
 
 Zero-config repository naming: with no `[[repositories]]` entry configured,
 the repository is auto-named `<dirname>-<8 hex hash>` (e.g.
-`vhdl-ai-test-582e8509`), not the plain directory name. Any call that takes
+`my_fpga-582e8509`), not the plain directory name. Any call that takes
 a `repository=` argument must read the real name from `repository_status`
-first — guessing the plain directory name (e.g. `vhdl-ai-test`) fails with
+first — guessing the plain directory name (e.g. `my_fpga`) fails with
 an unknown-repository error.
 
 Launcher trap: registering the server with `uv --directory DIR run ...`
@@ -117,24 +129,15 @@ the launcher command can't be edited. After setup, confirm with
 `repository_status` that the indexed repository is the target project, not
 `corvidex-mcp` itself.
 
-Pending-PR-dependent behavior — do not describe these as current until the
-named PR is confirmed merged:
-- **Once upstream PR #31 lands** (compact search results): `search_hdl`/
-  `search_docs`/`search_code`/`search_knowledge` results will carry 1-based
-  line-number gutters, bodies capped to ~40 lines with a `get_source(...)`
-  follow-up marker for anything longer, and a weak-match warning when
-  relevance is low. The line numbers are what makes a search →
-  `find_definition`/`find_references` handoff practical — but the
-  navigation tools take 0-based line numbers, so pass (displayed line
-  number − 1).
-- **Once upstream PR #32 lands** (multi-library `vhdl_ls` config):
-  library-qualified instantiations (`entity cnn_accel.foo`, tsfpga's
-  per-module-folder convention) will resolve correctly in all four
-  navigation tools. Before that fix, `find_definition`/`find_references`/
-  `find_symbol`/`hover_info` silently return "No definition found" (or an
-  equivalent empty result) on such references — treat an empty result on a
-  library-qualified instantiation as suspect, not as proof the target
-  doesn't exist, until that PR is confirmed merged.
+Search results carry line-number gutters, cap long bodies with a
+`get_source(...)` follow-up marker, and warn on weak matches. Check the
+navigation tools' parameter descriptions for whether they take 0- or
+1-based lines before passing a displayed line number to
+`find_definition`/`find_references`. Library-qualified instantiations
+(`entity <lib>.<name>`, tsfpga's per-module-folder convention) resolve in
+the navigation tools; if one still comes back empty, check that corvidex
+generated a library-aware `vhdl_ls.toml` for the project before
+concluding the target doesn't exist.
 
 Usage rule:
 1. Call `repository_status` when repository/index health matters, and
@@ -184,160 +187,93 @@ Fallback:
 - `find`
 - VHDL language server if independently available
 
-### 2. `vunit-mcp`
+### 2. `vhdl-tools vunit`
 
-Repository:
-`https://github.com/ru551n/vunit-mcp`
+Discovering, compiling, elaborating and running a VUnit project, and
+reading its results.
 
-Preferred for:
-- discovering the VUnit project
-- source compile order
-- compiling
-- listing tests
-- running regressions
-- reading JUnit-derived status
-- reading individual test logs
-- resolving testcase dependencies
-- locating recorded test waveforms
+| Command | Use |
+|---|---|
+| `status` | First, when anything about the setup is unclear: project dir, interpreter, VUnit version, simulators, waveform support |
+| `list-tests`, `list-files` | Test names (`lib.entity.test_case`) and compile order |
+| `test-dependencies --test-name T` | The files one test needs |
+| `compile` | Analyze only |
+| `elaborate --test-patterns P` | Elaborate without simulating. Catches port, generic and type mismatches that `compile` misses; run it after every RTL or testbench interface change |
+| `run-tests --test-patterns P --num-threads 0` | Run tests. Add `--waveform-format vcd` (GHDL) or `fst` (NVC) when a failure may need signal-level debugging |
+| `get-report --only-failing` | Pass/fail summary of the last run |
+| `get-test-log --test-name T` | A failing test's log tail and check results |
+| `get-test-waveform --test-name T` | Waveform path and failing check time, for `vhdl-tools wave` |
+| `export-json` | VUnit's full project export |
 
-Relevant tools when exposed:
-- `vunit_status` — call first
-- `vunit_list_tests`
-- `vunit_list_files`
-- `vunit_compile`
-- `vunit_elaborate` — runs VUnit's `--elaborate` flag, a real GHDL
-  elaboration pass
-- `vunit_run_tests`
-- `vunit_get_report`
-- `vunit_get_test_log`
-- `vunit_get_test_waveform`
-- `vunit_test_dependencies`
-- `vunit_export_json`
+Rules:
+1. Pass `--simulator ghdl` or `--simulator nvc` (or set
+   `VUNIT_MCP_SIMULATOR`) whenever more than one simulator is on `PATH`.
+   Otherwise VUnit picks one itself; with an unusable `vsim` on `PATH`,
+   tests fail in a fraction of a second with an empty log.
+2. Run the smallest test pattern that answers the question; run full
+   regressions at integration points.
+3. Read `get-report` before logs, and logs before waveforms.
+4. Headless NVC waveforms need the `--wave` flag in the project's own
+   VUnit; `status` reports whether it has it. GHDL records either way.
 
-Usage rule:
-1. Call `vunit_status` first.
-2. Prefer `vunit_list_files` over manually guessing compile order.
-3. Prefer `vunit_compile` over direct compiler commands when a VUnit project exists.
-4. Prefer `vunit_run_tests` for regressions.
-5. Pass `waveform_format` to `vunit_run_tests` when waveform debug may be required (`vcd` on GHDL, `fst` on NVC); a run without it records no waveform. Skip it only when the run is expected green and no debug is planned.
-6. Use `vunit_get_report` before fetching detailed failure logs.
-7. Use `vunit_get_test_waveform` to obtain the waveform path and pass it to `peeper-mcp`.
-8. **Use `vunit_elaborate` liberally right after writing or modifying RTL**,
-   as a validation step before a full `vunit_run_tests` is warranted.
-   `vunit_compile` is analyze-only (GHDL `-a`/`--compile`) and can report
-   clean success on code that still has a cross-unit port/generic/type
-   mismatch — elaboration is what actually binds entities/architectures and
-   resolves generics, so it catches that class of error `vunit_compile`
-   silently misses. This is the closest free/open equivalent to a
-   commercial compiler's incremental-validation feedback loop; do not skip
-   straight from `vunit_compile` to a full test run when the goal is just
-   "did this edit break anything structurally".
+Fallback: the project's `run.py` directly (`--elaborate`, `-p 0`,
+`VUNIT_SIMULATOR=nvc`), then plain GHDL for a non-VUnit testbench. Never
+replace an existing VUnit project with a custom GHDL harness.
 
-Fallback:
-1. Project `run.py` directly, using VUnit.
-2. GHDL (`ghdl -a/-e/-r`) for simple non-VUnit unit tests.
-3. NVC if the project is already configured for it.
+### 3. `vhdl-tools wave`
 
-Do not silently replace an existing VUnit project with a custom GHDL harness.
+Signal-level measurements in VCD or FST files, usually the path from
+`vhdl-tools vunit get-test-waveform`. Every command takes `--file`. Times
+are strings like `10ns` or integer file ticks; signal names accept unique
+suffixes (`clk` matches `tb.dut.clk`).
 
-### 3. `peeper-mcp`
+| Command | Use |
+|---|---|
+| `open` | Timescale, duration, signal count |
+| `search --pattern P` | Exact hierarchical signal names |
+| `value-at --time T --signals S...` | Values at one instant |
+| `values --signal S --start T --end T` | Transitions in a window |
+| `find --signal S --value V` | When a signal held a value |
+| `latency --a A --b B` | Edge-to-edge delay |
+| `analyze --signal S` | Clock period and duty, X/Z fraction, value statistics |
+| `plot --signals S... --out F.png` | A picture, only when it adds something |
 
-Repository:
-`https://github.com/ru551n/peeper-mcp`
+Query the smallest window around the failing check's time. Never dump or
+parse a large waveform by hand. Fallback: GTKWave for a person, or a short
+script for a tiny file.
 
-Reads both FST (NVC's default) and VCD (GHDL's default) waveforms directly —
-no conversion step is needed for waveforms recorded by `vunit-mcp`.
+### 4. `vhdl-tools synth`
 
-Preferred for:
-- waveform inspection
-- exact signal values at a time
-- transition/value histories
-- clock period/frequency/duty measurement
-- X/Z detection
-- event-to-event latency
-- locating state/value intervals
-- rendering waveform plots
+Open-source synthesis (GHDL + Yosys through tsfpga) for resource counts,
+and a tsfpga project's own Vivado builds and reports.
 
-Relevant tools when exposed:
-- `peeper_open` — call first for a new waveform
-- `peeper_search`
-- `peeper_values`
-- `peeper_value_at`
-- `peeper_analyze`
-- `peeper_latency`
-- `peeper_find`
-- `peeper_plot`
+| Command | Use |
+|---|---|
+| `status`, `targets` | Yosys, the GHDL plugin, and which chips and families are available |
+| `inspect --sources F...` | Entities, architectures and generics, to pick a top level |
+| `synthesize --sources F... --top T --chip C [--family F] [--generics JSON]` | Aggregated resource counts |
+| `project-status`, `project-list-builds` | The project's build script and its builds |
+| `project-build --project-filters P...` | Netlist builds; add `--no-netlist-builds` for a top-level Vivado build (`--synth-only`, `--from-impl`) |
+| `project-get-timing-report --project NAME` | Vivado timing (`--report-type summary\|pulse_width\|bus_skew\|clock_interaction`) |
+| `project-get-utilization-report --project NAME` | Hierarchical utilization |
+| `project-get-drc-report --project NAME` | DRC or methodology checks |
 
-Usage rule:
-1. Obtain a waveform path, preferably through `vunit_get_test_waveform`.
-2. Call `peeper_open`.
-3. Locate exact signal names with `peeper_search`.
-4. Query the smallest useful time window around the failure.
-5. Use measured values/latencies in debug reports.
-6. Use `peeper_plot` only when visual inspection materially helps.
+Rules:
+1. Never guess the top level, chip, family or a generic value; ask.
+2. There is no architecture option. If `inspect` finds several
+   architectures for the top, ask which one, and pass only that
+   architecture's file.
+3. Pass the complete source set. Designs that span several VHDL libraries
+   use `--libraries` (below).
+4. The three report commands need a `vivado` executable; the other
+   commands do not.
+5. Resource synthesis is not timing closure. Label every timing number as
+   a synthesis estimate or a routed result.
+6. Project builds can run for hours. Run them in a background shell, and
+   never start a second build in the same project.
 
-Fallback:
-- GTKWave for manual inspection
-- `ghdl --read-wave-opt`/wave dump tooling if available
-- Python/VCD parsing only when no suitable waveform tool exists
-
-Do not parse huge waveforms manually if Peeper is available.
-
-### 4. `tsfpga-mcp`
-
-Repository:
-`https://github.com/ru551n/tsfpga-mcp`
-
-Preferred for:
-- VHDL/Verilog hierarchy/source inspection before synthesis
-- supported synthesis-target discovery (which chips/flows the installed Yosys provides)
-- synthesis through `tsfpga.yosys.project` (GHDL + Yosys)
-- aggregated resource-count summaries (no per-port netlist)
-- real per-project Vivado builds and their timing/utilization/DRC reports
-
-Relevant tools when exposed:
-- `tsfpga_status`
-- `tsfpga_targets`
-- `tsfpga_inspect`
-- `tsfpga_hierarchy` — a GHDL-elaborated, generics-resolved
-  instance/hierarchy tree (generate-block-expanded instance names, resolved
-  generics) **without** running full technology-mapping synthesis
-- `tsfpga_synthesize`
-- `tsfpga_project_status`
-- `tsfpga_project_list_builds`
-- `tsfpga_project_build`
-- `tsfpga_project_get_timing_report`
-- `tsfpga_project_get_utilization_report`
-- `tsfpga_project_get_drc_report`
-
-Usage rule:
-1. Call `tsfpga_status` first.
-2. Use `tsfpga_inspect` when top/generics are uncertain, or multiple architectures may exist.
-3. Use `tsfpga_targets` before choosing a chip/family unless the user already supplied it.
-4. Never infer required top level, chip/family, or generic overrides.
-5. There is no architecture-selection parameter. If `tsfpga_inspect` reports more than one architecture for the top, ask the user which one, then include only that architecture's source file in the source set passed to `tsfpga_synthesize`.
-6. Pass the complete source dependency set to `tsfpga_synthesize`; when `top` is not a VHDL entity, also pass the VHDL entity names it instantiates via `vhdl_entities`.
-7. **Prefer `tsfpga_hierarchy` over `tsfpga_synthesize` (or manually
-   shelling out to `ghdl`/`yosys`) when the question is about design
-   structure** — instance hierarchy, generate-block expansion, resolved
-   generics — rather than resource counts. It is far cheaper than a full
-   technology-mapping synthesis run because it stops at GHDL elaboration.
-8. For real Vivado-project work (an actual tsfpga project's own
-   `build_fpga.py`, not the portable Yosys flow), prefer
-   `tsfpga_project_status`/`tsfpga_project_list_builds`/
-   `tsfpga_project_build` over invoking Vivado/`build_fpga.py` manually via
-   `bash`, and prefer `tsfpga_project_get_timing_report`/
-   `tsfpga_project_get_utilization_report`/`tsfpga_project_get_drc_report`
-   over manually grepping/opening the generated Vivado report files
-   (`timing.rpt`, `utilization.rpt`, DRC report). See the `vivado-gotchas`
-   skill for the underlying Vivado report/hook behaviors these tools read.
-
-Fallback:
-Yosys + GHDL plugin locally for generic/open-source synthesis; direct
-Vivado/`build_fpga.py` invocation and manual report reading when
-`tsfpga-mcp` project-mode tools are unavailable.
-
-`tsfpga-mcp` provides synthesis/resource reporting, not a substitute for vendor place-and-route timing or vendor power analysis.
+Fallback: Yosys with the GHDL plugin by hand, or the project's
+`build_fpga.py` and its generated report files.
 
 ### Multi-library designs
 
@@ -345,24 +281,24 @@ When the design under synthesis spans more than one VHDL library — e.g. a
 top level using `library <name>; entity <name>.<entity>` to cross into a
 sibling library, as produced by tsfpga's own per-module-folder convention
 (`tsfpga.module.get_modules()`, see `shared/TsfpgaModules.md` §1) — pass
-each library's files under `tsfpga_synthesize`'s `libraries` parameter
-(one dict entry per library, keyed by library name), not flattened into
-`sources`. Use `corvidex-mcp` to trace the full transitive dependency
+each library's files with `vhdl-tools synth synthesize --libraries
+'{"<lib>": ["<file>", ...]}'` (one entry per library), not flattened into
+`--sources`. Use `corvidex-mcp` to trace the full transitive dependency
 closure first (own modules + any vendored dependency's modules) so no
 library is missed; a design that only fails to *resolve* a cross-library
 reference (GHDL: `cannot find resource library "..."` / `failed to find
 library '...'`) rather than reporting a real syntax/semantic error is the
 tell that a library was flattened into `sources` instead of given its own
-`libraries` entry.
+`--libraries` entry.
 
 ### Backend-limitation workaround protocol
 
-A synthesis failure is not automatically a `tsfpga-mcp` bug or a design
+A synthesis failure is not automatically a `vhdl-tools` bug or a design
 bug — it can be a genuine limitation of the underlying open-source GHDL/
 Yosys backend hit by otherwise-correct, already-simulated-passing RTL
 (e.g. GHDL's synth backend rejecting a dynamic-width slice construct that
 GHDL's simulator accepts fine — a known, still-open GHDL issue). Before
-assuming the RTL or the MCP tool is wrong:
+assuming the RTL or the tool is wrong:
 
 1. Isolate the exact failing construct/statement from the diagnostics
    (don't just retry blindly).
@@ -381,25 +317,11 @@ assuming the RTL or the MCP tool is wrong:
    GHDL issue #NNNN is fixed, or once the vendored module is patched
    upstream") so it isn't mistaken for a permanent part of the design.
 
-## Tool argument conventions
+## Recording the backend
 
-- `vunit-mcp` tools that take arguments wrap them in a top-level `input` object, e.g. `vunit_get_test_log` with `{"input": {"test_name": "..."}}`.
-- `tsfpga-mcp` `tsfpga_synthesize`/`tsfpga_inspect` take an `input` object with `sources`, `libraries`, `top`, `chip`, `family`, `vhdl_entities`, `generics`, `vhdl_standard`, `discard_ffinit`. At least one of `sources`/`libraries` is required; `libraries` is a `{library_name: [file, ...]}` map for designs spanning more than one VHDL library (see "Multi-library designs" above).
-- `corvidex-mcp` and `peeper-mcp` take flat arguments (e.g. `peeper_open` with `{"file": "..."}`).
-
-## Availability decision
-
-For each phase:
-
-1. If the corresponding MCP tools are exposed by the host, use them.
-2. If a status tool exists, call it before substantive operations.
-3. If the server is present but unhealthy, report the health issue and use fallback when appropriate.
-4. If the MCP tool is not exposed at all, use fallback without repeatedly probing for it.
-5. Record which backend produced a result:
-   - `backend: vunit-mcp`
-   - `backend: ghdl`
-   - `backend: tsfpga-mcp`
-   - etc.
+Record which backend produced each result, for example
+`backend: vhdl-tools vunit (ghdl)`, `backend: vhdl-tools synth (yosys)`,
+`backend: vivado`, or `backend: run.py` for a fallback run.
 
 ## Evidence rule
 

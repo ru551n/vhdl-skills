@@ -1,17 +1,6 @@
----
-name: vhtestgen
-description: Generate a VUnit-first self-checking VHDL-2008 test project, with standalone GHDL fallback
-allowed-tools: Read, Write, Bash, Grep, Glob
----
-> **Path note:** `shared/*.md` files live in the skills' `shared/` directory — a *sibling* of this skill's directory (resolve against the skills root, e.g. `<skills-root>/shared/CodingStyle.md`), not inside the skill directory.
-> **Layout note:** `ddoc/`, `rtl/`, `doc/`, `lib/` are the conventional tsfpga layout. When the project uses a different layout (e.g. `modules/<name>/{src,test,doc}`), follow the project's layout and keep the same file-naming conventions (`<ip>_arch.md`, `<module>_req.md`, `<module>.md`, `<module>.vhd`).
-
 # VHDL Test Generator
 
-Read `shared/ModernVHDL.md`, `shared/CodingStyle.md`, and `shared/HouseStyle.md`; they are authoritative for language revision, modern RTL practice, and concrete naming/style conventions.
-
-
-Read `shared/Vunit.md` (VUnit-5 API: runner, phases, gate locks, checks, seeds, verification components) and `shared/McpToolPolicy.md`.
+Read `shared/Vunit.md` (VUnit-5 API: runner, phases, gate locks, checks, seeds, verification components) and `shared/ToolPolicy.md`.
 
 ## Test-first (TDD) — default execution order
 
@@ -21,19 +10,19 @@ the default project-wide policy is: generate the module's VUnit testbench
 from its `<module>_req.md` first, confirm it is red (fails to elaborate
 against a stub, or fails for the expected "not implemented yet" reason),
 then hand off to `vhfill` to implement until that same testbench goes
-green. When `vunit-mcp` is available, confirm the "fails to elaborate"
-case with `vunit_elaborate` rather than a full
-`vunit_run_tests` — it runs a real GHDL elaboration pass and is the cheaper
-way to establish the red baseline when the expected failure is structural
-(missing entity/port/generic against a stub), reserving `vunit_run_tests`
-for the "fails for the expected not-implemented-yet reason" case. Only fall back to writing the testbench after implementation when
+green. Confirm the "fails to elaborate" case with
+`vhdl-tools vunit elaborate` rather than a full `run-tests` — it is the
+cheaper way to establish the red baseline when the expected failure is
+structural (missing entity/port/generic against a stub), reserving
+`vhdl-tools vunit run-tests` for the "fails for the expected
+not-implemented-yet reason" case. Only fall back to writing the testbench after implementation when
 the user explicitly asks for that order, or when retrofitting tests onto
 already-existing, previously-untested RTL (a distinct, explicitly-flagged
 case — record it as such, do not silently treat it as the default flow).
 
 ## Preferred verification architecture
 
-If the project uses VUnit (a VUnit `run.py` exists, or `vunit_status`/`vunit_list_tests` succeed), always generate VUnit testbenches — never standalone ones. Authoring rules for generated runners/testbenches come from `shared/Vunit.md` (see the `vhunit` skill).
+If the project uses VUnit (a VUnit `run.py` exists, or `vhdl-tools vunit status`/`list-tests` succeed), always generate VUnit testbenches — never standalone ones. Authoring rules for runners and testbenches come from `authoring.md` and `shared/Vunit.md`.
 
 Infer the project's test conventions from the existing project:
 - `run.py` registration style (VUnit-5 builtins, library dependencies)
@@ -43,12 +32,12 @@ Infer the project's test conventions from the existing project:
 
 If the conventions cannot be inferred (no existing tests to copy from, ambiguous or mixed structure, missing or broken `run.py`), ask the user which conventions to follow. Do not guess and do not invent a new structure silently.
 
-If `vunit-mcp` is available:
-1. call `vunit_status`
-2. inspect project with `vunit_export_json`, `vunit_list_tests`, and `vunit_list_files`
+Then:
+1. run `vhdl-tools vunit status`
+2. inspect the project with `vhdl-tools vunit export-json`, `list-tests` and `list-files`
 3. preserve the existing `run.py` conventions
 4. add tests in the same project style
-5. validate discovery with `vunit_list_tests`
+5. confirm discovery with `vhdl-tools vunit list-tests`
 
 If VUnit is not present in the project, a standalone GHDL testbench may be generated instead (see Fallback standalone tests).
 
@@ -60,7 +49,7 @@ Use:
 - top entity
 - requirements
 - register/protocol docs
-- relevant precedent from `corvidex-mcp` when available (`search_hdl` for conceptual precedent; prefer `find_definition`/`find_references` over grep once an exact port/generic/type name from the DUT is already known, e.g. confirming every consumer of a shared record type the test must construct — see `shared/McpToolPolicy.md`'s routing table)
+- relevant precedent from `corvidex-mcp` when available (`search_hdl` for conceptual precedent; prefer `find_definition`/`find_references` over grep once an exact port/generic/type name from the DUT is already known, e.g. confirming every consumer of a shared record type the test must construct — see `shared/ToolPolicy.md`'s routing table)
 
 ## Recommended VUnit structure
 
@@ -77,7 +66,7 @@ Project-specific structures may differ; follow the existing VUnit project.
 ## VUnit testbench rules
 
 Authoring is delegated to `shared/Vunit.md` (authoritative VUnit-5 API) and
-the `vhunit` skill: VHDL-2008, `vunit_context` + `runner_cfg`, named
+the `vhtest` skill: VHDL-2008, `vunit_context` + `runner_cfg`, named
 `run("test_*")` cases, self-checking via `check_pkg`, a watchdog with a real
 budget, seeded RNG, `run.py` in the VUnit-5 style with
 `add_vhdl_builtins()`, and checker processes that respect the test phases
@@ -104,8 +93,7 @@ Per `shared/Vunit.md` §13 ("Verification components (VCs)"):
   a DUT can present. A hand-written slave/master/memory/response process
   is a defect to be fixed, not a shortcut: it re-implements handshake
   rules, backpressure randomization, data capture and response ordering
-  that the BFM already gets right and keeps right. Real cost on this
-  project: two AXI DMA testbenches shipped with hand-rolled AXI
+  that the BFM already gets right and keeps right. Real cost: two AXI DMA testbenches shipped with hand-rolled AXI
   read/write slaves (own randomizer, own capture arrays, own BRESP
   queue) and had to be rewritten on `bfm.axi_read_slave`/
   `bfm.axi_write_slave` with `set_expected_word`/
@@ -136,7 +124,7 @@ Per `shared/Vunit.md` §13 ("Verification components (VCs)"):
   ...) so generic testbench code can still drive it. Full skeleton and the
   `vc_pkg.create_std_cfg` (id/logger/checker/unexpected-msg-policy) pattern
   in `shared/Vunit.md` §13 ("Writing a custom VC"). Expect this to be rare
-  on this project — AXI4-Stream links are already covered by the raw
+  — AXI4-Stream links are already covered by the raw
   built-in VC per the wrapper caveat above.
 - **Give every VC instance driving/checking a real `tready`/`tvalid` link
   a non-zero randomized `stall_config` by default** (both the driving
@@ -164,7 +152,7 @@ Maintain `tb/<ip>/tc_list.md` if the project uses that artifact, mapping test na
 
 ## Waveform readiness
 
-For tests likely to need signal-level debug, design them so `vunit_run_tests` can be invoked with waveform recording. Waveform files are consumed by `peeper-mcp`.
+For tests likely to need signal-level debug, design them so `vhdl-tools vunit run-tests --waveform-format ...` can record a waveform, which `vhdl-tools wave` then measures.
 
 ## Fallback standalone tests
 
@@ -173,7 +161,6 @@ Only when the project does not use VUnit, or the user explicitly requests standa
 - use assertions
 - emit exactly one `[FINISH] PASS` or `[FINISH] FAIL`
 - terminate via `std.env.finish`
-
 
 ## Modern verification rules
 

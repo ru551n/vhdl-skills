@@ -1,8 +1,8 @@
 # VUnit Testbench & Runner Reference
 
 Authoritative for creating and working with VUnit test benches and Python
-test runners. Covers the VUnit-5 API this stack targets — `vunit-mcp` pins
-the `ru551n/vunit` fork (VUnit 5.0.0.dev12 + the `--waves` flag). VUnit 4.x
+test runners. Covers the VUnit-5 API, verified against the `ru551n/vunit` fork
+(VUnit 5.0.0.dev12 with the `--waves` flag). VUnit 4.x
 differences are listed at the end; verify against the installed version
 before relying on them.
 
@@ -312,9 +312,9 @@ vunit_out/
 - **Waveforms:** `--wave` alone generates **no** file on GHDL — the format
   must be given with `--viewer-fmt` (vcd → `--vcd=`, fst → `--fst=`,
   ghw → `--wave=`). NVC defaults to `fst`; `ghw` is unsupported (warns,
-  falls back to fst). `vunit-mcp` wraps this via its `waveform_format`
-  parameter (`vcd` on GHDL, `fst` on NVC), so prefer
-  `vunit_get_test_waveform`.
+  falls back to fst). `vhdl-tools vunit run-tests` wraps this with
+  `--waveform-format` (`vcd` on GHDL, `fst` on NVC), and
+  `vhdl-tools vunit get-test-waveform` finds the file.
 - Each test case runs in its own simulation by default (trustworthy,
   parallelizable); `-- vunit: run_all_in_same_sim` forces one simulation
   per testbench (disables per-test configs).
@@ -362,6 +362,12 @@ end architecture;
 - `run("name")` returns true only when the case is enabled in
   `runner_cfg` and not yet run. A testbench with no `run(...)` becomes a
   single implicit test. Duplicate `run("...")` names are an error.
+- A signal assigned in the test process keeps its old value until the
+  process next suspends. Checking a signal derived from it on the next
+  statement, with no `wait` in between, reads the stale value and looks
+  exactly like a DUT bug. Before blaming the DUT, check whether the other
+  checks in the file use a settle `wait`, and whether the waveform shows
+  the input changing at all before the failing check; then add the `wait`.
 - Two contexts: `vunit_context` (full: check, logger, data_types, run, ...)
   and `vunit_run_context` (minimal: run only — for integrating an external
   checking framework).
@@ -449,8 +455,8 @@ its own bridge from every instance — must keep state that has to survive in
 an *imported* module (imports resolve through `sys.modules` and are not
 re-run), never at the bridge file's own top level. Without that, two
 instances of a VC that loaded its own bridge silently shared one device
-(vhdl-ai-test's former flash_model). A VC is better served by a Python
-session of its own per instance, as awesome-vunit-vcs does with
+(a flash-memory model VC). A VC is better served by a Python
+session of its own per instance, for example via
 `new_vc_session(get_id(handle), logger)`. The file's own directory goes on
 `sys.path` while it runs, so
 it can import its siblings. A relative path is relative to the run
@@ -506,8 +512,7 @@ guarding a precondition (a bridge function called before its selector, an
 unknown case name, a case missing an optional field) — raise plainly in
 Python, do not invent a VHDL-side status code for it.
 
-**Bridge module design (the pattern every bridge in this codebase
-follows — `top_level_bridge.py`, `conv_core_bridge.py`)**: one Python file per testbench (or shared
+**Bridge module design (the pattern to follow)**: one Python file per testbench (or shared
 across a small family of closely related testbenches, when they consume
 the same underlying data), living in `test/python_bridge/`.
 - A single `set_test_case`/`select_*` function picks which case a module-
@@ -536,10 +541,7 @@ the same underlying data), living in `test/python_bridge/`.
 **When to reach for this instead of a file.** This supersedes the older
 pattern of a VUnit `pre_config` hook writing vector files (`.csv`, `.txt`)
 into a per-config `output_path`, with the testbench then doing its own
-`file_open`/`readline`/`read` to load them back — every cnn_accel
-testbench in this repo (`tb_cnn_accel_top.vhd`, `tb_cnn_accel_streaming.
-vhd`, `tb_cnn_accel_conv_core.vhd`, `tb_cnn_accel_pe_array_from_vectors.
-vhd`) has migrated off that pattern onto this one. Prefer live FFI
+`file_open`/`readline`/`read` to load them back. Prefer live FFI
 whenever:
 - the expected/reference data already comes from a Python golden model
   (§2's own "Python reference models (golden models)") — computing it
@@ -552,7 +554,7 @@ whenever:
 
 Still a legitimate reason to keep `pre_config`/a real file: interop with
 something that has its own externally meaningful, checked-elsewhere file
-format (e.g. this repo's compiler-generated vectors, which a Python-side
+format (e.g. compiler-generated vectors, which a Python-side
 bridge function still reads back with ordinary `open()` — never VHDL file
 I/O — precisely because that file-writing function has its own dedicated
 test suite and other potential consumers). When in doubt, ask whether a
@@ -856,6 +858,15 @@ Write the DUT output into `mem`, then `check_expected_was_written` —
 this is the canonical "scoreboard" pattern (see hdl-modules
 `tb_axi_lite_cdc`).
 
+**Large memories can segfault GHDL.** With GHDL's mcode backend a big
+`memory_t` model can land on the C stack: budget roughly 8 bytes of stack
+per modelled byte, so `allocate(mem, num_bytes => N)` around N = 1 MiB
+overruns the default 8 MiB `ulimit -s`. The run dies with a bare SIGSEGV
+(exit code 139) and no VHDL error, and compile or elaboration alone never
+shows it. Raise the stack limit before the simulator starts: `ulimit -s
+unlimited` in the shell, or `resource.setrlimit(resource.RLIMIT_STACK, ...)`
+early in `run.py`, which the simulator subprocesses inherit.
+
 ### `bus_master_pkg` — bus abstraction
 
 ```vhdl
@@ -945,7 +956,7 @@ blocking/non-blocking status per procedure/overload:
 | `await_pop_axi_stream_reply(net, reference, tdata, tlast, ...)` | Blocking | Companion to the non-blocking `pop_axi_stream(..., reference)` above. |
 | `check_axi_stream(net, slave, expected, ..., blocking => true\|false)` | **Either, via `blocking` generic** (default `true`) | Set `blocking => false` to queue an expected-value check without stalling the checking process — **prefer this for verification data**: queue every expected beat for a frame up front (mirrors how `push_axi_stream` queues stimulus), and let the VC report mismatches asynchronously as they're popped from the DUT, rather than hand-writing a wait-per-beat loop. |
 
-Practical pattern for this project's per-module testbenches: in the
+Practical pattern for per-module testbenches: in the
 stimulus process, `push_axi_stream` every beat of a frame (including the
 `tuser`/`tlast` passenger bits) back-to-back with no explicit `wait`
 between beats; in the checking process, `check_axi_stream(..., blocking =>
@@ -954,6 +965,16 @@ Python golden model's precomputed expected file (see "Python reference
 models" above). Only fall back to the blocking forms for a targeted
 directed test that must inspect one value before deciding what to drive
 next (e.g. a reset-recovery or error-injection sequence).
+
+**Drain every VC before `test_runner_cleanup`, or the test passes without
+testing anything.** A loop of non-blocking `push_axi_stream` /
+`check_axi_stream(..., blocking => false)` calls contains no `wait`, so it
+completes in delta cycles and the process reaches `test_runner_cleanup`
+before a single beat has crossed the bus. The test then reports PASS even
+against a broken or stubbed DUT. The tell is the `simulation stopped @...`
+time in the test's `output.txt`: near zero instead of plausible for the
+number of beats. Before cleanup, call `wait_until_idle(net, as_sync(vc))`
+for every master and slave VC the test used.
 
 ### Randomized backpressure via `stall_config` (mandatory default)
 
@@ -1071,11 +1092,11 @@ deliberately narrow project-specific field.
 
 Per the VC-preference rule above, only write a custom VC after confirming no
 built-in VC/VCI (§13 lists) and no thin wrapper around one covers the
-interface — for this project's AXI4-Stream links, that bar is essentially
+interface — for AXI4-Stream links, that bar is essentially
 never met (raw `vunit_lib.axi_stream_master`/`axi_stream_slave` already
 handle arbitrary `user_length`, see the BFM-wrapper caveat above), so expect
 this to stay unused unless a genuinely new, non-AXI4-Stream, non-bus
-interface shows up. Verified this session against VUnit's own docs
+interface shows up. Verified against VUnit's own docs
 (`docs/verification_components/user_guide.rst`, `vci.rst`) and real source
 (`uart_pkg.vhd` / `uart_master.vhd` / `vc_pkg.vhd`, `verification_components/src`).
 
@@ -1250,7 +1271,7 @@ requirement.
 Per-module loop:
 1. From `<module>_req.md` (ports/generics/protocol above the marker,
    behavior below it), author `tb_<module>.vhd` and register it in
-   `run.py` — this is `vhtestgen`'s job, run *before* `vhfill` for that
+   `run.py` — this is `vhtest`'s job, run *before* `vhfill` for that
    module.
 2. Compile/run it once against either a `--@`-stub entity or no entity at
    all, and confirm it fails for the *expected* reason (missing
@@ -1267,7 +1288,7 @@ Per-module loop:
 
 This changes the phase order documented in the `vhflow` skill: unit test
 generation for a given module precedes that module's implementation, not
-the other way around; `vhtestgen` and `vhfill` alternate per module rather
+the other way around; `vhtest` and `vhfill` alternate per module rather
 than running as two separate whole-project passes.
 
 Combine with the rest of this document by default for every generated
@@ -1298,7 +1319,7 @@ technique being proposed here, not a retrospective write-up of proven
 practice. Reach for it deliberately, not by default.
 
 **What it is.** Decompose the top-level architecture and every
-submodule's interface first — exactly what `vharch` already produces.
+submodule's interface first — exactly what `vhdesign` already produces.
 Then, instead of building every leaf module to completion before wiring
 and testing the real top level, author a behavioral stand-in architecture
 for each not-yet-implemented submodule, matching its real interface
@@ -1318,7 +1339,7 @@ end.
 **Naming: `architecture model`.** Not `stub` — that word already names a
 narrower, different thing in this same document (§16 step 2's
 `--@`-stub entity: an empty/near-empty placeholder used only to get a
-red-phase TDD failure, same idea as `vharch`'s `--@` wiring-stub
+red-phase TDD failure, same idea as `vhdesign`'s `--@` wiring-stub
 comments). Not `behavioral` — an other-ecosystem convention
 `shared/HouseStyle.md` already declines to import for `rtl` without a
 specific reason; the same reasoning applies here. Not `sim` — too broad,
@@ -1338,13 +1359,13 @@ dead architecture body left behind in the file that matters.
 
 **Precondition: interface fidelity, fixed early.** A `model`
 architecture's entity must match the real one's ports, generics, and
-modes exactly. This is precisely what `vharch`'s "Define architecture"
+modes exactly. This is precisely what `vhdesign`'s "Define architecture"
 and "Generate module requirement files" steps already produce and are
 meant to freeze early — treat that frozen interface as the contract both
 the `model` and the eventual `a` architecture are written against.
 
 **Mechanism: explicit architecture selection at the instantiation site.**
-`vharch`'s own generated top-level skeleton already names the
+`vhdesign`'s own generated top-level skeleton already names the
 architecture explicitly per instantiation (`entity work.foo_ctrl(a)`,
 see `vharch/SKILL.md`'s own example) — the real project's top level
 currently omits it only because exactly one non-`tb` architecture exists
@@ -1353,19 +1374,19 @@ exists alongside `a`, every direct instantiation of that entity needs one
 named explicitly. This gives the simplest possible swap mechanism: point
 one instantiation at `entity work.<module>(model)`; when the real RTL is
 ready, change that same line to `entity work.<module>(a)`. No new
-VHDL-language machinery, and it matches `vharch`'s own existing generated
+VHDL-language machinery, and it matches `vhdesign`'s own existing generated
 style exactly.
 
 When the stub/real choice needs to be selectable *without* editing the
 top-level source — e.g. keeping both an all-stub smoke config and a
 fully-real regression config runnable from one unedited source tree — a
 top-level generic + `generate`, chosen per VUnit test config via
-`add_config(generics={...})` (§2), fits this codebase's existing
+`add_config(generics={...})` (§2), fits the common
 generate-based conditional-instantiation idioms with no new VHDL-unit
 type. VUnit's own `add_config(..., vhdl_configuration_name=...)` (§2) is
 a real, available alternative for the same purpose, but has no precedent
-of actual use anywhere in this codebase and presupposes a
-component-instantiation style the project doesn't otherwise use — not the
+of use in typical tsfpga projects and presupposes a
+component-instantiation style they don't otherwise use — not the
 default recommendation here.
 
 **Mechanism: FFI-backed golden-model stand-in.** A `model` architecture's
@@ -1386,14 +1407,11 @@ The stand-in and the eventual real RTL will almost never share
 latency/backpressure behavior. A top-level test written against
 fixed-cycle-offset expectations breaks the moment a stand-in is swapped
 for real RTL (or vice versa), which defeats the entire point of keeping
-the same test green across the swap. This codebase already has the right
-idiom for this, just not written up under this name anywhere yet: push
+the same test green across the swap. The right idiom: push
 expected results onto a queue as they're generated, pop and check them
 against whatever arrives on the output interface whenever it arrives,
 bounded by a max-wait-cycles drain check at the end
-(`expected_q`/`monitor_out`/`drain_and_check`, e.g.
-`tb_cnn_accel_pe_array.vhd`, `tb_cnn_accel_window_gen.vhd`,
-`tb_cnn_accel_conv_core.vhd`). §12/§13 cover `queue_t` mechanics and the
+(`expected_q`/`monitor_out`/`drain_and_check`). §12/§13 cover `queue_t` mechanics and the
 different `memory_pkg`-based scoreboard, not this specific hand-rolled
 pattern — treat this paragraph as its write-up until it earns a section
 of its own.

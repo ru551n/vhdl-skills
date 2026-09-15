@@ -1,10 +1,3 @@
----
-name: vivado-gotchas
-description: Vivado-specific synthesis, timing-estimation, place-and-route, and constraint gotchas (largely via tsfpga's Vivado backend) that are easy to silently get wrong
-allowed-tools: Read, Write, Bash, Grep, Glob
----
-> **Path note:** `shared/*.md` files live in the skills' `shared/` directory — a *sibling* of this skill's directory (resolve against the skills root, e.g. `<skills-root>/shared/CodingStyle.md`), not inside the skill directory.
-
 # Vivado Gotchas
 
 Reference knowledge, not a workflow. Load this whenever doing Vivado-specific
@@ -13,30 +6,27 @@ synthesis, timing-estimation, constraint, or place-and-route work — from
 (and, where noted, tsfpga-wrapping-Vivado) behaviors that are easy to get
 silently wrong because they fail quietly instead of erroring.
 
-Read `shared/McpToolPolicy.md`.
+## Tools
 
-## MCP preference
+For a tsfpga project's own Vivado build (not the portable Yosys flow),
+prefer `vhdl-tools synth`'s project commands over invoking
+Vivado/`build_fpga.py` by hand and over opening or grepping the generated
+report files:
 
-For an actual tsfpga project's own Vivado build (not the portable Yosys
-flow), prefer `tsfpga-mcp`'s project-mode tools over manually invoking
-Vivado/`build_fpga.py` via `bash` and over manually opening or grepping the
-generated report files:
-
-- `tsfpga_project_status` / `tsfpga_project_list_builds` instead of
-  manually locating build directories or guessing which builds exist.
-- `tsfpga_project_build` (with `project_filters` to scope it) instead of
+- `vhdl-tools synth project-status` / `project-list-builds` instead of
+  locating build directories or guessing which builds exist.
+- `vhdl-tools synth project-build --project-filters <pattern>` instead of
   invoking `build_fpga.py`/Vivado directly from the shell.
-- `tsfpga_project_get_timing_report`, `tsfpga_project_get_utilization_report`,
-  and `tsfpga_project_get_drc_report` instead of manually reading
-  `timing.rpt`, a utilization report, or a DRC report off disk.
+- `vhdl-tools synth project-get-timing-report`, `project-get-utilization-report`
+  and `project-get-drc-report` instead of reading `timing.rpt`, a
+  utilization report or a DRC report off disk.
 
 This does not remove the need for the Vivado-behavior knowledge below —
 the gotchas about post-synthesis hook reliability, XDC parsing, and report
-content are exactly what these report-retrieval tools are surfacing, and
-still apply when reasoning about *why* a retrieved report looks the way it
-does. Fall back to manually invoking Vivado/`build_fpga.py` and reading its
-generated report files directly only when `tsfpga-mcp` (or its project-mode
-tools specifically) is unavailable.
+content are exactly what these report commands surface, and still apply
+when reasoning about *why* a retrieved report looks the way it does. Fall
+back to invoking Vivado/`build_fpga.py` and reading its generated report
+files directly only when `vhdl-tools` cannot run.
 
 **When falling back to a manually-launched background build, block on the
 actual process, not a name-pattern match that can match yourself.** A
@@ -165,7 +155,7 @@ that would silently stop checking anything. Until the ordering is fixed
 upstream (or overridden via a subclass that reorders it), treat the
 frequency number the same way genuinely un-checkable vendor numbers are
 treated elsewhere: read it from the printed build summary, or — preferably —
-`tsfpga_project_get_timing_report` rather than manually opening `timing.rpt`
+`vhdl-tools synth project-get-timing-report` rather than manually opening `timing.rpt`
 on disk; record it as a hand-verified, dated comment next to the relevant
 build entry, and re-measure after any change that could move it — do not
 expect an automated `build_result_checkers` gate to enforce it.
@@ -311,7 +301,7 @@ assuming the "obvious" DSP count from the RTL's arithmetic shape.
   when the project's construction (module set, generics, constraints)
   changed.
 
-## Always delegate timing analysis and timing fixes to a strong model
+## Timing analysis and timing fixes need the most capable model
 
 Reading a critical-path report and deciding what to change (re-pipeline a
 MAC chain, break a combinational adder tree, move a register across a
@@ -327,7 +317,7 @@ measure-and-record-a-number work above it. Never do timing analysis or
 timing fixes with a fast/cheap model pass, and do not have the orchestrating
 agent eyeball a `timing.rpt` critical path itself as a shortcut — always
 delegate both analyzing *why* a path is slow and implementing the fix to a
-strong-tier model (e.g. `task` with `model_tier: "strong"`), even under
+the most capable model available, even under
 time/cost pressure. If timing work must be split across independent
 entities, running several strong-model subagents in parallel (one per
 entity) is fine and often faster than serializing them — the "strong model
@@ -341,8 +331,8 @@ size of the netlist it produces, not by its source line count or how many
 submodules it has. A failed RAM/DSP inference in one leaf can turn what
 should be a sub-minute build into an 18-minute one for a design that looks
 similarly sized to its siblings. Treat a sudden jump in synthesis time as a
-signal to check the utilization report (`tsfpga_project_get_utilization_report`
-when the build went through `tsfpga-mcp` project mode) for a fallback mapping
+signal to check the utilization report (`vhdl-tools synth project-get-utilization-report`
+for a tsfpga project build) for a fallback mapping
 (distributed RAM instead of block RAM, LUT fabric instead of DSP), not as an
 annoyance to wait out. See `shared/DesignPatterns.md` / `vhsynth`'s own notes on
 backend/runtime choices for the general (non-Vivado-specific) version of

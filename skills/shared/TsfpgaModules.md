@@ -8,9 +8,8 @@ layer on top of `Vunit.md`, not a replacement for it — everything in
 `Vunit.md` (test phases, `pre_config`/`post_check` signatures, backpressure
 policy, TDD workflow) still applies once `run.py` hands files to VUnit.
 
-Distinct from the `tsfpga-mcp` MCP server's own skill (`tsfpga-mcp` skill,
-tools `tsfpga_status`/`tsfpga_inspect`/`tsfpga_targets`/`tsfpga_synthesize`):
-that skill is scoped to **synthesis** of already-written sources. This doc
+Distinct from `vhdl-tools synth` (`status`, `inspect`, `targets`,
+`synthesize`), which is scoped to **synthesis** of already-written sources. This doc
 covers the **module/build framework** (`tsfpga.module`, `run.py`) used to
 organize and simulate a project's RTL *before* anything reaches synthesis.
 
@@ -71,7 +70,7 @@ class Module(BaseModule):
   `test.add_config(...)` — same `generics`/`pre_config`/`post_check`
   semantics as `Vunit.md` §2 documents for plain VUnit, just reached via
   `self.` instead of the raw `vunit_proj` object.
-- Keep any Python reference/golden model (e.g. `canny_model.py`) importable
+- Keep any Python reference/golden model (e.g. `<module>_model.py`) importable
   from both `run.py`'s process and the module's own `module_<name>.py` —
   put it next to `run.py` (repo root) or in a real installed/`PYTHONPATH`
   location, not nested inside a module folder that only that one module's
@@ -118,7 +117,7 @@ for module in modules + modules_no_test:
 vu.main()
 ```
 
-Key points, each a real gotcha hit while building this project:
+Key points, each a real gotcha hit in a tsfpga-module project:
 
 - **`add_osvvm()` and `add_verification_components()` are not implied by
   `add_vhdl_builtins()`.** If any reused module (e.g. hdl-modules'
@@ -135,13 +134,13 @@ Key points, each a real gotcha hit while building this project:
   always pass it in a multi-`get_modules()`-call `run.py`.
 - **`names_avoid={...}`** excludes specific module folders by name from a
   `get_modules()` scan — the tool for excluding a vendored module that
-  doesn't compile in this project's environment (e.g. an entity that
+  doesn't compile in your environment (e.g. an entity that
   needs a real vendor `unisim`/`unimacro` library GHDL doesn't provide),
   without having to fork or edit the vendored tree.
 - **`include_tests=False` for dependency-only modules**: pulls in only
   `src/` (and non-test `sim/`), not `test/` — use this for a vendored
   library whose own testbenches are that library's own concern, not
-  something this project's `run.py` should re-run every time.
+  something your own `run.py` should re-run every time.
 - **Cross-module instantiation inside RTL must use
   `library <other_module_name>; entity <other_module_name>.<entity_name>`**,
   never `entity work.<entity_name>`. Because every module folder becomes
@@ -151,8 +150,8 @@ Key points, each a real gotcha hit while building this project:
   single most likely first mistake when writing a first structural
   top-level in this convention — the compile error (unresolved component/
   entity) doesn't obviously point at "wrong library prefix" as the cause.
-- **Keep `run.py` (not `build.py` or any other name)** if any MCP tooling
-  in the flow (e.g. `vunit-mcp`, `VUNIT_MCP_RUN_SCRIPT`) defaults to
+- **Keep `run.py` (not `build.py` or any other name)** if any tooling
+  in the flow (e.g. `vhdl-tools vunit`, unless `VUNIT_MCP_RUN_SCRIPT` is set) defaults to
   looking for `run.py` specifically.
 
 ## 4. Other framework-adjacent gotchas found in practice
@@ -185,30 +184,26 @@ Key points, each a real gotcha hit while building this project:
   §"Python reference models" for the general `pre_config`/`post_check`
   pattern this applies to.
 
-## 5. Bridging to `tsfpga-mcp` synthesis
+## 5. Bridging to ad-hoc synthesis
 
-`tsfpga_synthesize` (the `tsfpga-mcp` skill) has no awareness of this
-document's `modules/` layout or `get_modules()` — it only takes flat file
-lists. To synthesize a design built from this module layout, map each
-module folder this project uses to one `tsfpga_synthesize` `libraries`
-entry (`{library_name: [file, ...]}`, keyed by the same `module.
-library_name` / folder name §1 defines), and include every module in the
-top's full transitive dependency closure, not just the ones it directly
-instantiates. Use `corvidex-mcp` to trace that closure (cross-library
-`entity <name>.<entity>` references per §3 don't show up in a single
-module's own file list). See `shared/McpToolPolicy.md`'s "Multi-library
-designs" for the `tsfpga_synthesize` side of this.
+`vhdl-tools synth synthesize` has no awareness of this document's
+`modules/` layout or `get_modules()` — it only takes file lists. To
+synthesize a design built from this module layout, map each module folder
+the design uses to one `--libraries` entry (`'{"<library_name>": ["<file>",
+...]}'`, keyed by the same `module.library_name` / folder name §1
+defines), and include every module in the top's full transitive dependency
+closure, not just the ones it directly instantiates. Use `corvidex-mcp` to
+trace that closure (cross-library `entity <name>.<entity>` references per
+§3 don't show up in a single module's own file list). See
+`shared/ToolPolicy.md`'s "Multi-library designs". For the project's own
+configured builds, use `vhdl-tools synth project-build` instead.
 
-## 6. Known MCP-toolchain limitation (as of this project)
+## 6. When `vhdl-tools vunit` can't import tsfpga
 
-`vunit-mcp` cannot currently drive a `tsfpga`-module-based `run.py`: its
-own Python subprocess does not have `tsfpga` importable
-(`ModuleNotFoundError: No module named 'tsfpga.module'`), even when the
-project's own `python3 run.py` works fine locally. Confirmed by direct
-reproduction, not just inferred. Until the `vunit-mcp` server's Python
-environment is made to match the target project's (i.e. has `tsfpga`,
-and by extension anything else the project's `run.py` imports, installed
-alongside VUnit — or is pointed at the project's own interpreter/venv),
-fall back to local `python3 run.py` for compile/test/regression on any
-tsfpga-module-based project. This is an environment/packaging gap in the
-`vunit-mcp` server, not a bug in the module-framework itself.
+`vhdl-tools vunit` runs `run.py` with an interpreter it detects for the
+project. If that interpreter lacks tsfpga, a module-based `run.py` fails
+with `ModuleNotFoundError: No module named 'tsfpga.module'` even though
+`python3 run.py` works in the project's own environment. Check which
+interpreter `vhdl-tools vunit status` reports, point it at the project's
+own interpreter or venv (`VUNIT_MCP_PYTHON`), or fall back to running
+`python3 run.py` directly.

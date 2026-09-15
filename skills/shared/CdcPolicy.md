@@ -181,7 +181,6 @@ A CDC path is `DONE` only when:
 Otherwise report it as `BLOCKED`, `NEEDS_REVIEW`, or equivalent rather than
 silently marking the design complete.
 
-
 ## Project-owned CDC blocks are preferred
 
 When a project already has its own proven CDC library, prefer those blocks over
@@ -202,7 +201,7 @@ IP exists.
 Vendor-neutral distillation of Lukas Vik's *Reliable FPGA CDC Constraints*
 series (parts 1–5) and the `hdl-modules` `resync_*` / `asynchronous_fifo`
 blocks that implement it. Read this when choosing or reviewing a CDC block;
-the Vivado form of every constraint below is in `vivado-design` §A6.1.
+the Vivado form of every constraint below is in `shared/VivadoDesign.md` §A6.1.
 
 **Use a ready-made module first — always.** Everything below explains
 *why* the proven blocks are built the way they are and what their

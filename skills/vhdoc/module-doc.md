@@ -1,17 +1,4 @@
----
-name: vhexplain
-description: Generate or refresh module documentation by analyzing a VHDL entity and architecture
-allowed-tools: Read, Write, Bash, Grep, Glob
----
-> **Path note:** `shared/*.md` files live in the skills' `shared/` directory — a *sibling* of this skill's directory (resolve against the skills root, e.g. `<skills-root>/shared/CodingStyle.md`), not inside the skill directory.
-
-
 # VHDL Explainer
-
-Read `shared/ModernVHDL.md`, `shared/CodingStyle.md`, and `shared/HouseStyle.md`; they are authoritative for language revision, modern RTL practice, and concrete naming/style conventions.
-
-
-Read `shared/McpToolPolicy.md`.
 
 When `corvidex-mcp` is available, prefer it to locate the entity, architecture, dependent packages, matching documentation and related code. Use `get_source` for the exact source ranges being documented. For "who instantiates this" / "where is this generic or type declared" style questions (step 3's local package type resolution, and documenting instantiated dependencies), prefer the exact `find_references`/`find_definition`/`hover_info` tools (LSP/compiler-backed) over `search_hdl` or grep — they resolve the exact symbol instead of a fuzzy match, at a fraction of the cost. Fall back to local Read/Glob/Grep for material outside the index, or for exhaustive literal-string enumeration.
 

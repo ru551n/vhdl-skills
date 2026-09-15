@@ -145,7 +145,7 @@ plus optional `TID`/`TUSER`.
 - Self-check the 4 KiB boundary rule, beat counts, `WLAST`/`TLAST`
   placement, and same-ID ordering in any AXI4 BFM.
 - Never fabricate protocol compliance: check it against the signals or the
-  tool result (`backend:` record per `shared/McpToolPolicy.md`).
+  tool result (`backend:` record per `shared/ToolPolicy.md`).
 
 ## Synthesis and debug checks
 
@@ -154,6 +154,6 @@ plus optional `TID`/`TUSER`.
 - 4 KiB boundary handling verified, including unaligned first/last beats.
 - `WSTRB`/`TKEEP` lane coverage verified for every data width.
 - Reset outputs deterministic on the whole fabric.
-- On failure, use `peeper-mcp` to measure `VALID`/`READY` alignment, beat
+- On failure, use `vhdl-tools wave` to measure `VALID`/`READY` alignment, beat
   counts, and `TLAST`/`WLAST` placement at the failing time rather than
   dumping raw waveform text.

@@ -1,7 +1,7 @@
 # Timing Closure and Resource Usage — Design Guidelines
 
 Vendor-neutral rules for designing RTL that closes timing and lands on the
-intended resources. Read this before architecting a datapath (`vharch`,
+intended resources. Read this before architecting a datapath (`vhdesign`,
 `vhdesign`), before implementing one (`vhfill`), and before trusting any
 synthesis number (`vhsynth`). Each rule states the mechanism behind it;
 the mechanism is what makes the rule general.
@@ -434,6 +434,12 @@ is one beat per consumer stall, with no error and no X.
   process (one per requester branch) infers distributed RAM or logic.
   Select address, data and enable into variables first, then do **one**
   array access per port.
+- A memory written through **one decoded write enable per narrow lane or
+  byte** can split into many small memories under Yosys instead of one wide
+  block RAM with byte enables, even though it has a single write port.
+  Assemble incoming data in a word or row register and write whole words,
+  so there is one decode site. Vivado infers byte-write-enable RAM from the
+  same RTL correctly, so name the tool when citing this.
 - Neither failure is visible in simulation. A design that simulates
   perfectly can be two orders of magnitude larger than intended; only the
   utilization report shows it. A sudden jump in synthesis run time is the

@@ -1,7 +1,7 @@
 # tsfpga / hdl-modules Coding Conventions
 
 This document is the concrete naming/style reference derived from auditing the
-**real source** of the two upstream libraries this project vendors and reuses
+**real source** of the two upstream libraries a tsfpga-based project vendors and reuses
 (`shared/ReusableRTL.md` "Reuse before authoring new RTL"):
 
 - `tsfpga` (Lukas Vik) — build/module framework, example modules.
@@ -78,7 +78,7 @@ refresh if the upstreams drift.
   driven by a plain concurrent assignment). **Project-specific, not evidenced
   upstream** (`_q` does not appear anywhere in the audited `tsfpga`/
   `hdl-modules` source — unlike every other bullet here, this one has no
-  upstream precedent to point to) — adopted in this project's own RTL because
+  upstream precedent to point to) — adopted in this house style because
   the distinction is load-bearing where it is easy to get wrong: a validation
   check that must see a same-cycle relocated address, for instance, breaks
   silently if that address is accidentally registered (`_q`) instead of
@@ -286,7 +286,7 @@ This default only applies when the architecture actually supports it —
 i.e. every register's declaration initial value already gives the correct
 power-up/idle state, with no runtime re-initialization requirement. It is
 a per-module decision, not a blanket rule to apply without checking: during
-architecture design (`vharch`'s "Reset policy decision") or when migrating
+architecture design (`vhdesign`'s "Reset policy decision") or when migrating
 existing RTL, ask the user rather than silently stripping/adding a reset
 port whenever the correct choice is not already evident from the
 requirement.
@@ -378,29 +378,7 @@ a useful convention to keep for consistency with vendored code:
 
 ```vhdl
 -- Generic AXI4-Stream 3x3 sliding-window generator over a continuous
--- raster-scan stream. See modules/canny_window3x3/doc/canny_window3x3_req.md
--- and modules/canny_window3x3/doc/canny_window3x3_proposal.md.
-entity canny_window3x3 is
+-- raster-scan stream. See modules/window3x3/doc/window3x3_req.md
+-- and modules/window3x3/doc/window3x3_proposal.md.
+entity window3x3 is
 ```
-
-## Known deltas as of this audit
-
-The following were found in this project's own `modules/*/src/*.vhd` at
-audit time and have **not yet been migrated** to the conventions above
-(migrating them is a separate, deliberate follow-up — see the audit
-summary for the affected files and the risk of touching reset polarity
-in already-passing RTL/testbenches):
-
-- Generics prefixed `g_` (`g_img_width`, `g_data_width`) — should be
-  unprefixed.
-- Constants prefixed `c_` (`c_lane_width`, `c_fifo_depth`) — should be
-  unprefixed.
-- Reset is active-low `rst_n` — should be active-high `reset` (or omitted
-  where only power-up initialization is required).
-- Architecture named `rtl` — should be `a`.
-
-Already-conforming, no change needed:
-
-- Process labels have no prefix already (`assemble_window`, `row_taps`, ...).
-- Instance labels already use the `_inst` suffix (or `dut`).
-- Types already use the `_t` suffix (`state_t`, `taps9_t`, `magnitude_t`).

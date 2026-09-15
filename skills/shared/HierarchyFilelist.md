@@ -51,20 +51,13 @@ Then elaborate the top:
 ghdl -e --std=08 <top_entity>
 ```
 
-## MCP-first dependency discovery
+## Tool-assisted dependency discovery
 
-If `vunit-mcp` is available and the project has a VUnit `run.py`:
+If the project has a VUnit `run.py`:
 
-1. Call `vunit_status`.
-2. Use `vunit_list_files` for project compile order.
-3. For one testcase, use `vunit_test_dependencies` for the minimal ordered dependency set.
+1. Run `vhdl-tools vunit status`.
+2. Use `vhdl-tools vunit list-files` for project compile order.
+3. For one test case, use `vhdl-tools vunit test-dependencies --test-name <test>` for the minimal ordered dependency set.
 4. Only use the manual dependency procedure above when VUnit is unavailable or the sources are not registered in the project.
 
-If `corvidex-mcp` is available, it may be used to locate package/entity sources, but the authoritative VUnit compile order should still come from `vunit_list_files` for a VUnit project.
-
-If the actual goal is understanding instance hierarchy/generate-block
-expansion/resolved generics rather than a compile-order filelist, prefer
-`tsfpga-mcp`'s `tsfpga_hierarchy` tool over manually
-tracing instantiations through the source — it runs GHDL elaboration
-(generics resolved) without the cost of full synthesis and answers that
-question directly.
+If `corvidex-mcp` is available, it may be used to locate package/entity sources, but the authoritative VUnit compile order should still come from `vhdl-tools vunit list-files` for a VUnit project.

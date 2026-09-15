@@ -1,13 +1,18 @@
-# Recommended MCP setup
+# Setup
 
-These servers are optional but preferred by the skills.
+## Requirements
 
-## corvidex-mcp
+- [`uv`](https://docs.astral.sh/uv/). `vhdl-tools` runs through it and installs its own Python dependencies on first use.
+- Whatever the task needs from these system tools: GHDL or NVC for simulation, Yosys with the GHDL plugin and compiled GHDL std/ieee libraries for open-source synthesis, Vivado for AMD builds and reports.
+- VUnit, installed in the HDL project's own environment. `vhdl-tools` uses the project's VUnit and Python, not a bundled copy.
+- Waveform recording from VUnit needs the `--wave` flag (VUnit PR #1101) in the project's VUnit. Without it GHDL still records but NVC does not.
+- Waveform measurements use pywellen, which ships Linux and macOS wheels only.
 
-Repository:
-https://github.com/ru551n/corvidex-mcp
+`skills/shared/tools/README.md` has the full command reference and configuration.
 
-Claude Code example from the upstream project:
+## corvidex-mcp (optional)
+
+Semantic search and exact code navigation over the project's VHDL, docs and code. The Claude Code plugin registers it automatically; for other hosts:
 
 ```bash
 claude mcp add corvidex-mcp -- uvx --from git+https://github.com/ru551n/corvidex-mcp.git corvidex-mcp
@@ -15,91 +20,20 @@ claude mcp add corvidex-mcp -- uvx --from git+https://github.com/ru551n/corvidex
 
 Configure its repository index in `~/.config/corvidex/config.toml`. With no
 `[[repositories]]` entry there, the repository is auto-named
-`<dirname>-<8 hex hash>` (e.g. `vhdl-ai-test-582e8509`), not the plain
-directory name — read the real name from `repository_status` before passing
+`<dirname>-<8 hex hash>` (for example `my_fpga-582e8509`), not the plain
+directory name. Read the real name from `repository_status` before passing
 `repository=` to any tool.
 
-If your launcher runs the server via `uv` instead of `uvx`, use
-`uv --project DIR run ...`, not `uv --directory DIR run ...` — the latter
+If your launcher runs the server with `uv` instead of `uvx`, use
+`uv --project DIR run ...`, not `uv --directory DIR run ...`. The latter
 changes the server's working directory, so corvidex silently indexes its
 own source tree instead of the target project. `CORVIDEX_MCP_PROJECT_DIR`
 overrides the project directory when the launcher command can't be edited.
 Confirm with `repository_status` that the indexed repository is the target
-project, not `corvidex-mcp` itself.
+project.
 
-## vunit-mcp
+## Failure-debug chain
 
-Repository:
-https://github.com/ru551n/vunit-mcp
-
-Point the server at the VUnit project directory using its documented `VUNIT_MCP_PROJECT_DIR` configuration.
-Keep `VUNIT_MCP_TIMEOUT` below the per-call timeout of your MCP client (the
-shipped Maki config uses 240 s under a 300 s call timeout).
-Record waveforms for peeper-mcp by passing `waveform_format` to
-`vunit_run_tests` (`vcd` on GHDL, `fst` on NVC).
-Install the upstream `skills/vunit-mcp` skill beside this project's skills when desired.
-
-## peeper-mcp
-
-Repository:
-https://github.com/ru551n/peeper-mcp
-
-Typical stdio command:
-
-```bash
-uvx --from "git+https://github.com/ru551n/peeper-mcp.git" peeper-mcp
-```
-
-Reads FST (NVC's default) and VCD (GHDL's default) waveforms directly, so
-waveforms recorded by vunit-mcp work without conversion. Linux/macOS only
-(pywellen ships no Windows wheels).
-
-## tsfpga-mcp
-
-Repository:
-https://github.com/ru551n/tsfpga-mcp
-
-Typical stdio command:
-
-```bash
-uvx --from "git+https://github.com/ru551n/tsfpga-mcp.git" tsfpga-mcp
-```
-
-Requires working Yosys, the GHDL CLI, the GHDL Yosys plugin, and compiled GHDL
-std/ieee libraries (`GHDL_PREFIX` / `TSFPGA_MCP_GHDL_PREFIX`). Install the
-upstream `skills/tsfpga-mcp` skill beside this project's skills when desired.
-
-## Recommended combination
-
-The intended failure-debug chain is:
-
-```text
-vunit-mcp
-  run test + record waveform
-       │
-       ├── get report/log
-       │
-       └── get waveform path
-               │
-               ▼
-            peeper-mcp
-               │
-               ▼
-        measured signal evidence
-               │
-               +── corvidex-mcp
-                   source/docs cross-reference
-```
-
-Synthesis:
-
-```text
-VHDL sources
-    │
-    ├── vunit-mcp -> source/compile order (when registered)
-    │
-    └── tsfpga-mcp -> GHDL + Yosys synthesis/resource summary
-```
-
-Vendor implementation/timing/power remains a vendor-tool task and is outside
-the scope of these skills.
+1. `vhdl-tools vunit` runs the failing test with a waveform and returns the report, log and waveform path.
+2. `vhdl-tools wave` measures signal values, latencies and clocks in that waveform.
+3. `corvidex-mcp`, or plain search, traces the source.

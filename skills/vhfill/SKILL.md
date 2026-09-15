@@ -1,54 +1,52 @@
 ---
 name: vhfill
-description: Implement VHDL-2008 from an approved proposal, then analyze, elaborate, and simulate with GHDL
-allowed-tools: Read, Write, Bash, Grep, Glob
+description: Use when writing or changing synthesizable VHDL RTL — implementing a module or a `--@` backbone, adding a feature or pipeline stage, fixing an RTL bug whose cause is known, or refactoring an entity or architecture — and checking that it compiles, elaborates and passes its tests. Typical requests include "implement...", "write the VHDL for...", "add a register stage", "fix this in the RTL".
 ---
-> **Path note:** `shared/*.md` files live in the skills' `shared/` directory — a *sibling* of this skill's directory (resolve against the skills root, e.g. `<skills-root>/shared/CodingStyle.md`), not inside the skill directory.
-> **Layout note:** `ddoc/`, `rtl/`, `doc/`, `lib/` are the conventional tsfpga layout. When the project uses a different layout (e.g. `modules/<name>/{src,test,doc}`), follow the project's layout and keep the same file-naming conventions (`<ip>_arch.md`, `<module>_req.md`, `<module>.md`, `<module>.vhd`).
 
+# VHDL Implementation
 
-# VHDL Writer
+## Before you start
 
-Read `shared/ModernVHDL.md`, `shared/CodingStyle.md`, and `shared/HouseStyle.md`; they are authoritative for language revision, modern RTL practice, and concrete naming/style conventions.
+- `shared/` means the `shared/` folder next to this skill's folder (`../shared/`). Those docs are large: run `grep -n '^#' shared/<Doc>.md` and read only the sections the task touches.
+- The project's own conventions win. If the repository has a style guide, CLAUDE.md/AGENTS.md rules, or existing modules to copy, follow them over `shared/HouseStyle.md`.
+- Flow files are optional. If `ddoc/`, `*_req.md`, `*_proposal.md`, `issue/` or `flow_status.md` exist, use and update them. Otherwise work from the request and the source files, report in the reply, and create flow files only when the user asks or `vhflow` is driving.
+- Tools: `vhdl-tools` (`shared/bin/vhdl-tools`) for VUnit, synthesis and waveforms, and `corvidex-mcp` when connected; `shared/ToolPolicy.md` has the commands and fallbacks. Never report a compile, test, synthesis or timing result that no tool produced.
 
+## What to work from
 
-Read `shared/McpToolPolicy.md`.
+Use whichever exist, in this order: the module's existing testbench (under test-first it is already failing), `ddoc/<module>_proposal.md`, the requirement, the user's request. With no written spec, restate the intended behavior in a short paragraph before editing, and ask when it is ambiguous.
 
-## MCP preference
+## References by topic
 
-- Use `corvidex-mcp` for precedent/convention lookup when implementation details need grounding (`search_hdl`/`search_knowledge` for conceptual precedent); prefer `find_definition`/`find_references` over grep once the exact symbol is known — see `shared/McpToolPolicy.md`'s routing table.
-- Use `vunit-mcp` for compile and unit-test execution when a VUnit project exists; prefer `vunit_compile` + `vunit_elaborate` over manually invoking `ghdl`/`run.py` via bash, and run `vunit_elaborate` liberally right after implementing/editing RTL to catch port/generic mismatches before a full simulation run.
-- Use `peeper-mcp` for waveform-based failure analysis when a recorded waveform is available.
+- Before writing VHDL: `shared/HouseStyle.md`, then the sections of `shared/CodingStyle.md` you need.
+- Datapaths and timing structure: `shared/TimingAndResources.md` sections 2 (per-command configuration), 5 (freezing a pipeline), 7 (template-sensitive inference); `shared/DesignPatterns.md`
+- AXI interfaces: `shared/Axi4.md`; CDC: `shared/CdcPolicy.md`; reset versus initial values: `shared/FpgaInitialization.md`
+- AMD/Xilinx inference templates and attributes: `shared/VivadoDesign.md`
+
+## Tools
+
+- `corvidex-mcp`, when connected, for precedent and convention lookup (`search_hdl`/`search_knowledge` for concepts; `find_definition`/`find_references` once the exact symbol is known). Routing in `shared/ToolPolicy.md`.
+- `vhdl-tools vunit` for compiling, elaborating and running the module's tests. Run `vhdl-tools vunit elaborate` right after every interface edit, before a full simulation run.
+- `vhdl-tools wave` for waveform-based failure analysis when a waveform was recorded.
 
 ## Inputs
 
-Read:
-1. `rtl/<module>.vhd`
-2. `ddoc/<module>_proposal.md`
-3. `shared/CodingStyle.md`
-4. `shared/DesignPatterns.md` and `shared/TimingAndResources.md` (read §2 "per-command configuration", §5 "freezing a pipeline", §7 "inference is template-sensitive" before writing any datapath, and §9 "design for verifiability" before writing its tests)
-5. `shared/Axi4.md` when the module exposes an AXI4/AXI4-Stream interface
-6. **Under the TDD policy (`shared/Vunit.md` §16, default)**: the module's
-   testbench already exists and is currently failing/red — it was written
-   by `vhtestgen` *before* this skill ran. Read it before implementing;
-   treat it as an executable spec alongside the proposal, not as something
-   this skill still needs to author from scratch.
+Read the module's VHDL source, then the spec sources listed under "What to work from". Under test-first (`shared/Vunit.md` §16, the default) the module's testbench already exists and fails; treat it as an executable spec next to the proposal, not as something to author here.
 
 ## Tool prerequisites and backend selection
 
-Preferred verification backend: `vunit-mcp`.
+Preferred verification backend: `vhdl-tools vunit`, run from the project root.
 
-If `vunit-mcp` tools are exposed:
-1. Call `vunit_status`.
-2. Use `vunit_list_files` / `vunit_test_dependencies` as appropriate.
-3. Compile with `vunit_compile`.
-4. Elaborate with `vunit_elaborate` before running a full
-   test — it catches cross-unit port/generic/type mismatches that
-   analyze-only `vunit_compile` cannot.
-5. Run the relevant unit test with `vunit_run_tests`.
-6. Pass `waveform_format` (`vcd` on GHDL, `fst` on NVC) to `vunit_run_tests` when failure diagnosis may need it; without it, no waveform is recorded.
-7. Read results with `vunit_get_report` and `vunit_get_test_log`.
-8. On waveform-debug, resolve it with `vunit_get_test_waveform` and analyze via `peeper-mcp`.
+1. `vhdl-tools vunit status`
+2. `vhdl-tools vunit list-files` or `test-dependencies --test-name <test>` as needed
+3. `vhdl-tools vunit compile`
+4. `vhdl-tools vunit elaborate --test-patterns '<pattern>'` before a full
+   run — it catches port, generic and type mismatches between units that
+   analyze-only `compile` cannot.
+5. `vhdl-tools vunit run-tests --test-patterns '<pattern>'`
+6. Add `--waveform-format vcd` (GHDL) or `fst` (NVC) when failure diagnosis may need it; without it, no waveform is recorded.
+7. `vhdl-tools vunit get-report` and `get-test-log --test-name <test>`
+8. For waveform debugging, `get-test-waveform --test-name <test>`, then `vhdl-tools wave`.
 
 Fallback:
 1. existing project VUnit `run.py`
@@ -65,7 +63,7 @@ If no verification backend is available, implementation may proceed but compile/
 
 Resolve every `--@` marker using the approved proposal.
 
-**Under the TDD policy (default)**: a red testbench from `vhtestgen`
+**Under the TDD policy (default)**: a red testbench from `vhtest`
 already exists for this module. Implement, then compile/simulate (Steps
 3-4) iteratively against that existing testbench until it goes green;
 do not wait until the whole module is "done" to run it for the first time.
@@ -90,22 +88,22 @@ True up `doc/<module>.md` if actual latency, reset values, interfaces, or behavi
 ## Step 2 — Unit testbench
 
 **Under the TDD policy (default, `shared/Vunit.md` §16)**: the unit
-testbench for this module was already created by `vhtestgen` before this
+testbench for this module was already created by `vhtest` before this
 skill ran (red-first). This step is normally a no-op — do not regenerate or
 duplicate it. Only add to it here if implementation surfaces a gap
-`vhtestgen` missed (an untested corner case discovered while implementing);
+`vhtest` missed (an untested corner case discovered while implementing);
 in that case, extend the existing testbench in place rather than writing a
-parallel one, and prefer feeding the gap back into `vhtestgen`'s test plan
+parallel one, and prefer feeding the gap back into `vhtest`'s test plan
 for future modules.
 
 The rest of this step (style/registration rules) still applies to any
 standalone-GHDL fallback project, or to the rare case where no pre-existing
 testbench was found and one must be authored here instead (non-TDD
-fallback, e.g. `vhtestgen` unavailable).
+fallback, e.g. `vhtest` unavailable).
 
 When the project already uses VUnit, the unit testbench must be VUnit — infer the project's existing VUnit style (`run.py` registration, `tb/` layout, check style) from the current tests. If the conventions cannot be inferred, ask the user; do not guess.
 
-VUnit-5 API rules (phases and gate locks, seeded RNG, `check_pkg`, watchdog, `run.py` style) are authoritative in `shared/Vunit.md`; the `vhunit` skill covers direct authoring and VUnit 4→5 migration.
+VUnit-5 API rules (phases and gate locks, seeded RNG, `check_pkg`, watchdog, `run.py` style) are authoritative in `shared/Vunit.md`; the `vhtest` skill covers direct authoring and VUnit 4→5 migration.
 
 When creating new VUnit tests:
 - use VHDL-2008
@@ -116,49 +114,45 @@ When creating new VUnit tests:
 
 Only create a standalone `<module>_tb.vhd` with `[FINISH] PASS/FAIL` when VUnit is unavailable, the project explicitly uses standalone GHDL tests, or the user explicitly asks for a standalone testbench.
 
-## Step 3 — Compile
+## Step 3 — Compile and elaborate
 
-### Preferred: vunit-mcp
+### Preferred: `vhdl-tools vunit`
 
-- `vunit_status`
-- `vunit_compile`
-- `vunit_elaborate` right after `vunit_compile` succeeds,
-  before moving to Step 4 — `vunit_compile` is analyze-only and can report
-  clean success on a cross-unit port/generic/type mismatch that only a real
-  GHDL elaboration pass catches. Running `vunit_elaborate` here is cheap
-  (no simulation) and is the fastest way to validate a just-written/just-
-  edited entity's interface actually binds correctly before spending a full
-  test run finding the same problem later.
+- `vhdl-tools vunit status`
+- `vhdl-tools vunit compile`
+- `vhdl-tools vunit elaborate --test-patterns '<pattern>'` as soon as
+  `compile` succeeds, before Step 4. `compile` only analyzes, so it reports
+  success on a port, generic or type mismatch between units that
+  elaboration catches. Elaborating costs no simulation time and is the
+  fastest way to confirm a just-edited entity's interface binds.
 
 Do not duplicate VUnit's compile-order logic manually.
 
 ### Fallback: direct GHDL
 
-Build a dependency filelist according to `shared/HierarchyFilelist.md`, then analyze/elaborate with `ghdl --std=08` (`ghdl -e` performs the same elaboration check `vunit_elaborate` automates).
+Build a dependency filelist according to `shared/HierarchyFilelist.md`, then analyze and elaborate with `ghdl -a --std=08` and `ghdl -e --std=08`.
 
 Never claim success unless the actual backend reports success.
 
 ## Step 4 — Simulate
 
-### Preferred: vunit-mcp
+### Preferred: `vhdl-tools vunit`
 
-Run the smallest relevant test pattern with `vunit_run_tests`, passing `waveform_format` (`vcd` on GHDL, `fst` on NVC) so a failure can be diagnosed at signal level.
+Run the smallest relevant pattern with `vhdl-tools vunit run-tests --test-patterns '<pattern>' --waveform-format vcd` (or `fst` on NVC), so a failure can be diagnosed at signal level.
 
 Then:
-1. `vunit_get_report`
-2. on failure, `vunit_get_test_log`
-3. if signal-level diagnosis is needed and waveform was recorded:
-   - `vunit_get_test_waveform`
-   - `peeper_open`
-   - `peeper_search`
-   - `peeper_value_at` / `peeper_values` / `peeper_find` / `peeper_latency` as needed
+1. `vhdl-tools vunit get-report`
+2. on failure, `vhdl-tools vunit get-test-log --test-name <test>`
+3. if signal-level diagnosis is needed and a waveform was recorded:
+   - `vhdl-tools vunit get-test-waveform --test-name <test>`
+   - `vhdl-tools wave open --file <path>` and `search --pattern <name>`
+   - `value-at` / `values` / `find` / `latency` as needed
 
 ### Fallback
 
 Run the project's `run.py`, or direct GHDL for standalone tests.
 
 Record the backend used in the implementation notes.
-
 
 ## Completion quality gate
 
