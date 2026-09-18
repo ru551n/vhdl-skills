@@ -1,0 +1,14 @@
+{
+  "name": "vhdl-skills",
+  "description": "VHDL/FPGA development skills, agents and MCP servers for Claude Code.",
+  "owner": {
+    "name": "Sebastian Hellgren"
+  },
+  "plugins": [
+    {
+      "name": "vhdl",
+      "source": "./",
+      "description": "VHDL/FPGA development skills, agents and MCP servers."
+    }
+  ]
+}

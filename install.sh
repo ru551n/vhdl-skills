@@ -74,7 +74,6 @@ install_skills_to() {
     name="$(basename "$skill")"
     copy_or_link_dir "$skill" "$dst/$name"
   done
-  copy_or_link_dir "$ROOT/shared" "$dst/shared"
 }
 
 install_maki() {
@@ -93,7 +92,7 @@ install_claude() {
   mkdir -p "$PROJECT/.claude"
   install_skills_to "$PROJECT/.claude/skills"
   copy_or_link_file "$ROOT/integrations/claude/CLAUDE.md" "$PROJECT/CLAUDE.md"
-  copy_or_link_dir "$ROOT/integrations/claude/agents" "$PROJECT/.claude/agents"
+  copy_or_link_dir "$ROOT/agents" "$PROJECT/.claude/agents"
 
   if [[ "$WITH_MCP" -eq 1 ]]; then
     echo "Note: Claude MCP registration is CLI/user-config driven."

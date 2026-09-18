@@ -1,0 +1,12 @@
+{
+  "name": "vhdl",
+  "version": "2.0.0",
+  "description": "VHDL/FPGA development: design, RTL implementation, VUnit testing, debugging, synthesis and timing closure, and documentation, with the vunit-mcp, tsfpga-mcp, peeper-mcp and corvidex-mcp servers preconfigured.",
+  "author": {
+    "name": "Sebastian Hellgren"
+  },
+  "homepage": "https://github.com/ru551n/vhdl-skills",
+  "repository": "https://github.com/ru551n/vhdl-skills",
+  "license": "MIT",
+  "keywords": ["vhdl", "fpga", "rtl", "vunit", "ghdl", "nvc", "tsfpga", "vivado", "yosys"]
+}

@@ -1,0 +1,277 @@
+# VHDL Architect
+
+## MCP preference
+
+Before inventing a new block, use `corvidex-mcp` when available:
+1. `repository_status`
+2. `search_knowledge` for relevant standards/design guidance
+3. `search_hdl` (language="vhdl") for reusable or precedent entities (conceptual/natural-language discovery, e.g. "existing AXI FIFO implementation") — this is what the index is for, not something grep can do
+4. `get_source` for exact candidate implementations
+5. Once a candidate name is known (e.g. deciding whether a generic name like `FIFO_DEPTH` is already used elsewhere, or who else instantiates a candidate reuse target), prefer the exact `find_definition`/`find_references`/`find_symbol` tools (LSP/compiler-backed) over a `search_hdl` guess or a local grep — cheapest and exact for an already-known name; see `shared/ToolPolicy.md`'s routing table.
+
+If unavailable, search `lib/`, `rtl/`, `doc/`, and `ddoc/` locally with Read/Glob/Grep.
+
+## Input
+
+A top-level requirement: `ddoc/<ip>_req.md` when it exists, otherwise the requirement as the user stated it.
+
+## Outputs
+
+- the architecture document: `ddoc/<ip>_arch.md` when flow files are in use (then it is the canonical structural source of truth), otherwise in the reply or wherever the user asks
+- one requirement per new submodule: `ddoc/<submodule>_req.md` with flow files, otherwise a section per submodule in the architecture document
+- a structural top-level VHDL skeleton, in the project's source layout (`rtl/<ip>_top.vhd` in the conventional layout)
+
+## Workflow
+
+### 1. Re-run safety
+
+If `ddoc/<ip>_arch.md` exists, treat it as authoritative. Regenerate derived structural artifacts from it rather than inventing a new architecture.
+
+Before overwriting `rtl/<ip>_top.vhd`, inspect whether integration logic has been added or `--@` markers were resolved. If it is no longer a pure skeleton, do not clobber it silently.
+
+### 2. Analyze requirements
+
+Extract:
+- top-level entity name
+- generics
+- ports and types
+- clock/reset domains
+- protocols
+- performance requirements
+- functional blocks
+
+Check `lib/` documentation (and any vendored dependency, e.g. `hdl-modules`) before designing a new block. Reuse existing documented entities when appropriate; see `shared/ReusableRTL.md` ("Reuse before authoring new RTL") — a thin wrapper around an existing module is allowed and preferred over a fork or a rewrite.
+
+Read `shared/TimingAndResources.md` before drawing the block diagram. Architectural decisions it constrains: every long-running engine gets a registered configuration boundary rather than reading the controller's descriptor directly; datapaths with different bounds get separate sizing constants; wide payloads that exceed a shared stream record get their own record type rather than a widened global; and the IP must have a **top-level build target** from the first milestone, because leaf out-of-context timing is an upper bound only.
+
+Prefer a modular decomposition over a monolithic block, including for newly
+authored (non-reused) functionality: see `shared/ReusableRTL.md` ("Prefer
+modular decomposition") for the single-responsibility, testable-unit
+criteria and the `<ip>_top` structural-only rule.
+
+`shared/Axi4.md` is authoritative for protocol selection and the mandatory rules. Any streaming data interface (samples, pixels, symbols, words with no addressing) defaults to AXI4-Stream with backpressure (`TREADY`) implemented at every inter-stage link unless the source is provably unable to stall (see `shared/Axi4.md`, "Mandatory default for streaming data") — decide and record this explicitly in the architecture doc, do not leave it implicit.
+
+### 3. Define architecture
+
+Write `ddoc/<ip>_arch.md` with:
+- intent
+- top-level generic table
+- top-level port table
+- submodule table (`name | responsibility | new/lib-reuse | source`) — apply
+  `shared/ReusableRTL.md`'s modular-decomposition criteria when drawing
+  submodule boundaries, not just its reuse criteria
+- Mermaid block diagram
+- inter-module interface table
+- generic propagation map
+- clock/reset domain map
+- non-obvious boundary rationale
+
+### 4. Generate module requirement files
+
+Each new module gets `ddoc/<module>_req.md`.
+
+Split generated structure from hand-owned functionality with:
+
+```html
+<!-- functional-spec: hand-owned below this line -->
+```
+
+Above marker:
+- responsibility
+- generics
+- ports
+- protocols
+- clock/reset requirements
+
+Below marker:
+- `## Functional Description`
+- behavior, corner cases and performance requirements
+
+On re-run, preserve the hand-owned section exactly.
+
+### 5. Generate VHDL top skeleton
+
+Create `rtl/<ip>_top.vhd`.
+
+Requirements:
+- VHDL-2008 context clauses
+- entity with architecture-defined generics/ports
+- `architecture a` (see `shared/HouseStyle.md`)
+- internal `signal` declarations
+- direct entity instantiations using `entity work.<module>(a)`
+- `generic map` and `port map`
+- `--@` comments for unresolved integration adaptations
+- no functional implementation beyond structural wiring
+
+Example:
+
+```vhdl
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity foo_top is
+  generic (
+    data_w : positive := 8
+  );
+  port (
+    clk     : in  std_ulogic;
+    reset   : in  std_ulogic := '0';
+    s_data  : in  std_ulogic_vector(data_w-1 downto 0);
+    s_valid : in  std_ulogic;
+    m_data  : out std_ulogic_vector(data_w-1 downto 0);
+    m_valid : out std_ulogic
+  );
+end entity foo_top;
+
+architecture a of foo_top is
+  signal ctrl2proc_data  : std_ulogic_vector(data_w-1 downto 0);
+  signal ctrl2proc_valid : std_ulogic;
+begin
+  foo_ctrl_inst : entity work.foo_ctrl(a)
+    generic map (
+      data_w => data_w
+    )
+    port map (
+      clk     => clk,
+      reset   => reset,
+      s_data  => s_data,
+      s_valid => s_valid,
+      m_data  => ctrl2proc_data,
+      m_valid => ctrl2proc_valid
+    );
+
+  foo_proc_inst : entity work.foo_proc(a)
+    generic map (
+      data_w => data_w
+    )
+    port map (
+      clk     => clk,
+      reset   => reset,
+      s_data  => ctrl2proc_data,
+      s_valid => ctrl2proc_valid,
+      m_data  => m_data,
+      m_valid => m_valid
+    );
+end architecture a;
+```
+
+Note: this step's `--@` comments mark unresolved *wiring* only — a
+different thing from `shared/Vunit.md`'s "Stub-first top-level
+integration testing" `architecture model`, a working behavioral stand-in
+for a whole not-yet-built submodule. Don't conflate the two: a `--@`
+here means "this connection still needs deciding," not "swap this
+instance's architecture later."
+
+### 6. Structural self-check
+
+For each architecture interface row verify:
+- exactly one driver unless the protocol explicitly allows otherwise
+- all endpoints exist
+- modes/types/ranges are compatible
+- generic expressions resolve consistently
+- every new submodule has a requirement file
+- every reused module resolves to a documented source
+- every block is instantiated
+- every top-level port is connected or intentionally documented as unused
+
+Report changed, unchanged, and orphaned requirement files on re-run.
+
+## Modern architecture checklist
+
+The architecture document must identify, where applicable:
+- VHDL revision policy (2008 default, 2019 only if explicitly verified)
+- clock domains and target frequencies
+- reset strategy per clock domain
+- CDC crossings and intended structures
+- interface ownership and ready/valid semantics
+- pipeline/transaction latency
+- arithmetic widths and overflow policy
+- RAM/DSP inference intent
+- vendor-specific dependencies
+- verification hooks/checkers
+- synthesis/timing assumptions
+
+Do not defer CDC/reset/interface semantics until implementation.
+
+## FPGA initialization capability decision
+
+Read the shared `FpgaInitialization.md`.
+
+If an FPGA target is known, architecture must decide whether configuration-time
+register initialization can be used to reduce reset logic.
+
+Record:
+- vendor/family/device
+- synthesis backend
+- initialization capability state
+- evidence
+- registers/state classes eligible for initial values
+- state that still requires runtime reset
+
+If target/family is not known, do not assume initialization support.
+
+When the target is an AMD/Vivado part, load `shared/VivadoDesign.md` for
+the architecture-level decisions it constrains: clock-domain and reset
+planning, CDC structure and constraints, hard-block use (BRAM/URAM/DSP
+modes, NoC, PS ports), SLR assignment, and the per-family device facts.
+
+## Reset policy decision
+
+Resetless-by-default (`shared/HouseStyle.md`) only applies when
+the architecture actually supports it — it is not a blanket default to apply
+without checking. Per module/clock-domain, determine whether:
+- every register's declaration initial value already gives the correct
+  power-up/idle state (resetless fits), or
+- some state genuinely needs a runtime-restorable reset — soft
+  reset/watchdog semantics, re-arming after a fault, an externally
+  supplied reset that must clear live state mid-operation, or integrating
+  third-party IP that mandates a specific reset port/polarity (resetless
+  does not fit).
+
+If this is not already known or evident from the requirement, ask the user
+which reset strategy the architecture should use before locking it in:
+- resetless (declaration initial values only), or
+- synchronous active-high runtime `reset`, or
+- a documented exception (e.g. active-low `rst_n` to match mandated
+  third-party IP).
+
+Do not silently default to resetless when a module has state that a reset
+would need to clear at runtime (that state stays reset-bearing regardless of
+the project-wide default). Record the decision and rationale per module in
+the architecture document.
+
+## Type policy decision
+
+Before defining project-wide signal types, determine whether the user wants:
+- unresolved types (default), or
+- resolved types.
+
+If this preference is not already known, ask the user before locking the
+architecture convention.
+
+Document the selected policy.
+
+## CDC architecture gate
+
+Read the shared `CdcPolicy.md`.
+
+For every CDC boundary:
+1. classify the crossing
+2. search first for an existing/predefined proven CDC module
+3. identify its required constraints/attributes
+4. document clock/reset assumptions
+5. if no suitable predefined module exists, highlight this explicitly to the user
+
+Do not approve an architecture containing an unclassified or unconstrained CDC
+path when the active toolchain provides a relevant constraint mechanism.
+
+## Portability target
+
+Prefer `PORTABLE_VHDL`. If vendor-specific behavior is needed, classify it as
+`VENDOR_ATTRIBUTE`, `VENDOR_PRIMITIVE`, or `VENDOR_IP` and document why.
+
+## Reusability scope
+
+Make true architectural degrees of freedom generic. Keep incidental
+implementation details local.

@@ -1,206 +1,38 @@
 ---
 name: vhdesign
-description: Generate a VHDL design proposal, module documentation, and entity/architecture backbone from a module requirement
-allowed-tools: Read, Write, Bash, Grep, Glob
+description: Use when planning or designing VHDL/FPGA hardware before RTL is written — breaking an IP or requirement into submodules and interfaces, writing an architecture document or module design proposal, choosing clocking, reset, CDC or AXI4-Stream strategy, or creating an entity or top-level skeleton. Typical requests include "design a module that...", "how should I architect...", "split this into blocks", "write a proposal/spec for...".
 ---
-> **Path note:** `shared/*.md` files live in the skills' `shared/` directory — a *sibling* of this skill's directory (resolve against the skills root, e.g. `<skills-root>/shared/CodingStyle.md`), not inside the skill directory.
-> **Layout note:** `ddoc/`, `rtl/`, `doc/`, `lib/` are the conventional tsfpga layout. When the project uses a different layout (e.g. `modules/<name>/{src,test,doc}`), follow the project's layout and keep the same file-naming conventions (`<ip>_arch.md`, `<module>_req.md`, `<module>.md`, `<module>.vhd`).
 
+# VHDL Design
 
-# VHDL Designer
+## Before you start
 
-Read `shared/ModernVHDL.md`, `shared/CodingStyle.md`, and `shared/HouseStyle.md`; they are authoritative for language revision, modern RTL practice, and concrete naming/style conventions.
+- `shared/` means the `shared/` folder next to this skill's folder (`../shared/`). Those docs are large: run `grep -n '^#' shared/<Doc>.md` and read only the sections the task touches.
+- The project's own conventions win. If the repository has a style guide, CLAUDE.md/AGENTS.md rules, or existing modules to copy, follow them over `shared/HouseStyle.md`.
+- Flow files are optional. If `ddoc/`, `*_req.md`, `*_proposal.md` or `flow_status.md` exist, use and update them. Otherwise work from the request and the source files, answer in the reply, and create flow files only when the user asks or `vhflow` is driving.
+- Tools: `corvidex-mcp` when connected, for precedent search; `vhdl-tools` (`shared/bin/vhdl-tools`) for quick synthesis spikes. `shared/ToolPolicy.md` has the commands and fallbacks. Never report a result no tool produced.
 
+## Pick the mode
 
-Read `shared/McpToolPolicy.md`.
+| Request | Read (this skill's folder) | Produces |
+|---|---|---|
+| An IP or multi-block design: submodules, interfaces, clock/reset domains, top-level skeleton | `architecture.md` | architecture doc, per-module requirements, `<ip>_top` skeleton |
+| One module: dataflow, FSMs, widths, latency, entity/architecture backbone | `module.md` | proposal, module doc, backbone with `--@` markers |
 
-## MCP preference
+Read both when a module design shows that the architecture itself must change.
 
-Use `corvidex-mcp` when available to ground design decisions:
-- search docs for coding/architecture conventions
-- search VHDL for analogous entities/processes/packages (`search_hdl` — conceptual discovery)
-- cross-reference key interface symbols — prefer `find_references`/`find_definition`/`find_symbol` (LSP/compiler-backed exact resolution) over `search_hdl` or a local grep once the exact symbol name is already known, e.g. confirming every caller of a generic/record type this design will reuse or extend; see `shared/McpToolPolicy.md`'s routing table
-- retrieve exact source with `get_source` before adopting a pattern
+## References by topic
 
-Local project files and the requirement/proposal remain authoritative for the module being designed.
+- Naming, reset style, architecture names: `shared/HouseStyle.md`
+- Structure that closes timing (registered configuration boundaries, balanced trees, leaf Fmax is only an upper bound): `shared/TimingAndResources.md`
+- AXI4 / AXI4-Stream selection and mandatory rules: `shared/Axi4.md`
+- CDC: `shared/CdcPolicy.md`; reset versus initial values: `shared/FpgaInitialization.md`
+- Reuse and decomposition: `shared/ReusableRTL.md`; patterns: `shared/DesignPatterns.md`
+- AMD/Xilinx targets: `shared/VivadoDesign.md`
 
-Before designing new logic, check `shared/ReusableRTL.md` ("Reuse before authoring new RTL"): search `lib/`/`modules/*/src/`/vendored dependencies for an existing module first. A thin wrapper around an existing module is allowed and preferred over a fork or a rewrite.
+## Ask the user instead of defaulting
 
-If the module being designed is a top-level (`<ip>_top`) or otherwise bundles more than one distinct responsibility, prefer splitting it into smaller single-responsibility submodules per `shared/ReusableRTL.md` ("Prefer modular decomposition") rather than implementing a monolithic entity — flag this back to `vharch` (a new architecture/submodule-table decision) rather than silently absorbing extra responsibility into one module's VHDL backbone.
-
-## Input
-
-`ddoc/<module>_req.md`
-
-Derive `<module>` by removing a trailing `_req`.
-
-## Outputs
-
-- `ddoc/<module>_proposal.md`
-- `doc/<module>.md`
-- `rtl/<module>.vhd`
-
-## Preconditions
-
-Stop if the requirement file does not exist. Do not design from a module name alone.
-Do not operate on the IP `_top` entity; the top integration skeleton belongs to `vharch`.
-
-## Re-run safety
-
-Classify `rtl/<module>.vhd`:
-
-- missing → fresh
-- contains unresolved `--@` markers → backbone, safe to regenerate
-- filled logic and no `--@` markers → stop before destructive regeneration; reconcile incrementally unless user explicitly requests overwrite
-
-Preserve non-empty `## Implementation Notes (vhfill)` in the proposal.
-
-## Step 1 — Proposal
-
-The proposal must capture:
-- requirements summary
-- interface copied exactly from the structural requirement section
-- clock/reset behavior
-- architecture and dataflow
-- state machines
-- algorithms
-- numeric types and widths
-- latency/throughput
-- corner cases
-- selected patterns from `shared/DesignPatterns.md`
-- the timing-closure and resource rules in `shared/TimingAndResources.md` — in particular: no engine cone may start at a controller's descriptor register (per-command configuration is computed once at command start and handed over registered), reductions are balanced trees, and a leaf's standalone Fmax is an upper bound only
-- AXI4/AXI4-Stream protocol decisions per `shared/Axi4.md` — any streaming interface defaults to AXI4-Stream with backpressure (`TREADY`) unless the architecture doc explicitly justifies omitting it
-- verification plan
-- `## Implementation Notes (vhfill)` section, initially empty
-
-Do not rename or reinterpret ports/generics fixed by `vharch`.
-
-## Step 2 — Module documentation
-
-Generate `doc/<module>.md` according to `shared/ModuleDocContract.md`.
-
-## Step 3 — VHDL backbone
-
-Generate valid VHDL-2008 that analyzes as far as practical while leaving explicit direction markers for implementation.
-
-Use:
-- required IEEE packages
-- exact entity generics/ports
-- `architecture a` (see `shared/HouseStyle.md`)
-- type/signal declarations already decided by proposal where useful
-- direct entity instantiations for known submodules
-- `--@` implementation markers
-
-Example:
-
-```vhdl
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
-
-entity foo is
-  port (
-    clk   : in  std_ulogic;
-    reset : in  std_ulogic := '0';
-    req   : in  std_ulogic;
-    done  : out std_ulogic
-  );
-end entity foo;
-
-architecture a of foo is
-  type state_t is (idle, busy);
-  signal state_q : state_t;
-begin
-
-  --@ Implement synchronous FSM and done pulse per proposal §3.
-
-end architecture a;
-```
-
-The backbone must not contain a fake implementation that merely compiles but violates the proposal.
-
-## Numeric type gate
-
-Before accepting a design or implementation:
-
-1. Confirm `ieee.numeric_std` is used for arithmetic.
-2. Reject imports of:
-   - `ieee.std_logic_arith`
-   - `ieee.std_logic_unsigned`
-   - `ieee.std_logic_signed`
-3. Review every arithmetic datapath/control value:
-   - counters
-   - addresses
-   - accumulators
-   - thresholds
-   - lengths/depths
-   - arithmetic operands/results
-   - numeric state used in `<`, `>`, `<=`, `>=`
-4. Prefer the declared type `unsigned`, `signed`, or a constrained integer subtype.
-5. Treat `std_logic_vector` as an opaque representation/interface type, not the default arithmetic type.
-6. Keep conversions at clear representation boundaries and avoid cast-heavy arithmetic.
-7. Make numeric resizing/narrowing explicit and document overflow/truncation behavior.
-
-Flag an implementation for revision when repeated expressions such as:
-
-```vhdl
-std_logic_vector(unsigned(x) + 1)
-```
-
-appear on an internal state signal that should simply have been declared `unsigned`.
-
-## Reset minimization and initial values
-
-For each sequential state class decide:
-
-1. Must it be restored during runtime?
-   - yes → keep appropriate reset behavior
-2. Does it only need a known configuration-time value?
-   - yes → use declaration initialization only if FPGA initialization capability is verified
-3. Is its value irrelevant until a valid/control bit becomes active?
-   - yes → consider neither reset nor initialization
-
-Do not reset wide datapaths just because nearby control state is reset.
-
-## Pipeline naming gate
-
-For pipelined designs, establish the semantic stage-0 reference and use the
-shared `_mN` / `_pN` convention consistently.
-
-Verify that data, valid, sideband and control signals that belong to the same
-transaction have matching relative-stage coordinates.
-
-## CDC design rule
-
-Do not hand-code CDC structures by default.
-
-Prefer project/vendor/proven predefined CDC modules. Integrate their associated
-constraints where available.
-
-If no suitable predefined block exists, mark the custom CDC path as
-`NEEDS_REVIEW` and surface it clearly to the user before implementation is
-considered final.
-
-## Interface record rule
-
-For internal multi-signal protocols, consider directional typed records
-(`*_m2s` / `*_s2m` or equivalent terminology).
-
-Use wrappers to preserve flat vendor/external interfaces when necessary.
-
-## Generic design gate
-
-For reusable blocks use semantic generic types, replace magic numbers with named
-constants/generics where appropriate, define valid ranges, and avoid unsupported
-configuration matrices.
-
-## Vendor-specific design gate
-
-Before using a vendor attribute, primitive, or IP, check whether portable
-inference is sufficient, classify the portability level, document why
-escalation is required, and isolate the dependency where practical.
-
-When the target is an AMD/Vivado part, load the `vivado-design` skill
-before this gate: it holds the inference templates, attribute semantics,
-reset/clocking/CDC methodology and per-family device facts the proposal
-must be written against.
+- the reset strategy for any domain whose state must be cleared at runtime
+- resolved versus unresolved types, when the project has no convention yet
+- the target device or family, when it changes inference or initialization
+- any CDC crossing without a proven existing synchronizer

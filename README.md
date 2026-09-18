@@ -1,27 +1,101 @@
 # VHDL Skills
 
-Skills and policies for agentic modern VHDL development, with ready-made
-integrations for **Maki** and **Claude Code**.
-
-The canonical skill and policy text lives here, once. `install.sh`
-materializes the directory layout expected by the selected agent into any
-target project.
+Skills, subagents and a command-line tool for agentic VHDL/FPGA development.
+Packaged as a Claude Code plugin, and installable into Maki or any agent that
+reads Agent Skills.
 
 ## Skills
 
-| Skill | Purpose |
+| Skill | Use it for |
 | --- | --- |
-| `vhflow` | Scan and orchestrate the complete MCP-first VHDL RTL design flow |
-| `vharch` | Decompose an IP requirement into submodules, interfaces, and a top-level skeleton |
-| `vhdesign` | Generate a design proposal, module documentation, and entity/architecture backbone |
-| `vhfill` | Implement VHDL-2008 from an approved proposal; elaborate and simulate with GHDL |
-| `vhdebug` | Diagnose regression failures using VUnit logs, waveform analysis, and RAG-assisted tracing |
-| `vhtestgen` | Generate VUnit-first self-checking VHDL-2008 test projects (GHDL fallback) |
-| `vhunit` | Author, repair, and migrate VUnit runners (`run.py`) and VHDL-2008 testbenches (VUnit 4→5) |
-| `vhtestrun` | Run regressions via vunit-mcp; collect reports, logs, and waveforms |
-| `vhsynth` | Synthesize with tsfpga-mcp (GHDL + Yosys); local Yosys+GHDL fallback |
-| `vhdoc` | Aggregate module documentation into an IP-level integration document |
-| `vhexplain` | Generate or refresh module documentation from an entity/architecture |
+| `vhdesign` | Architecture and module design before RTL: submodules, interfaces, clocking, reset, CDC, AXI4-Stream, skeletons |
+| `vhfill` | Writing or changing synthesizable RTL, and checking it compiles, elaborates and passes its tests |
+| `vhtest` | Writing, repairing and running testbenches and VUnit projects, including VUnit 4 to 5 migration |
+| `vhdebug` | Finding the root cause of a failing or hanging simulation |
+| `vhsynth` | Synthesis, resource counts, timing closure, Vivado builds and reports |
+| `vhdoc` | Documenting or explaining VHDL modules and IPs |
+| `vhflow` | Taking a whole IP through every phase, tracked in `flow_status.md` |
+
+Each `SKILL.md` is short. It says when the skill applies and points at
+reference files that the agent reads only for the sections a task needs.
+Every skill works on a plain repository; the `ddoc/`, `issue/` and
+`flow_status.md` flow files are used only when they exist or `vhflow` is
+driving.
+
+## Contents
+
+```text
+vhdl-skills/
+├── .claude-plugin/            # plugin.json and marketplace.json
+├── .mcp.json                  # corvidex-mcp (optional semantic search)
+├── skills/
+│   ├── vh*/                   # the seven skills
+│   └── shared/                # reference docs, plus:
+│       ├── bin/vhdl-tools     #   VUnit, synthesis and waveform command-line tool
+│       └── tools/             #   its Python source, tests and command reference
+├── agents/                    # designer, coder, tester, debugger, synthesizer, documentation, orchestrator
+├── evals/                     # skill-trigger evals for `claude plugin eval`
+├── integrations/              # CLAUDE.md and AGENTS.md templates, Maki MCP config
+├── install.sh / uninstall.sh  # project-local installs (Maki, Claude Code)
+├── validate.sh
+└── SETUP.md                   # requirements and corvidex-mcp setup
+```
+
+`vhdl-tools` replaces the vunit-mcp, tsfpga-mcp and peeper-mcp servers: it
+runs VUnit compiles, tests and reports, Yosys/GHDL synthesis and tsfpga
+Vivado builds and reports, and VCD/FST waveform measurements. The command
+reference is in `skills/shared/tools/README.md`.
+
+## Install
+
+Requirements are in `SETUP.md`. In short: `uv`, plus GHDL/NVC, Yosys or
+Vivado as the task needs, and VUnit in the HDL project's own environment.
+
+### Claude Code plugin
+
+```text
+/plugin marketplace add ru551n/vhdl-skills
+/plugin install vhdl@vhdl-skills
+```
+
+Skills are namespaced as `vhdl:<skill>`. If you registered vunit-mcp,
+tsfpga-mcp or peeper-mcp yourself, remove those registrations; the plugin
+no longer uses them.
+
+### Maki, or a project-local Claude Code install
+
+```bash
+./install.sh --target maki   --project /path/to/project --with-mcp
+./install.sh --target claude --project /path/to/project
+./install.sh --target both   --project /path/to/project --with-mcp
+```
+
+Maki gets `AGENTS.md`, `.maki/skills/` and, with `--with-mcp`,
+`.maki/mcp.toml`. Claude Code gets `CLAUDE.md`, `.claude/skills/` and
+`.claude/agents/`. The default `--mode copy` makes the project
+self-contained; `--mode link` symlinks back to this repository for
+developing the skills themselves.
+
+### Other skill installers
+
+Generic installers copy only folders that contain a `SKILL.md`, which skips
+`skills/shared/` (reference docs and `vhdl-tools`). Fetch it separately next
+to the skills:
+
+```bash
+npx degit ru551n/vhdl-skills/skills/shared .claude/skills/shared
+```
+
+`validate.sh` fails on dangling `shared/` references, so a broken install is
+caught.
+
+## Validate and evaluate
+
+```bash
+./validate.sh                                   # structure, descriptions, references, manifests
+claude plugin eval .                            # skill-trigger evals, with and without the plugin
+uv run --project skills/shared/tools pytest     # vhdl-tools tests
+```
 
 ## Design goals
 
@@ -35,8 +109,8 @@ target project.
 - Internal protocol records are encouraged where useful.
 - Portable inference first; explicit portability classification.
 - Strict separation between synthesizable RTL and simulation-only verification.
-- AXI4/AXI4-Lite/AXI4-Stream interfaces follow the `shared/Axi4.md` policy (handshake, burst/boundary, ordering, no-loss).
-- VUnit-5 is the default verification framework (`run.py` + self-checking testbenches); the VUnit API is authoritative in `shared/Vunit.md` (phases and gate locks, seeds, checker processes).
+- AXI4/AXI4-Lite/AXI4-Stream interfaces follow `shared/Axi4.md` (handshake, burst/boundary, ordering, no-loss).
+- VUnit 5 is the default verification framework; `shared/Vunit.md` is authoritative for its API.
 - Generics only for real architectural parameters.
 
 ## CDC policy
@@ -51,123 +125,6 @@ CDC is never treated as routine wiring. Preferred source order:
 Constraints/attributes are part of the implementation when the toolchain
 supports them. Custom/unconstrained CDC paths are always highlighted to the
 user.
-
-## Repository layout
-
-```text
-vhdl-skills/
-├── skills/                    # Canonical SKILL.md files (one directory per skill)
-├── shared/                    # Canonical policies and reference docs
-├── integrations/
-│   ├── maki/
-│   │   ├── AGENTS.md
-│   │   └── mcp.toml
-│   └── claude/
-│       ├── CLAUDE.md
-│       └── agents/            # Subagent definitions
-├── install.sh
-├── uninstall.sh
-├── validate.sh
-├── MCP_SETUP.md
-├── LICENSE
-└── NOTICE
-```
-
-## Install
-
-### Maki
-
-```bash
-./install.sh --target maki --project /path/to/project --with-mcp
-```
-
-Installs:
-
-```text
-AGENTS.md
-.maki/skills/
-.maki/mcp.toml
-```
-
-### Claude Code
-
-```bash
-./install.sh --target claude --project /path/to/project
-```
-
-Installs:
-
-```text
-CLAUDE.md
-.claude/skills/
-.claude/agents/
-```
-
-MCP server registration for Claude Code remains CLI/user-config driven; see
-`MCP_SETUP.md`.
-
-### Both
-
-```bash
-./install.sh --target both --project /path/to/project --with-mcp
-```
-
-### Copy vs symlink
-
-Default is `copy`, which makes the target project self-contained. For active
-development of this repository itself:
-
-```bash
-./install.sh --target maki --project ../my-design --mode link --with-mcp
-```
-
-`link` symlinks back to this repository so edits are immediately visible.
-
-### Third-party installers (npx `skills`, ...)
-
-Generic skill installers copy only directories that contain a `SKILL.md`,
-so the `shared/` policies are NOT installed and every `shared/*.md`
-reference dangles. Either use `install.sh` above, or fetch `shared/`
-separately next to the skills:
-
-```bash
-npx degit ru551n/vhdl-skills/shared .claude/skills/shared   # or ~/.claude/skills/shared
-```
-
-`validate.sh` fails on dangling `shared/` references, so a broken
-third-party install is caught by it.
-
-## Optional MCP servers
-
-The skills work without MCP but are designed **MCP-first, local-tool
-fallback**: when a listed server is available in the current agent
-environment, the skills prefer its tool over the equivalent manual
-approach (raw `grep`/file reads, hand-invoking `ghdl`/`yosys`/Vivado,
-manually parsing VUnit logs or waveform files) and only fall back to the
-manual approach when the server is unavailable. `shared/McpToolPolicy.md`
-is the authoritative, per-server statement of this policy.
-
-Below is the recommended set of servers, including the intended
-failure-debug chain:
-
-| Server | Repo | Role in the flow |
-| --- | --- | --- |
-| **corvidex-mcp** | [ru551n/corvidex-mcp](https://github.com/ru551n/corvidex-mcp) | RAG index over project sources/docs for cross-reference |
-| **vunit-mcp** | [ru551n/vunit-mcp](https://github.com/ru551n/vunit-mcp) | Run VUnit tests, collect reports/logs/waveforms |
-| **peeper-mcp** | [ru551n/peeper-mcp](https://github.com/ru551n/peeper-mcp) | Waveform inspection for measured signal evidence |
-| **tsfpga-mcp** | [ru551n/tsfpga-mcp](https://github.com/ru551n/tsfpga-mcp) | GHDL + Yosys synthesis and resource summary |
-
-Debug chain: `vunit-mcp` (fail + record) → `peeper-mcp` (waveform evidence) →
-`corvidex-mcp` (source cross-reference); synthesis via `tsfpga-mcp`.
-Setup commands and the full architecture are in `MCP_SETUP.md`.
-
-## Validate
-
-```bash
-./validate.sh
-```
-
-Checks that all skills and integration files are present.
 
 ## Type resolution
 

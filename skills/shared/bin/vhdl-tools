@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# vhdl-tools launcher: runs the uv project in ../tools without changing the
+# caller's working directory (--project, not --directory), so project dirs
+# still default to the cwd.
+set -euo pipefail
+here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+if ! command -v uv >/dev/null 2>&1; then
+    echo "vhdl-tools: uv not found; install it: https://docs.astral.sh/uv/getting-started/installation/" >&2
+    exit 127
+fi
+exec uv run --quiet --frozen --project "$here/../tools" vhdl-tools "$@"
