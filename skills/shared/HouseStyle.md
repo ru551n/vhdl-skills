@@ -242,6 +242,51 @@ name changes length, forcing a whitespace-only diff across every other line
 in the block just to re-align — not worth the churn, and not what upstream
 actually does.
 
+## One assignment per line
+
+Every signal assignment (`<=`) and variable assignment (`:=`) is on its own
+line, and nothing else shares that line: no second assignment, and no
+`if ... then`, `elsif`, `else`, `end if`, `when ... =>` choice or `end case`.
+
+```vhdl
+if rst = '1' then
+  count <= (others => '0');
+  valid <= '0';
+elsif enable = '1' then
+  count <= count + 1;
+end if;
+
+case state is
+  when idle =>
+    state <= running;
+  when running =>
+    state <= idle;
+end case;
+```
+
+not
+
+```vhdl
+if rst = '1' then count <= (others => '0'); valid <= '0';
+elsif enable = '1' then count <= count + 1; end if;
+
+case state is
+  when idle => state <= running;
+  when running => state <= idle;
+end case;
+```
+
+The rule is about statements. A declaration's initial value
+(`signal count : u_unsigned(7 downto 0) := (others => '0');`) is a
+declaration, not an assignment, and is fine. One assignment may still span
+several lines (a conditional or selected assignment, a long aggregate); that
+is still one assignment.
+
+Why: a line then holds exactly one assignment, so a diff, `git blame`, a
+compiler or simulator error, a coverage hit or a lint finding points at that
+assignment alone. A second assignment on the same line is easy to miss in
+review, and its changes hide inside the first one's diff.
+
 ## Architecture naming
 
 Use `a` for a synthesizable RTL architecture and `tb` for a testbench
