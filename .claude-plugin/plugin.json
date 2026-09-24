@@ -1,6 +1,6 @@
 {
   "name": "vhdl",
-  "version": "2.3.2",
+  "version": "2.3.3",
   "description": "VHDL/FPGA development: design, RTL implementation, VUnit testing, debugging, synthesis and timing closure, and documentation. VUnit, synthesis and waveforms go through the bundled vhdl-tools command-line tool; corvidex-mcp is optional.",
   "author": {
     "name": "Sebastian Hellgren"

@@ -238,7 +238,7 @@ suffixes (`clk` matches `tb.dut.clk`).
 
 | Command | Use |
 |---|---|
-| `open` | Timescale, duration, signal count |
+| `open` | Timescale, duration, signal count, and the design's scopes (package scopes are counted, not listed) |
 | `search --pattern P` | Exact hierarchical signal names |
 | `value-at --time T --signals S...` | Values at one instant |
 | `values --signal S --start T --end T` | Transitions in a window |

@@ -88,6 +88,37 @@ def _open(file: str) -> str | None:
     return None
 
 
+_SCOPE_LIMIT = 20
+
+
+def scope_summary(names: list[str], limit: int = _SCOPE_LIMIT) -> str:
+    """The scope count and the scopes worth reading first.
+
+    A VUnit testbench pulls in dozens of package scopes (check_pkg, logger_pkg,
+    numeric_std, ...): GHDL writes each as a flat top-level scope, NVC under its
+    library (vunit_lib.run_pkg). The design is the instance tree instead: a
+    listed top-level scope with listed scopes below it (tb, tb.dut). That tree is
+    shown and the rest counted. Without one, the names are listed up to `limit`.
+    """
+    listed = set(names)
+    roots = sorted(
+        n
+        for n in names
+        if "." not in n and any(m.startswith(n + ".") for m in listed)
+    )
+    design = sorted(n for n in names if n.split(".", 1)[0] in roots)
+    shown = design if design else names
+    head = shown[:limit]
+    out = f"{len(names)}: {', '.join(head)}"
+    notes = []
+    if len(shown) > limit:
+        notes.append(f"{len(shown) - limit} more not listed")
+    if design and len(names) > len(design):
+        hidden = len(names) - len(design)
+        notes.append(f"{hidden} package and library scopes not listed")
+    return out + (f" ({'; '.join(notes)})" if notes else "")
+
+
 @tools.tool()
 def peeper_open(file: str) -> str:
     """What is in this waveform file?
@@ -111,7 +142,7 @@ def peeper_open(file: str) -> str:
         f"timescale: {format_ticks(1, tps)} per tick",
         f"duration:  {format_ticks(f.duration(), tps)} (last change across "
         "sampled signals)",
-        f"scopes:    {', '.join(f.scope_names)}",
+        f"scopes:    {scope_summary(f.scope_names)}",
         f"signals:   {len(f.signals)} (vhdl-tools wave search lists them)",
     ]
     return "\n".join(lines)
