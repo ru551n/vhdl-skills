@@ -96,7 +96,7 @@ install_claude() {
 
   if [[ "$WITH_MCP" -eq 1 ]]; then
     echo "Note: Claude MCP registration is CLI/user-config driven."
-    echo "See $ROOT/MCP_SETUP.md for the MCP server setup commands."
+    echo "See $ROOT/SETUP.md for the corvidex-mcp setup command."
   fi
 }
 

@@ -12,7 +12,7 @@
 
 ## corvidex-mcp (optional)
 
-Semantic search and exact code navigation over the project's VHDL, docs and code. The Claude Code plugin registers it automatically; for other hosts:
+Semantic search and exact code navigation over the project's VHDL, docs and code. The plugin does not register it, so every session does not pay for its tools; the skills use it when it is connected and fall back to plain search when it is not. Register it yourself:
 
 ```bash
 claude mcp add corvidex-mcp -- uvx --from git+https://github.com/ru551n/corvidex-mcp.git corvidex-mcp

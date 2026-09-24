@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "corvidex-mcp": {
-      "command": "uvx",
-      "args": ["--from", "git+https://github.com/ru551n/corvidex-mcp.git", "corvidex-mcp"]
-    }
-  }
-}

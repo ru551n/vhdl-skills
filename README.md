@@ -27,7 +27,6 @@ driving.
 ```text
 vhdl-skills/
 ├── .claude-plugin/            # plugin.json and marketplace.json
-├── .mcp.json                  # corvidex-mcp (optional semantic search)
 ├── skills/
 │   ├── vh*/                   # the seven skills
 │   └── shared/                # reference docs, plus:
@@ -60,7 +59,8 @@ Vivado as the task needs, and VUnit in the HDL project's own environment.
 
 Skills are namespaced as `vhdl:<skill>`. If you registered vunit-mcp,
 tsfpga-mcp or peeper-mcp yourself, remove those registrations; the plugin
-no longer uses them.
+no longer uses them. corvidex-mcp is optional and registered separately, see
+[SETUP.md](SETUP.md).
 
 ### Maki, or a project-local Claude Code install
 
