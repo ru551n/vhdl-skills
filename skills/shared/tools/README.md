@@ -47,7 +47,7 @@ Run it through `skills/shared/bin/vhdl-tools`, which calls `uv run --project` on
 
 | Command | Options | Purpose |
 |---|---|---|
-| `status` | — | Project dir, run script, venv/interpreter, VUnit version, simulators, waveform-flag support |
+| `status` | `--simulator S` | Project dir, run script, venv/interpreter, VUnit version, simulators, waveform-flag support |
 | `list-tests` | — | All tests (`lib.entity[.test_case]`) via `run.py --list`; no simulator |
 | `list-files` | — | Project source files in compile order via `--files`; no simulator |
 | `compile` | `--simulator S` | Compile all sources (`--compile`) |
@@ -85,7 +85,7 @@ Times are `10ns` / `1.5us` or integer file ticks. Signals are full names or uniq
 | `values` | `--file F` (required), `--signal S` (required), `--start T` (default 0), `--end T`, `--max-changes N` (default 1000) | Change list of one signal in `[start, end)` |
 | `value-at` | `--file F` (required), `--time T` (required), `--signals S [S ...]` (required) | Values of several signals at one time |
 | `analyze` | `--file F` (required), `--signal S` (required), `--start T` (default 0), `--end T` | Period/frequency/duty, pulse widths, X/Z time, min/max/mean, value distribution |
-| `latency` | `--file F` (required), `--a S` (required), `--b S` (required), `--edge {rise,any}` (default rise), `--start T` (default 0), `--end T` | Edge-to-edge delay A -> B: min/max/mean/p50/stddev |
+| `latency` | `--file F` (required), `--a S` (required), `--b S` (required), `--edge {rise,any}` (default rise), `--start T` (default 0), `--end T` | Edge-to-edge delay A -> B: min/max/mean/p50/stddev. A and B the same signal: the interval between its edges |
 | `find` | `--file F` (required), `--signal S` (required), `--value V` (required), `--start T` (default 0), `--limit N` (default 100) | Intervals where a signal holds a value |
 | `plot` | `--file F` (required), `--signals S [S ...]` (required), `--start T` (default 0), `--end T`, `--out PNG` (default: new temp file) | Write a PNG plot; prints its path (`image:` line) + per-trace summary |
 

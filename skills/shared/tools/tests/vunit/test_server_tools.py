@@ -416,3 +416,24 @@ def test_tests_run_on_half_the_cpus_by_default(monkeypatch, tmp_path):
 
     args = server._run_args(RunTestsInput(num_threads=3), tmp_path)
     assert args[args.index("-p") + 1] == "3"
+
+
+def test_get_report_lists_each_failing_test_once(fresh_server):
+    import asyncio
+
+    _write_junit(fresh_server)
+    server._config = _config(fresh_server)
+    out = asyncio.run(server.vunit_get_report(GetReportInput(only_failing=True)))
+    assert out.count("tb.t_c.test3") == 1
+    assert out.count("Failing tests:") == 1
+
+
+def test_status_takes_a_simulator(fresh_server):
+    """status accepts --simulator like the run commands, and names itself as
+    the vhdl-tools command, not the MCP server it was ported from."""
+    import asyncio
+
+    server._config = _config(fresh_server)
+    out = asyncio.run(server.vunit_status(simulator="nvc"))
+    assert out.startswith("vhdl-tools vunit status")
+    assert "simulator   : nvc (--simulator, this call)" in out
