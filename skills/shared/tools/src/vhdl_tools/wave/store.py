@@ -145,6 +145,21 @@ def resolve_signal(name: str, signals: list[SignalInfo]) -> Resolution:
     raise SignalNotFound(name, candidates[:10])
 
 
+def _changes(
+    var: pywellen.Var, last_only: bool = False
+) -> list[tuple[int, pywellen.Value]]:
+    """A signal's (time, value) changes, or only its last one.
+
+    pywellen raises NotImplementedError when asked to slice an empty change list,
+    which is what a declared signal that is never assigned has: GHDL writes one
+    for every package signal of a VUnit testbench.
+    """
+    tv = var.tv
+    if len(tv) == 0:
+        return []
+    return tv[-1:] if last_only else tv[:]
+
+
 class WaveformFile:
     """One open waveform file plus its decoded-signal cache."""
 
@@ -190,7 +205,7 @@ class WaveformFile:
         return packed
 
     def _decode(self, full_name: str) -> Packed:
-        changes = self._vars[full_name].tv[:]
+        changes = _changes(self._vars[full_name])
         times = np.fromiter((t for t, _ in changes), dtype=np.int64, count=len(changes))
         values: list[pywellen.Value] = [v for _, v in changes]
         if any(isinstance(v, str) for v in values):
@@ -237,7 +252,7 @@ class WaveformFile:
             indices = sorted({int(x) for x in np.linspace(0, n - 1, _DURATION_PROBES)})
         end = 0
         for i in indices:
-            tail = vars_list[i].tv[-1:]
+            tail = _changes(vars_list[i], last_only=True)
             if tail:
                 end = max(end, tail[0][0])
         return end

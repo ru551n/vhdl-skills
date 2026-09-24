@@ -209,3 +209,32 @@ class TestValueAt:
     def test_missing(self, all_types: WaveformFile) -> None:
         with pytest.raises(SignalNotFound):
             all_types.value_at("nope", 0)
+
+
+QUIET_VCD = """$timescale 1ns $end
+$scope module tb $end
+$var wire 1 ! quiet $end
+$var wire 1 " clk $end
+$upscope $end
+$enddefinitions $end
+#0
+0"
+#10
+1"
+"""
+
+
+def test_signal_that_never_changes(store: FileStore, tmp_path: Path) -> None:
+    """A declared signal with no value at all, as GHDL writes for package signals.
+
+    pywellen cannot slice an empty change list, and opening such a file used to
+    raise NotImplementedError from the duration probe.
+    """
+    path = tmp_path / "quiet.vcd"
+    path.write_text(QUIET_VCD)
+    wf = store.open(str(path))
+    assert wf.duration() == 10
+    times, values = wf.window("tb.quiet", 0, None)
+    assert len(times) == 0 and len(values) == 0
+    times, _ = wf.window("tb.clk", 0, None)
+    assert list(times) == [0, 10]
