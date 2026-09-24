@@ -28,6 +28,7 @@ Use whichever exist, in this order: the module's existing testbench (under test-
 - `corvidex-mcp`, when connected, for precedent and convention lookup (`search_hdl`/`search_knowledge` for concepts; `find_definition`/`find_references` once the exact symbol is known). Routing in `shared/ToolPolicy.md`.
 - `vhdl-tools vunit` for compiling, elaborating and running the module's tests. Run `vhdl-tools vunit elaborate` right after every interface edit, before a full simulation run.
 - `vhdl-tools wave` for waveform-based failure analysis when a waveform was recorded.
+- `speja`, when the project has a `speja.yaml` or `vsg.yaml` or the user asks for it: `speja --fix` on the files you changed instead of laying them out by hand, then `speja --check style,lint`. `shared/ToolPolicy.md` has the details.
 
 ## Inputs
 
@@ -158,6 +159,7 @@ Record the backend used in the implementation notes.
 
 Before marking RTL implemented:
 - no unresolved `--@`
+- laid out by `speja --fix` when the project uses speja, with `speja --check style,lint` clean of errors; otherwise by the Layout part of `shared/HouseStyle.md`
 - compile/analyze the complete affected dependency set
 - explain or remove meaningful warnings
 - no accidental latches/multiple drivers
