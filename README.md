@@ -34,8 +34,6 @@ vhdl-skills/
 │       └── tools/             #   its Python source, tests and command reference
 ├── agents/                    # designer, coder, tester, debugger, synthesizer, documentation, orchestrator
 ├── evals/                     # skill-trigger evals for `claude plugin eval`
-├── integrations/              # CLAUDE.md and AGENTS.md templates, Maki MCP config
-├── install.sh / uninstall.sh  # project-local installs (Maki, Claude Code)
 ├── validate.sh
 └── SETUP.md                   # requirements and corvidex-mcp setup
 ```
@@ -50,7 +48,7 @@ reference is in `skills/shared/tools/README.md`.
 Requirements are in `SETUP.md`. In short: `uv`, plus GHDL/NVC, Yosys or
 Vivado as the task needs, and VUnit in the HDL project's own environment.
 
-### Claude Code plugin
+Install it as a Claude Code plugin; that is the only supported way:
 
 ```text
 /plugin marketplace add ru551n/vhdl-skills
@@ -61,33 +59,6 @@ Skills are namespaced as `vhdl:<skill>`. If you registered vunit-mcp,
 tsfpga-mcp or peeper-mcp yourself, remove those registrations; the plugin
 no longer uses them. corvidex-mcp is optional and registered separately, see
 [SETUP.md](SETUP.md).
-
-### Maki, or a project-local Claude Code install
-
-```bash
-./install.sh --target maki   --project /path/to/project --with-mcp
-./install.sh --target claude --project /path/to/project
-./install.sh --target both   --project /path/to/project --with-mcp
-```
-
-Maki gets `AGENTS.md`, `.maki/skills/` and, with `--with-mcp`,
-`.maki/mcp.toml`. Claude Code gets `CLAUDE.md`, `.claude/skills/` and
-`.claude/agents/`. The default `--mode copy` makes the project
-self-contained; `--mode link` symlinks back to this repository for
-developing the skills themselves.
-
-### Other skill installers
-
-Generic installers copy only folders that contain a `SKILL.md`, which skips
-`skills/shared/` (reference docs and `vhdl-tools`). Fetch it separately next
-to the skills:
-
-```bash
-npx degit ru551n/vhdl-skills/skills/shared .claude/skills/shared
-```
-
-`validate.sh` fails on dangling `shared/` references, so a broken install is
-caught.
 
 ## Validate and evaluate
 

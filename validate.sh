@@ -37,14 +37,14 @@ if command -v uv >/dev/null 2>&1; then
     [[ -n "$known" ]] || { err "could not list vhdl-tools $group commands"; continue; }
     while IFS= read -r cmd; do
       grep -qx "$cmd" <<<"$known" || err "documented command does not exist: vhdl-tools $group $cmd"
-    done < <(grep -rhoE "\`vhdl-tools $group [a-z][a-z-]*" "$ROOT/skills" "$ROOT/agents" "$ROOT/integrations" "$ROOT/README.md" "$ROOT/SETUP.md" \
+    done < <(grep -rhoE "\`vhdl-tools $group [a-z][a-z-]*" "$ROOT/skills" "$ROOT/agents" "$ROOT/README.md" "$ROOT/SETUP.md" \
                --include='*.md' --exclude-dir=tools | awk '{print $3}' | sort -u)
   done
 fi
 
 # Tool names of the retired vunit-mcp/tsfpga-mcp/peeper-mcp servers must not come back.
 if grep -rnE '\b(vunit|tsfpga|peeper)_(status|list_tests|list_files|compile|elaborate|run_tests|get_report|get_test_log|get_test_waveform|export_json|test_dependencies|synthesize|inspect|hierarchy|targets|project_[a-z_]+|open|search|values|value_at|analyze|latency|find|plot)\b' \
-     "$ROOT/skills" "$ROOT/agents" "$ROOT/integrations" --include='*.md' --exclude-dir=tools; then
+     "$ROOT/skills" "$ROOT/agents" --include='*.md' --exclude-dir=tools; then
   err "retired MCP tool names found above; use vhdl-tools commands"
 fi
 
