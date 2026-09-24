@@ -401,3 +401,18 @@ def test_config_error_has_error_prefix(monkeypatch):
     finally:
         server._config = None
     assert out.startswith("Error: ")
+
+
+def test_tests_run_on_half_the_cpus_by_default(monkeypatch, tmp_path):
+    """Without --num-threads, half the logical CPUs: the rest stay free for the
+    editor, the agent and anything else running beside the simulation."""
+    monkeypatch.setattr(server.os, "cpu_count", lambda: 24)
+    args = server._run_args(RunTestsInput(), tmp_path)
+    assert args[args.index("-p") + 1] == "12"
+
+    monkeypatch.setattr(server.os, "cpu_count", lambda: 1)
+    args = server._run_args(RunTestsInput(), tmp_path)
+    assert args[args.index("-p") + 1] == "1"
+
+    args = server._run_args(RunTestsInput(num_threads=3), tmp_path)
+    assert args[args.index("-p") + 1] == "3"

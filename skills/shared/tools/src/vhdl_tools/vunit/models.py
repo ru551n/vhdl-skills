@@ -21,7 +21,7 @@ class ElaborateInput(BaseModel):
         default=None,
         ge=1,
         description=(
-            "Number of parallel test threads (-p). Defaults to VUnit's own default."
+            "Number of parallel test threads (-p). Defaults to half the logical CPUs."
         ),
     )
     output_dir: str | None = Field(

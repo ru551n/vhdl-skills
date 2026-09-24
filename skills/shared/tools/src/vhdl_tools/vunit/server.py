@@ -358,12 +358,20 @@ async def vunit_compile(simulator: str | None = None) -> str:
     return "Error: Compile failed:\n" + error_excerpt(result.full_text)
 
 
+def default_num_threads() -> int:
+    """Half the logical CPUs, at least one.
+
+    VUnit's own default is one test at a time, and all CPUs leaves nothing for
+    the editor, the agent or a second run beside this one.
+    """
+    return max(1, (os.cpu_count() or 2) // 2)
+
+
 def _run_args(input: ElaborateInput, output_dir: Path) -> list[str]:
     # Waveform args are added by the caller: they depend on the one-time
     # --wave capability probe (see supports_wave_flag).
     args = ["-x", str(output_dir / "junit.xml")]
-    if input.num_threads:
-        args += ["-p", str(input.num_threads)]
+    args += ["-p", str(input.num_threads or default_num_threads())]
     if input.clean:
         args.append("--clean")
     if input.verbose:

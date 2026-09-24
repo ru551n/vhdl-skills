@@ -208,7 +208,7 @@ reading its results.
 | `test-dependencies --test-name T` | The files one test needs |
 | `compile` | Analyze only |
 | `elaborate --test-patterns P` | Elaborate without simulating. Catches port, generic and type mismatches that `compile` misses; run it after every RTL or testbench interface change |
-| `run-tests --test-patterns P --num-threads 0` | Run tests. Add `--waveform-format vcd` (GHDL) or `fst` (NVC) when a failure may need signal-level debugging |
+| `run-tests --test-patterns P` | Run tests, on half the logical CPUs unless `--num-threads N` is given. Add `--waveform-format vcd` (GHDL) or `fst` (NVC) when a failure may need signal-level debugging |
 | `get-report --only-failing` | Pass/fail summary of the last run |
 | `get-test-log --test-name T` | A failing test's log tail and check results |
 | `get-test-waveform --test-name T` | Waveform path and failing check time, for `vhdl-tools wave` |
@@ -225,7 +225,7 @@ Rules:
 4. Headless NVC waveforms need the `--wave` flag in the project's own
    VUnit; `status` reports whether it has it. GHDL records either way.
 
-Fallback: the project's `run.py` directly (`--elaborate`, `-p 0`,
+Fallback: the project's `run.py` directly (`--elaborate`, `-p $(( $(nproc) / 2 ))`,
 `VUNIT_SIMULATOR=nvc`), then plain GHDL for a non-VUnit testbench. Never
 replace an existing VUnit project with a custom GHDL harness.
 
