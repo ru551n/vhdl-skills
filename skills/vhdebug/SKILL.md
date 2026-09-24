@@ -48,7 +48,7 @@ Given the waveform path (`--file <path>`), and only through these commands. Neve
    - `find --signal <s> --value <v>` for state or value occupancy
    - `latency --a <s> --b <s>` for event-to-event cycle or time relationships; the same signal for both gives the interval between its edges
    - `analyze --signal <s>` for clocks, pulses, X/Z and distributions
-   - `plot --signals ... --out <file>.png` only when a picture adds something
+   - `plot --signals ... --mark <failing time> --out <file>.png`, then read the PNG, when the shape matters: counting, wrapping, stalls, X spreading, one signal's timing against another's. Numeric steps carry their values and unknowns are red, but take the numbers you report from the commands above, not from the picture.
 
 ### 3. Source/context evidence — corvidex-mcp
 

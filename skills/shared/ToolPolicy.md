@@ -245,7 +245,7 @@ suffixes (`clk` matches `tb.dut.clk`).
 | `find --signal S --value V` | When a signal held a value |
 | `latency --a A --b B` | Edge-to-edge delay; with A and B the same signal, the interval between its edges |
 | `analyze --signal S` | Clock period and duty, X/Z fraction, value statistics |
-| `plot --signals S... --out F.png` | A picture, only when it adds something |
+| `plot --signals S... --mark T... --out F.png` | A picture of the shape, read back as an image: numeric steps labelled with their values, X/U/Z in red, a dashed line at each `--mark` (pass the failing check's time). Exact numbers still come from the commands above |
 
 Query the smallest window around the failing check's time. Never read the
 file any other way (see Principle above). When `vhdl-tools wave` cannot run,

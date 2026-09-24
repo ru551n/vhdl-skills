@@ -57,6 +57,32 @@ _MAX_TEXT_LABELS = 24
 
 #: Max run boundaries drawn on a text lane before striding.
 _MAX_TEXT_RUNS_DRAWN = 2000
+# Steps a numeric lane writes its value on; beyond this the lane is too dense to
+# label and `values` is the way to read it.
+_MAX_STEP_LABELS = 40
+# Share of the window one character of a step label needs to be readable.
+_LABEL_CHAR_SHARE = 0.008
+_UNKNOWN_RE = re.compile(r"[01xzuwlh_-]+", re.IGNORECASE)
+
+
+def _is_unknown(value: object) -> bool:
+    """A bit pattern with X, U, Z, W or don't-care in it: a value the simulator
+    does not know."""
+    return (
+        isinstance(value, str)
+        and _UNKNOWN_RE.fullmatch(value) is not None
+        and any(c not in "01_" for c in value)
+    )
+
+
+def _numbers_and_unknowns(values: np.ndarray, entering: object) -> bool:
+    """Every value a number or an unknown bit pattern: a numeric lane with gaps,
+    not a text lane. An enum or a string signal is not."""
+    number = (int, float, np.integer, np.floating)
+    return all(
+        isinstance(v, number) or _is_unknown(v)
+        for v in (entering, *values.tolist())
+    )
 
 #: Per-lane geometry for vhdl-tools wave plot.
 _LANE_HEIGHT = 1.0
@@ -635,8 +661,10 @@ def _draw_plot_lane(
     entering = f.value_at(info.full_name, start_t)
     n_changes = len(times)
     kind = packed.kind
-    wide_int = kind == "int" and (info.bitwidth or 0) > 32
-    if kind == "str" or wide_int:
+    wide = (info.bitwidth or 0) > 32
+    wide_int = kind == "int" and wide
+    as_text = kind == "str" and (wide or not _numbers_and_unknowns(values, entering))
+    if as_text or wide_int:
         # Text lane: held values as labels, X/Z spans shaded. String/enum
         # signals (kind "str", possibly mixing ints with X/Z strings) and
         # wide int buses (> 32 bit, which don't plot meaningfully as
@@ -698,30 +726,121 @@ def _draw_plot_lane(
     # A signal holds each value until its next change, so every lane is a
     # staircase, and its last value is held to the end of the window. Straight
     # lines between changes drew a counter as ramps that never happened.
+    binary = kind != "float" and (info.is_1bit or (info.bitwidth or 0) <= 1)
     x = np.concatenate((np.array([start_t], dtype=np.int64), times))
-    idx = _decimate_idx(len(x))
-    x_drawn = np.append(x[idx], win_end) * scale
-    if kind == "int" and (info.is_1bit or (info.bitwidth or 0) <= 1):
-        y = np.concatenate((np.array([int(entering)], dtype=np.int64), values))
-        y_drawn = lane_base + y[idx]
-        lw = 1.0
+    raw: list[object] = [entering, *values.tolist()]
+    if kind == "str":
+        unknown = np.array([_is_unknown(v) for v in raw], dtype=bool)
+        num = np.array(
+            [np.nan if u else float(v) for v, u in zip(raw, unknown, strict=True)]
+        )
     else:
-        allv = np.concatenate((np.array([entering], dtype=values.dtype), values))
-        vmin, vmax = float(allv.min()), float(allv.max())
-        if vmax == vmin:
-            y_drawn = np.full(len(idx), lane_base + 0.5)
-        else:
-            y_drawn = lane_base + (allv[idx] - vmin) / (vmax - vmin)
-        lw = 0.8
-    y_drawn = np.append(y_drawn, y_drawn[-1])
-    ax.step(x_drawn, y_drawn, where="post", color=color, lw=lw)
-    dec = f", decimated to {len(idx)} points" if len(idx) < n_changes else ""
-    lane = (
-        "binary"
-        if kind == "int" and (info.is_1bit or (info.bitwidth or 0) <= 1)
-        else "numeric"
+        unknown = np.zeros(len(raw), dtype=bool)
+        num = np.asarray(raw, dtype=np.float64)
+    known = num[~unknown]
+    if binary:
+        vmin, vmax = 0.0, 1.0
+    elif len(known):
+        vmin, vmax = float(known.min()), float(known.max())
+    else:
+        vmin = vmax = 0.0
+    span = vmax - vmin
+    rel = np.full(len(num), 0.5) if span == 0 else (num - vmin) / span
+    rel[unknown] = np.nan
+    idx = _decimate_idx(len(x))
+    y = lane_base + rel[idx]
+    ax.step(
+        np.append(x[idx], win_end) * scale,
+        np.append(y, y[-1]),
+        where="post",
+        color=color,
+        lw=1.0 if binary else 0.8,
     )
-    return f"{lane} ({n_changes} changes{dec})"
+    ends = np.append(x[1:], win_end)
+    notes: list[str] = []
+
+    # Unknown spans in red on the lane itself, as a simulator's viewer draws X.
+    spans: list[tuple[int, int]] = []
+    for i in np.flatnonzero(unknown):
+        t0, t1 = int(x[i]), int(ends[i])
+        if spans and spans[-1][1] == t0:
+            spans[-1] = (spans[-1][0], t1)
+        elif t1 > t0:
+            spans.append((t0, t1))
+    for t0, t1 in spans:
+        ax.add_patch(
+            Rectangle(
+                (t0 * scale, lane_base),
+                (t1 - t0) * scale,
+                _LANE_HEIGHT,
+                facecolor=(1.0, 0.88, 0.88),
+                edgecolor="none",
+                lw=0,
+            )
+        )
+        ax.hlines(lane_base + 0.5, t0 * scale, t1 * scale, color="red", lw=1.5)
+    if spans:
+        plural = "" if len(spans) == 1 else "s"
+        notes.append(f"{len(spans)} unknown interval{plural} in red")
+
+    # Values on the steps and the lane's range, so exact numbers are in the
+    # picture and not guessed from a height.
+    if not binary:
+        window = max(win_end - start_t, 1)
+        steps = [
+            (int(x[i]), int(ends[i]), raw[i])
+            for i in range(len(x))
+            if not unknown[i] and ends[i] > x[i]
+        ]
+        if len(idx) < len(x) or len(steps) > _MAX_STEP_LABELS:
+            notes.append("no labels: too dense, exact values: vhdl-tools wave values")
+        else:
+            labelled = 0
+            for t0, t1, v in steps:
+                text = _fmt_value(info, _plain(v, kind))
+                if (t1 - t0) / window < _LABEL_CHAR_SHARE * len(text):
+                    continue
+                r = 0.5 if span == 0 else (float(v) - vmin) / span
+                below = r > 0.6
+                y_label = lane_base + r + (-0.06 if below else 0.06)
+                ax.annotate(
+                    text,
+                    xy=((t0 + t1) / 2 * scale, y_label),
+                    ha="center",
+                    va="top" if below else "bottom",
+                    fontsize=7,
+                    color="0.1",
+                )
+                labelled += 1
+            notes.append(f"labels on {labelled} of {len(steps)} steps")
+        if len(known):
+            lo = _fmt_value(info, _plain(vmin, kind))
+            hi = _fmt_value(info, _plain(vmax, kind))
+            for level, label in ((0.0, lo), (1.0, hi)) if span else ((0.5, lo),):
+                ax.annotate(
+                    label,
+                    xy=(1.004, lane_base + level),
+                    xycoords=("axes fraction", "data"),
+                    va="center",
+                    fontsize=6,
+                    color="0.4",
+                )
+            notes.append(f"min {lo}, max {hi}")
+
+    dec = f", decimated to {len(idx)} points" if len(idx) < n_changes else ""
+    lane = "binary" if binary else "numeric"
+    extra = "".join(f"; {note}" for note in notes)
+    return f"{lane} ({n_changes} changes{dec}{extra})"
+
+
+def _plain(value: object, kind: str) -> object:
+    """A value as the int or float format_value expects. A real signal stays a
+    float; an integer one that went through a float array is an int again."""
+    if isinstance(value, np.integer):
+        return int(value)
+    if isinstance(value, (float, np.floating)):
+        return float(value) if kind == "float" else int(value)
+    return value
 
 
 @tools.tool()
@@ -731,6 +850,7 @@ def peeper_plot(
     start: str | int = "0",
     end: str | int | None = None,
     out: str | None = None,
+    mark: list[str] | None = None,
 ) -> str:
     """Show me the waveforms: a PNG plot of these signals in this window.
 
@@ -744,6 +864,9 @@ def peeper_plot(
     Writes the PNG to `out` (default: a new temp file) and returns a text
     summary whose 'image:' line is the PNG path. For statistics
     use vhdl-tools wave analyze; for exact values use vhdl-tools wave values.
+    Numeric steps carry their values when they fit, and X/U/Z spans are red on
+    their own lane. mark draws a labelled vertical line at each given time,
+    such as the failing check's time from vhdl-tools vunit get-test-waveform.
     """
     error = _open(file)
     if error is not None:
@@ -802,6 +925,24 @@ def peeper_plot(
             f"{os.path.basename(f.path)}   [{_tm(f, start_t)}, {_tm(f, win_end)})"
         )
         ax.grid(axis="x", linewidth=0.3, alpha=0.4)
+        marked: list[str] = []
+        outside: list[str] = []
+        for m in mark or []:
+            t = _ticks(f, m)
+            if not start_t <= t <= win_end:
+                outside.append(_tm(f, t))
+                continue
+            ax.axvline(t * scale, color="red", linestyle="--", lw=1)
+            ax.annotate(
+                _tm(f, t),
+                xy=(t * scale, 1.0),
+                xycoords=("data", "axes fraction"),
+                ha="center",
+                va="bottom",
+                fontsize=7,
+                color="red",
+            )
+            marked.append(_tm(f, t))
         if out:
             png_path = os.path.abspath(out)
         else:
@@ -816,6 +957,9 @@ def peeper_plot(
             f"image:    {png_path}",
             f"traces:   {n}",
         ]
+        if marked or outside:
+            note = f" ({', '.join(outside)} outside the window)" if outside else ""
+            lines.insert(3, f"marks:    {', '.join(marked) or 'none'}{note}")
         for res, summary in zip(resolved, summaries, strict=True):
             note = f"  (matched {res.signal.leaf!r})" if res.note else ""
             lines.append(f"  {res.signal.full_name}{note}  {summary}")
