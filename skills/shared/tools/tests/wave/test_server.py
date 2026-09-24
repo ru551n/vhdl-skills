@@ -74,3 +74,43 @@ class TestServer:
 
     def test_instructions_mention_open_first(self) -> None:
         assert "vhdl-tools wave open" in tools.instructions
+
+
+class TestScopeSummary:
+    """`wave open` shows the design, not every package a testbench pulls in."""
+
+    GHDL = [
+        "standard", "textio", "std_logic_1164", "numeric_std", "check_pkg",
+        "run_pkg", "logger_pkg", "tb_strobe_gen.dut", "tb_strobe_gen",
+    ]
+    NVC = ["tb_strobe_gen.dut", "tb_strobe_gen", "vunit_lib.run_pkg", "vunit_lib.check_pkg"]
+
+    def test_ghdl_packages_are_counted_not_listed(self) -> None:
+        from vhdl_tools.wave.server import scope_summary
+
+        out = scope_summary(self.GHDL)
+        assert out.startswith("9: tb_strobe_gen, tb_strobe_gen.dut")
+        assert "7 package and library scopes not listed" in out
+        assert "logger_pkg" not in out
+
+    def test_nvc_library_scopes_are_counted_not_listed(self) -> None:
+        from vhdl_tools.wave.server import scope_summary
+
+        out = scope_summary(self.NVC)
+        assert out.startswith("4: tb_strobe_gen, tb_strobe_gen.dut")
+        assert "vunit_lib" not in out.split(" (")[0]
+        assert "2 package and library scopes not listed" in out
+
+    def test_without_a_design_tree_the_names_are_listed_up_to_a_limit(self) -> None:
+        from vhdl_tools.wave.server import scope_summary
+
+        names = [f"s{i}" for i in range(25)]
+        out = scope_summary(names)
+        assert out.startswith("25: s0, s1")
+        assert "s19" in out and "s20" not in out
+        assert "5 more not listed" in out
+
+    def test_a_small_flat_file_lists_everything(self) -> None:
+        from vhdl_tools.wave.server import scope_summary
+
+        assert scope_summary(["tb_wave"]) == "1: tb_wave"
