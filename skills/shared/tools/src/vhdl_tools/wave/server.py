@@ -911,13 +911,16 @@ def _draw_plot_lane(
                 text = _fmt_value(info, _plain(v, kind))
                 if (t1 - t0) / window < _LABEL_CHAR_SHARE * len(text):
                     continue
+                # Written just after the transition, as waveform viewers do: which
+                # step a label belongs to is then never in doubt.
                 r = 0.5 if span == 0 else (float(v) - vmin) / span
                 below = r > 0.6
-                y_label = lane_base + r + (-0.06 if below else 0.06)
                 ax.annotate(
                     text,
-                    xy=((t0 + t1) / 2 * scale, y_label),
-                    ha="center",
+                    xy=(t0 * scale, lane_base + r),
+                    xytext=(2, -2 if below else 2),
+                    textcoords="offset points",
+                    ha="left",
                     va="top" if below else "bottom",
                     fontsize=7,
                     color="0.1",
@@ -1028,11 +1031,7 @@ def peeper_plot(
             edges = rising_edges(
                 ct, cv, int(f.value_at(ci.full_name, start_t)), start_t
             )
-            clock_line = (
-                f"clock:    {ci.full_name}, {len(edges)} rising edges (dots: the"
-                " value each signal had just before the edge, as a register"
-                " samples it)"
-            )
+            clock_line = f"clock:    {ci.full_name}, {len(edges)} rising edges"
         n = len(resolved)
         fig, ax = plt.subplots(figsize=(10, 0.9 * n + 1.4))
         ax.set_xlim(start_t * scale, win_end * scale)
@@ -1111,6 +1110,32 @@ def peeper_plot(
                 color="red",
             )
             marked.append(_tm(f, t))
+        # The picture explains itself: a reader may have the image and nothing else.
+        legend_items = []
+        if any("unknown interval" in s for s in summaries):
+            legend_items.append("red: unknown (X/U/Z)")
+        if edges is not None:
+            legend_items.append(
+                f"dots: value just before each rising edge of {ci.full_name},"
+                " as a register samples it"
+            )
+        if marked:
+            legend_items.append(f"dashed: {', '.join(marked)}")
+        if end_line:
+            legend_items.append("grey: no data (past the end of the file)")
+        legend = " · ".join(legend_items)
+        if legend:
+            ax.annotate(
+                legend,
+                xy=(0.0, 0.0),
+                xycoords="axes fraction",
+                xytext=(0, -36),
+                textcoords="offset points",
+                ha="left",
+                va="top",
+                fontsize=7.5,
+                color="0.2",
+            )
         if out:
             png_path = os.path.abspath(out)
         else:
@@ -1125,12 +1150,14 @@ def peeper_plot(
             f"image:    {png_path}",
             f"traces:   {n}",
         ]
-        for extra in (clock_line, end_line):
-            if extra:
-                lines.insert(3, extra)
+        marks_line = None
         if marked or outside:
             note = f" ({', '.join(outside)} outside the window)" if outside else ""
-            lines.insert(3, f"marks:    {', '.join(marked) or 'none'}{note}")
+            marks_line = f"marks:    {', '.join(marked) or 'none'}{note}"
+        legend_line = f"legend:   {legend}" if legend else None
+        lines[3:3] = [
+            ln for ln in (legend_line, clock_line, marks_line, end_line) if ln
+        ]
         for res, summary in zip(resolved, summaries, strict=True):
             note = f"  (matched {res.signal.leaf!r})" if res.note else ""
             lines.append(f"  {res.signal.full_name}{note}  {summary}")

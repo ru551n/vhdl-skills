@@ -267,3 +267,58 @@ class TestSample:
 
         out = _text(peeper_sample(str(all_types_path), "clk", ["cnt"], max_rows=10))
         assert "showing 10 of" in out
+
+
+class TestThePictureExplainsItself:
+    """A reader who only has the image must not need the text summary."""
+
+    def test_the_legend_names_what_is_in_the_picture(self, tmp_path: Path) -> None:
+        path = tmp_path / "mixed.vcd"
+        path.write_text(MIXED_VCD)
+        out = _text(
+            peeper_plot(
+                str(path), ["valid", "cnt"], end="60ns", mark=["35ns"],
+                out=str(tmp_path / "p.png"),
+            )
+        )
+        legend = next(ln for ln in out.splitlines() if ln.startswith("legend:"))
+        assert "red: unknown (X/U/Z)" in legend
+        assert "dashed: 35ns" in legend
+        assert "grey: no data" in legend
+        assert "dots" not in legend  # no clock given
+
+    def test_the_legend_explains_the_clock_dots(self, tmp_path: Path) -> None:
+        path = tmp_path / "edge.vcd"
+        path.write_text(EDGE_VCD)
+        out = _text(
+            peeper_plot(
+                str(path), ["d"], end="20ns", clock="clk", out=str(tmp_path / "p.png")
+            )
+        )
+        legend = next(ln for ln in out.splitlines() if ln.startswith("legend:"))
+        assert "dots: value just before each rising edge of tb.clk" in legend
+
+    def test_nothing_to_explain_means_no_legend(self, tmp_path: Path) -> None:
+        path = tmp_path / "edge.vcd"
+        path.write_text(EDGE_VCD)
+        out = _text(peeper_plot(str(path), ["d"], end="20ns", out=str(tmp_path / "p.png")))
+        assert "legend:" not in out
+
+    def test_a_step_label_starts_at_its_step(self, all_types_path: Path) -> None:
+        import matplotlib.pyplot as plt
+
+        from vhdl_tools.wave.server import _STORE, _draw_plot_lane
+
+        f = _STORE.open(str(all_types_path))
+        info = f.resolve("cnt").signal
+        fig, ax = plt.subplots()
+        try:
+            _draw_plot_lane(ax, f, info, 0.0, 0, 50_000_000, 1.0, (0.0, 0.0, 1.0))
+            starts = set(int(t) for t in f.window(info.full_name, 0, 50_000_000)[0])
+            labels = [t for t in ax.texts if t.get_text().isdigit()]
+            assert labels
+            for label in labels:
+                assert label.get_horizontalalignment() == "left"
+                assert int(label.xy[0]) in starts | {0}
+        finally:
+            plt.close(fig)
