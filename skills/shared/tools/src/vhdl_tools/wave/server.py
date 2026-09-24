@@ -695,26 +695,26 @@ def _draw_plot_lane(
             note = f", showing {len(shown)} of {len(labels)} labels"
         plural = "" if len(xz_runs) == 1 else "s"
         return f"text ({len(runs)} runs, {len(xz_runs)} x/z interval{plural}{note})"
+    # A signal holds each value until its next change, so every lane is a
+    # staircase, and its last value is held to the end of the window. Straight
+    # lines between changes drew a counter as ramps that never happened.
     x = np.concatenate((np.array([start_t], dtype=np.int64), times))
+    idx = _decimate_idx(len(x))
+    x_drawn = np.append(x[idx], win_end) * scale
     if kind == "int" and (info.is_1bit or (info.bitwidth or 0) <= 1):
         y = np.concatenate((np.array([int(entering)], dtype=np.int64), values))
-        idx = _decimate_idx(len(x))
-        ax.step(
-            x[idx] * scale,
-            lane_base + y[idx],
-            where="post",
-            color=color,
-            lw=1,
-        )
+        y_drawn = lane_base + y[idx]
+        lw = 1.0
     else:
         allv = np.concatenate((np.array([entering], dtype=values.dtype), values))
         vmin, vmax = float(allv.min()), float(allv.max())
-        idx = _decimate_idx(len(x))
         if vmax == vmin:
-            yplot = np.full(len(idx), lane_base + 0.5)
+            y_drawn = np.full(len(idx), lane_base + 0.5)
         else:
-            yplot = lane_base + (allv[idx] - vmin) / (vmax - vmin)
-        ax.plot(x[idx] * scale, yplot, color=color, lw=0.8)
+            y_drawn = lane_base + (allv[idx] - vmin) / (vmax - vmin)
+        lw = 0.8
+    y_drawn = np.append(y_drawn, y_drawn[-1])
+    ax.step(x_drawn, y_drawn, where="post", color=color, lw=lw)
     dec = f", decimated to {len(idx)} points" if len(idx) < n_changes else ""
     lane = (
         "binary"
@@ -736,7 +736,7 @@ def peeper_plot(
 
     Answers "show me <signal(s)> around time A" / "what does the bus look
     like here?". One lane per signal: binary signals step between 0 and 1,
-    small numeric signals draw as a line, and wide buses plus string/enum
+    small numeric signals step between their values, and wide buses plus string/enum
     signals show their held values as text labels with X/Z spans shaded.
     Times are human-readable ('10ns', '1.5us') or integer file ticks; the
     window is [start, end) — omit end to run to the end of the file.
