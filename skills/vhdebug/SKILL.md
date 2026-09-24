@@ -37,7 +37,8 @@ A test that passes suspiciously fast, or whose `simulation stopped @` time is ne
 
 ### 2. Waveform evidence — `vhdl-tools wave`
 
-Given the waveform path (`--file <path>`):
+Given the waveform path (`--file <path>`), and only through these commands. Never open a waveform file (`.vcd`, `.fst`, `.ghw`) directly: no Read, `cat`, `head`, `grep` or script, not even to look at its header. Only `vhdl-tools wave` reads them. A waveform can be hundreds of megabytes, and one read of it can use up the whole context.
+
 1. `vhdl-tools wave open`
 2. `vhdl-tools wave search --pattern <name>` for exact hierarchical signal names
 3. focus on the window around the failing check's simulation time

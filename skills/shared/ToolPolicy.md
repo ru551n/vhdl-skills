@@ -33,6 +33,12 @@ builds in a background shell.
 Never invent a tool result. When a tool is unavailable, say so and use the
 fallback listed for it.
 
+**Never open a waveform file (`.vcd`, `.fst`, `.ghw`) directly**: no Read,
+`cat`, `head`, `tail`, `grep` or ad-hoc script, not even to look at its
+header, whatever its size appears to be. Only `vhdl-tools wave` reads them,
+and it answers with a few lines. A waveform can be hundreds of megabytes,
+and one direct read of it can use up the whole context.
+
 ## Tools
 
 ### 1. `corvidex-mcp`
@@ -241,9 +247,10 @@ suffixes (`clk` matches `tb.dut.clk`).
 | `analyze --signal S` | Clock period and duty, X/Z fraction, value statistics |
 | `plot --signals S... --out F.png` | A picture, only when it adds something |
 
-Query the smallest window around the failing check's time. Never dump or
-parse a large waveform by hand. Fallback: GTKWave for a person, or a short
-script for a tiny file.
+Query the smallest window around the failing check's time. Never read the
+file any other way (see Principle above). When `vhdl-tools wave` cannot run,
+say so and stop: the fallback is GTKWave, for a person to open, not a direct
+read of the file.
 
 ### 4. `vhdl-tools synth`
 

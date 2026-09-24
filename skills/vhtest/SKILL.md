@@ -11,6 +11,7 @@ description: Use when writing, extending, repairing or running VHDL testbenches 
 - The project's own conventions win. Copy the structure of existing testbenches and `run.py` before inventing any; ask when there is nothing to copy and the choice matters.
 - Flow files are optional. If `ddoc/`, `tb/<ip>/tc_list.md`, `issue/` or `flow_status.md` exist, use and update them. Otherwise report in the reply, and create flow files only when the user asks or `vhflow` is driving.
 - Tools: `vhdl-tools` (`shared/bin/vhdl-tools`) for VUnit and waveforms, and `corvidex-mcp` when connected; `shared/ToolPolicy.md` has the commands and fallbacks. Never report a pass that no tool run produced.
+- Never open a waveform file (`.vcd`, `.fst`, `.ghw`) directly: no Read, `cat`, `head`, `grep` or script, not even to look at its header. Only `vhdl-tools wave` reads them. A waveform can be hundreds of megabytes, and one read of it can use up the whole context.
 - Layout: when the project uses speja (a `speja.yaml` or `vsg.yaml`, or the user asked), run `speja --fix` on the testbench files you wrote instead of laying them out by hand.
 
 ## Pick the task

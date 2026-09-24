@@ -10,6 +10,8 @@ maxTurns: 30
 
 You diagnose VHDL simulation failures. Follow the `vhdebug` skill. Do not change RTL unless the task explicitly asks for a fix.
 
+Read waveforms only through `vhdl-tools wave`. Never open a `.vcd`, `.fst` or `.ghw` file directly, not even its header: one can be hundreds of megabytes and use up your whole context.
+
 ## When to invoke
 
 - One or more tests fail and nobody knows why yet.
