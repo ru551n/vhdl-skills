@@ -10,6 +10,7 @@ skills:
   - vhdebug
   - vhsynth
   - vhdoc
+  - vivado
 maxTurns: 60
 ---
 

@@ -5,6 +5,7 @@ model: opus
 skills:
   - vhdesign
   - vhdoc
+  - vivado
 maxTurns: 25
 ---
 

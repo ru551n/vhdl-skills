@@ -11,7 +11,7 @@ report, grounded in AMD's own guides (cited by number as pointers; the
 guides remain the authority). It is deliberately distinct from two things
 that already exist:
 
-- `shared/VivadoGotchas.md` — Vivado/tsfpga *tool quirks* that
+- `VivadoGotchas.md` — Vivado/tsfpga *tool quirks* that
   fail silently (hook ordering, XDC parsing, out-of-context estimate
   blindness, template-sensitive inference). When a rule below has a
   known silent-failure mode, it points at the gotcha by section title.
@@ -57,7 +57,7 @@ the writer of VHDL:
   and SLR assignment all work per hierarchy; a hierarchy whose inputs or
   outputs are combinational cannot be timed, floorplanned or reused in
   isolation. A registered boundary also makes a leaf's OOC build honest
-  — see `shared/VivadoGotchas.md`, "A leaf entity's out-of-context Fmax is blind
+  — see `VivadoGotchas.md`, "A leaf entity's out-of-context Fmax is blind
   to cones that start at an input port".
 - **Hierarchy is a tool boundary, not a synthesis boundary.** The
   default `synth_design -flatten_hierarchy rebuilt` optimises across
@@ -169,7 +169,7 @@ one array access per port) are in `shared/TimingAndResources.md` §7.
   Part B.
 - The accumulate must be unconditional between multiply and add. A
   condition in between falls back to fabric for the whole array — see
-  `shared/VivadoGotchas.md`, "Vivado's DSP48E1 MACC inference is
+  `VivadoGotchas.md`, "Vivado's DSP48E1 MACC inference is
   template-sensitive". Gate with the DSP's own clock enable (a registered
   `ce`) or with a `first`-flag load (`shared/DesignPatterns.md`,
   "Position-boundary flag").
@@ -597,7 +597,7 @@ handshakes across *related* clocks are invisible to both and need review.
   groups, bus skew, I/O delays; then false paths, max/min delay,
   multicycle, case analysis, disable timing. A clock referenced before it
   is defined is an error; a generated clock defined before its master is
-  an error. See `shared/VivadoGotchas.md`, "Netlist (out-of-context) synthesis
+  an error. See `VivadoGotchas.md`, "Netlist (out-of-context) synthesis
   specifics" for how processing order decides which of two files
   touching the same object wins.
 - **Clocks.** `create_clock` on input ports (and 7-series GT output
@@ -607,7 +607,7 @@ handshakes across *related* clocks are invisible to both and need review.
   that has an auto-derived clock replaces it (no more auto clock there).
   Use `create_generated_clock` only for clocks the tool cannot derive
   (fabric dividers, which should not exist — A5) or to rename. See
-  `shared/VivadoGotchas.md`, "A user `create_clock` on a plain port can silently
+  `VivadoGotchas.md`, "A user `create_clock` on a plain port can silently
   produce zero clocks".
 - **I/O delays are mandatory** for every timed pin: `set_input_delay`
   (max = external Tco + board data delay + clock delay to the external
@@ -647,7 +647,7 @@ handshakes across *related* clocks are invisible to both and need review.
   `USED_IN_IMPLEMENTATION` gate a file to one stage (synthesis-only for
   attributes that shape the netlist, implementation-only for
   placement); a `DONT_TOUCH` in a synthesis XDC still propagates.
-- XDC is an SDC-subset parser, not Tcl — see `shared/VivadoGotchas.md`, "XDC
+- XDC is an SDC-subset parser, not Tcl — see `VivadoGotchas.md`, "XDC
   constraint files only execute a restricted command subset".
 
 ### A8. Timing-closure methodology (UG949 ch. "Timing Closure"; UG906; UG1292 quick reference)
@@ -768,9 +768,9 @@ each removed 100+ endpoints from their target family while individually
 costing the shipping frequency's margin. On a plateau, judge a rework by
 both signals together (target gone AND floor unchanged-or-better), never
 by the first alone. The full argument, with a worked progression, is in
-`shared/VivadoGotchas.md`, "A leaf entity's out-of-context Fmax is blind …",
+`VivadoGotchas.md`, "A leaf entity's out-of-context Fmax is blind …",
 corollaries. Delegate reading a critical path and choosing the
-restructuring to a strong model (`shared/VivadoGotchas.md`, "Always delegate
+restructuring to a strong model (`VivadoGotchas.md`, "Always delegate
 timing analysis and timing fixes to a strong model").
 
 ### A9. Resource usage (UG949 ch. "Reviewing Utilization"; UG901; UG474/UG574/AM005)
@@ -816,7 +816,7 @@ timing analysis and timing fixes to a strong model").
   other DSP-count levers.
 - **Sums are leaf-additive.** FF, BRAM, URAM and DSP counts add exactly
   across a composition; use that to detect a lost inference in the top
-  report (`shared/VivadoGotchas.md`, "A timing fix in one leaf can change another
+  report (`VivadoGotchas.md`, "A timing fix in one leaf can change another
   leaf's RAM/DSP inference"; `shared/TimingAndResources.md` §7).
 - **Control sets** (A1) and **high-fanout nets** are utilisation
   problems before they are timing problems: `report_control_sets`,
@@ -899,7 +899,7 @@ timing analysis and timing fixes to a strong model").
   register-to-register timing **upper bound**; `-mode out_of_context`
   suppresses I/O buffer inference; `HD.CLK_SRC` tells the tool where the
   clock buffer will sit; port-driven registers are not retimed in OOC.
-  Its blind spots are the subject of `shared/VivadoGotchas.md`, "A leaf entity's
+  Its blind spots are the subject of `VivadoGotchas.md`, "A leaf entity's
   out-of-context Fmax is blind to cones that start at an input port" and
   "Enabling timing analysis changes synthesis itself".
 - **Incremental compile** (`read_checkpoint -incremental` before
@@ -936,12 +936,12 @@ Verified against the tsfpga source (`tsfpga/module.py`,
   through bitstream, `synth_only`/`from_impl` in `build()`);
   `VivadoNetlistProject(..., analyze_synthesis_timing=False,
   build_result_checkers=[...])` for out-of-context leaf area (and an
-  optional synthesis-only Fmax estimate — read `shared/VivadoGotchas.md`,
+  optional synthesis-only Fmax estimate — read `VivadoGotchas.md`,
   "tsfpga's netlist-build timing-estimate flag" before trusting it);
   `VivadoIpCoreProject` for IP generation only. `build_step_hooks` are
   `BuildStepTclHook(tcl_file, hook_step)` with steps such as
   `STEPS.SYNTH_DESIGN.TCL.POST`, `STEPS.ROUTE_DESIGN.TCL.PRE` — and see
-  `shared/VivadoGotchas.md`, "Post-synthesis TCL hooks cannot reliably query the
+  `VivadoGotchas.md`, "Post-synthesis TCL hooks cannot reliably query the
   constraint/clock state".
 - **Checkers** (`tsfpga.vivado.build_result_checker`): `TotalLuts`,
   `LogicLuts`, `LutRams`, `Srls`, `Ffs`, `Ramb36`, `Ramb18`, `Ramb`
@@ -965,7 +965,7 @@ Verified against the tsfpga source (`tsfpga/module.py`,
   hdl-modules; use `xpm_cdc_sync_rst`/`xpm_cdc_async_rst` or a project
   block for that.
 - `build_fpga.py` conventions and the MCP wrappers around them are in
-  `shared/VivadoGotchas.md` ("MCP preference") and `vhsynth`.
+  `VivadoGotchas.md` ("MCP preference") and `vhsynth`.
 - **`build_fpga.py`'s non-zero exit on a timing failure is not a build
   error** — a real place-and-route that completes but does not meet
   timing still reports `fail` and a non-zero process exit, same as a
@@ -2136,7 +2136,7 @@ XMP product selection guides (Versal).
 
 Load alongside this skill:
 
-- `shared/VivadoGotchas.md` — the silent-failure catalogue for
+- `VivadoGotchas.md` — the silent-failure catalogue for
   the same tool; every "see gotchas" pointer above resolves there.
 - `shared/TimingAndResources.md` — vendor-neutral timing-closure
   fundamentals and the ways designs fail them; this skill assumes it.

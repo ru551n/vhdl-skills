@@ -5,6 +5,7 @@ model: opus
 skills:
   - vhfill
   - vhtest
+  - vivado
 maxTurns: 30
 ---
 
