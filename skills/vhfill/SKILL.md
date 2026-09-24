@@ -21,7 +21,7 @@ Use whichever exist, in this order: the module's existing testbench (under test-
 - Before writing VHDL: `shared/HouseStyle.md`, then the sections of `shared/CodingStyle.md` you need.
 - Datapaths and timing structure: `shared/TimingAndResources.md` sections 2 (per-command configuration), 5 (freezing a pipeline), 7 (template-sensitive inference); `shared/DesignPatterns.md`
 - AXI interfaces: `shared/Axi4.md`; CDC: `shared/CdcPolicy.md`; reset versus initial values: `shared/FpgaInitialization.md`
-- AMD/Xilinx inference templates and attributes: `shared/VivadoDesign.md`
+- AMD/Xilinx inference templates and attributes: the `vivado` skill
 
 ## Tools
 

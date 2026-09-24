@@ -1,6 +1,6 @@
 ---
 name: vhsynth
-description: Use when synthesizing VHDL or answering questions about FPGA resources or timing — LUT, FF, BRAM or DSP counts, failed RAM or DSP inference, Yosys+GHDL or Vivado/tsfpga builds, Fmax and timing closure, critical paths, XDC constraints, utilization or DRC reports, or AMD/Xilinx device specifics (7-series, UltraScale+, Versal). Typical requests include "synthesize...", "how big is this", "does this meet timing", "why is timing failing".
+description: Use when synthesizing VHDL or answering questions about FPGA resources or timing — LUT, FF, BRAM or DSP counts, failed RAM or DSP inference, Yosys+GHDL or Vivado/tsfpga builds, Fmax and timing closure, critical paths, or utilization or DRC reports. Vivado-specific templates, XDC and AMD/Xilinx device facts are in the `vivado` skill. Typical requests include "synthesize...", "how big is this", "does this meet timing", "why is timing failing".
 ---
 
 # VHDL Synthesis and Timing
@@ -14,8 +14,8 @@ description: Use when synthesizing VHDL or answering questions about FPGA resour
 
 ## References by topic
 
-- Any Vivado or tsfpga Vivado build, timing estimate, XDC or report: `shared/VivadoGotchas.md`. Read it before trusting a Vivado number; its failure modes are silent.
-- AMD/Xilinx methodology, inference templates, attributes and per-family device facts: `shared/VivadoDesign.md`
+- Any Vivado or tsfpga Vivado build, timing estimate, XDC or report: the `vivado` skill, whose `VivadoGotchas.md` is read before trusting a Vivado number; its failure modes are silent.
+- AMD/Xilinx methodology, inference templates, attributes and per-family device facts: the `vivado` skill
 - Vendor-neutral timing and resource rules: `shared/TimingAndResources.md`
 - RAM inference failures: the "Memory" section of `shared/ModernVHDL.md` (`grep -n Memory`)
 - Source sets for synthesis: `shared/HierarchyFilelist.md`
@@ -217,7 +217,7 @@ Record:
 For a tsfpga project's own builds, use `vhdl-tools synth project-list-builds`,
 `project-build`, and the `project-get-timing-report`,
 `project-get-utilization-report` and `project-get-drc-report` commands (those
-three need `vivado`). Read `shared/VivadoGotchas.md` before trusting their
+three need `vivado`). Read the `vivado` skill's `VivadoGotchas.md` before trusting their
 numbers.
 
 ## Scope
@@ -250,7 +250,7 @@ a report:
   custom post-synthesis TCL hook when a slack number is actually needed.
   When a tsfpga project's Vivado build has run, retrieve the number with
   `vhdl-tools synth project-get-timing-report` rather than manually parsing
-  `timing.rpt`; see `shared/VivadoGotchas.md` for the hook-reliability caveats
+  `timing.rpt`; see the `vivado` skill's `VivadoGotchas.md` for the hook-reliability caveats
   behind where that report data actually comes from.
 - **Full timing closure** requires place-and-route (and, for signoff,
   the vendor's static timing analysis on the routed design). Reserve this

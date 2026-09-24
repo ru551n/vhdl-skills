@@ -211,7 +211,7 @@ Record:
 
 If target/family is not known, do not assume initialization support.
 
-When the target is an AMD/Vivado part, load `shared/VivadoDesign.md` for
+When the target is an AMD/Vivado part, load the `vivado` skill for
 the architecture-level decisions it constrains: clock-domain and reset
 planning, CDC structure and constraints, hard-block use (BRAM/URAM/DSP
 modes, NoC, PS ports), SLR assignment, and the per-family device facts.

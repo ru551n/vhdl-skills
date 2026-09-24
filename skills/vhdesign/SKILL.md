@@ -28,7 +28,7 @@ Read both when a module design shows that the architecture itself must change.
 - AXI4 / AXI4-Stream selection and mandatory rules: `shared/Axi4.md`
 - CDC: `shared/CdcPolicy.md`; reset versus initial values: `shared/FpgaInitialization.md`
 - Reuse and decomposition: `shared/ReusableRTL.md`; patterns: `shared/DesignPatterns.md`
-- AMD/Xilinx targets: `shared/VivadoDesign.md`
+- AMD/Xilinx targets: the `vivado` skill
 
 ## Ask the user instead of defaulting
 

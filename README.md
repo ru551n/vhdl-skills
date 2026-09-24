@@ -12,9 +12,13 @@ reads Agent Skills.
 | `vhfill` | Writing or changing synthesizable RTL, and checking it compiles, elaborates and passes its tests |
 | `vhtest` | Writing, repairing and running testbenches and VUnit projects, including VUnit 4 to 5 migration |
 | `vhdebug` | Finding the root cause of a failing or hanging simulation |
-| `vhsynth` | Synthesis, resource counts, timing closure, Vivado builds and reports |
+| `vhsynth` | Synthesis, resource counts, timing closure, and running Vivado builds and reports |
 | `vhdoc` | Documenting or explaining VHDL modules and IPs |
 | `vhflow` | Taking a whole IP through every phase, tracked in `flow_status.md` |
+| `vivado` | AMD/Xilinx with Vivado: inference templates, attributes, XDC and CDC constraints, timing closure, trusting a Vivado report, and 7-series, UltraScale(+), Versal and Zynq specifics |
+
+The `vh*` skills are vendor-neutral. What depends on the vendor lives in a skill of its own,
+which they hand over to: `vivado` for AMD/Xilinx. Other vendors get one the same way.
 
 Each `SKILL.md` is short. It says when the skill applies and points at
 reference files that the agent reads only for the sections a task needs.
@@ -28,7 +32,8 @@ driving.
 vhdl-skills/
 ├── .claude-plugin/            # plugin.json and marketplace.json
 ├── skills/
-│   ├── vh*/                   # the seven skills
+│   ├── vh*/                   # the seven vendor-neutral skills
+│   ├── vivado/                # AMD/Xilinx with Vivado: the vendor layer
 │   └── shared/                # reference docs, plus:
 │       ├── bin/vhdl-tools     #   VUnit, synthesis and waveform command-line tool
 │       └── tools/             #   its Python source, tests and command reference

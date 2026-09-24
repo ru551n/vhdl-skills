@@ -4,6 +4,7 @@ description: Use this agent when VHDL must be synthesized or its resources or ti
 model: opus
 skills:
   - vhsynth
+  - vivado
 maxTurns: 30
 ---
 
