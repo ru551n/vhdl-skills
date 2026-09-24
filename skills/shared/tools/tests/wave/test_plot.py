@@ -95,3 +95,34 @@ class TestPeeperPlot:
         text = _text(peeper_plot(str(all_types_path), ["clk"], out=str(out)))
         assert f"image:    {out}" in text
         assert out.read_bytes().startswith(PNG_MAGIC)
+
+
+class TestLaneDrawing:
+    """How a lane is drawn, not only what the summary says about it."""
+
+    def _lane(self, path: Path, name: str, end: int):
+        import matplotlib.pyplot as plt
+
+        from vhdl_tools.wave.server import _STORE, _draw_plot_lane
+
+        f = _STORE.open(str(path))
+        info = f.resolve(name).signal
+        fig, ax = plt.subplots()
+        try:
+            _draw_plot_lane(ax, f, info, 0.0, 0, end, 1.0, (0.0, 0.0, 1.0))
+            return ax.get_lines()[-1]
+        finally:
+            plt.close(fig)
+
+    def test_a_counter_is_a_staircase(self, all_types_path: Path) -> None:
+        # A counter holds each value until its next change. Joining the change
+        # points with straight lines drew ramps and slopes that never happened.
+        line = self._lane(all_types_path, "cnt", 50_000_000)
+        assert line.get_drawstyle() == "steps-post"
+
+    def test_every_lane_holds_its_last_value_to_the_window_end(
+        self, all_types_path: Path
+    ) -> None:
+        for name in ("cnt", "clk"):
+            line = self._lane(all_types_path, name, 50_000_000)
+            assert line.get_xdata()[-1] == 50_000_000, name
