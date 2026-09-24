@@ -12,6 +12,9 @@ Use the purpose-built tool before the manual equivalent:
 - `corvidex-mcp`, when the host has it connected, for semantic search and
   exact code navigation. "Prefer" is a routing decision there, not a
   blanket "never grep" rule; see its section below.
+- `speja`, when the project or the user has chosen it, for VHDL layout:
+  it formats, so layout is never done by hand. Optional; see its section
+  below.
 
 `vhdl-tools <group> <command> --help` shows every option, and
 `shared/tools/README.md` has the full command table. Every command also
@@ -316,6 +319,37 @@ assuming the RTL or the tool is wrong:
 5. Record the workaround's scope and expiry condition (e.g. "drop once
    GHDL issue #NNNN is fixed, or once the vendored module is patched
    upstream") so it isn't mistaken for a permanent part of the design.
+
+### 5. `speja` (optional)
+
+[speja](https://github.com/ru551n/speja) formats VHDL and checks it, with
+the VHDL Style Guide's rule set and a lint layer. It is not required: use it
+when the project has a `speja.yaml` or `vsg.yaml`, or the user asks for it.
+Check it is installed first (`speja --version`; `pip install speja`).
+
+After writing or changing VHDL, over the files you touched:
+
+| Command | Use |
+|---|---|
+| `speja --fix FILE...` | Lay the files out, and apply the safe rule fixes |
+| `speja --check style,lint FILE...` | What is left; exit status 0 means no error |
+| `speja --explain RULE` | What a rule id means |
+
+Rules:
+1. The project's own configuration wins. When the project has none and the
+   user wants speja, copy `shared/speja.yaml` into the project root as
+   `speja.yaml`, so the editor, the command line and CI agree; it encodes
+   `shared/HouseStyle.md`'s layout.
+2. Do not lay out by hand what speja will lay out: its next run would undo
+   it. The conventions in `shared/HouseStyle.md` above its Layout part
+   (naming, reset policy, architecture names) are still yours to follow.
+3. speja finds a `speja.yaml` by itself, from each file's directory upwards.
+   A project that configures it in a `vsg.yaml` instead needs `-c vsg.yaml`
+   on every command.
+4. speja does not change a file with a syntax error. Fix the syntax first.
+
+Fallback: without speja, follow the Layout part of `shared/HouseStyle.md`
+by hand.
 
 ## Recording the backend
 

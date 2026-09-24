@@ -24,6 +24,7 @@ Inspect the project, check which tools work, and maintain a resumable `flow_stat
 | Compile and test | `vhdl-tools vunit compile`, `elaborate` (after every interface change), `run-tests` | the project's `run.py`, GHDL |
 | Waveform debug | `vhdl-tools wave` | GTKWave |
 | Synthesis | `vhdl-tools synth synthesize`; `project-build` and the report commands for Vivado | Yosys by hand, `build_fpga.py` |
+| Layout, when the project or user uses speja | `speja --fix` then `speja --check style,lint` on the changed files (`shared/ToolPolicy.md`) | the Layout part of `shared/HouseStyle.md`, by hand |
 
 ## Phases
 

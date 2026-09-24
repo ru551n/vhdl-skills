@@ -198,95 +198,6 @@ an implementation:
 A filled/complete module must not retain unresolved `--@` markers — treat
 one as a signal that the module isn't actually done yet, not decoration.
 
-## Declaration and port-map formatting
-
-Do not column-align the `:`/`:=`/`=>` delimiter across a block of port,
-generic, or signal declarations, or across a port map/generic map — one
-space either side, ragged columns left where they fall (confirmed real
-upstream practice, not just a preference: `hdl-modules/modules/fifo/src/
-fifo.vhd`'s own `generic`/`port` blocks and `fifo_wrapper.vhd`'s `port map`
-are both unaligned despite widely varying identifier lengths):
-
-```vhdl
-port (
-  clk : in std_ulogic;
-  write_ready : out std_ulogic := '1';
-  write_valid : in std_ulogic;
-  write_data : in std_ulogic_vector(width - 1 downto 0)
-);
-```
-
-not
-
-```vhdl
-port (
-  clk         : in std_ulogic;
-  write_ready : out std_ulogic := '1';
-  write_valid : in std_ulogic;
-  write_data  : in std_ulogic_vector(width - 1 downto 0)
-);
-```
-
-Same for port maps/generic maps:
-
-```vhdl
-port map (
-  clk_write => clk_write,
-  write_ready => write_ready,
-  write_almost_full => almost_full
-);
-```
-
-Aligned columns look tidy the day they're written but rot the moment any one
-name changes length, forcing a whitespace-only diff across every other line
-in the block just to re-align — not worth the churn, and not what upstream
-actually does.
-
-## One assignment per line
-
-Every signal assignment (`<=`) and variable assignment (`:=`) is on its own
-line, and nothing else shares that line: no second assignment, and no
-`if ... then`, `elsif`, `else`, `end if`, `when ... =>` choice or `end case`.
-
-```vhdl
-if rst = '1' then
-  count <= (others => '0');
-  valid <= '0';
-elsif enable = '1' then
-  count <= count + 1;
-end if;
-
-case state is
-  when idle =>
-    state <= running;
-  when running =>
-    state <= idle;
-end case;
-```
-
-not
-
-```vhdl
-if rst = '1' then count <= (others => '0'); valid <= '0';
-elsif enable = '1' then count <= count + 1; end if;
-
-case state is
-  when idle => state <= running;
-  when running => state <= idle;
-end case;
-```
-
-The rule is about statements. A declaration's initial value
-(`signal count : u_unsigned(7 downto 0) := (others => '0');`) is a
-declaration, not an assignment, and is fine. One assignment may still span
-several lines (a conditional or selected assignment, a long aggregate); that
-is still one assignment.
-
-Why: a line then holds exactly one assignment, so a diff, `git blame`, a
-compiler or simulator error, a coverage hit or a lint finding points at that
-assignment alone. A second assignment on the same line is easy to miss in
-review, and its changes hide inside the first one's diff.
-
 ## Architecture naming
 
 Use `a` for a synthesizable RTL architecture and `tb` for a testbench
@@ -427,3 +338,105 @@ a useful convention to keep for consistency with vendored code:
 -- and modules/window3x3/doc/window3x3_proposal.md.
 entity window3x3 is
 ```
+
+## Layout
+
+Everything above is a convention a formatter cannot decide. This part is only layout, and a
+formatter owns it when the project uses one.
+
+**If the project uses speja** (a `speja.yaml` or `vsg.yaml` in the repository, or the user asked
+for it), do not lay code out by hand: run `speja --fix` on the files you changed and let it
+decide. `shared/speja.yaml` encodes the rules below and the rest of hdl-modules' layout; copy it
+into the project as `speja.yaml` when the project has no configuration of its own.
+`shared/ToolPolicy.md` has the commands.
+
+**Otherwise**, follow these by hand.
+
+### Declaration and port-map formatting
+
+Do not column-align the `:`/`:=`/`=>` delimiter across a block of port,
+generic, or signal declarations, or across a port map/generic map — one
+space either side, ragged columns left where they fall (confirmed real
+upstream practice, not just a preference: `hdl-modules/modules/fifo/src/
+fifo.vhd`'s own `generic`/`port` blocks and `fifo_wrapper.vhd`'s `port map`
+are both unaligned despite widely varying identifier lengths):
+
+```vhdl
+port (
+  clk : in std_ulogic;
+  write_ready : out std_ulogic := '1';
+  write_valid : in std_ulogic;
+  write_data : in std_ulogic_vector(width - 1 downto 0)
+);
+```
+
+not
+
+```vhdl
+port (
+  clk         : in std_ulogic;
+  write_ready : out std_ulogic := '1';
+  write_valid : in std_ulogic;
+  write_data  : in std_ulogic_vector(width - 1 downto 0)
+);
+```
+
+Same for port maps/generic maps:
+
+```vhdl
+port map (
+  clk_write => clk_write,
+  write_ready => write_ready,
+  write_almost_full => almost_full
+);
+```
+
+Aligned columns look tidy the day they're written but rot the moment any one
+name changes length, forcing a whitespace-only diff across every other line
+in the block just to re-align — not worth the churn, and not what upstream
+actually does.
+
+### One assignment per line
+
+Every signal assignment (`<=`) and variable assignment (`:=`) is on its own
+line, and nothing else shares that line: no second assignment, and no
+`if ... then`, `elsif`, `else`, `end if`, `when ... =>` choice or `end case`.
+
+```vhdl
+if rst = '1' then
+  count <= (others => '0');
+  valid <= '0';
+elsif enable = '1' then
+  count <= count + 1;
+end if;
+
+case state is
+  when idle =>
+    state <= running;
+  when running =>
+    state <= idle;
+end case;
+```
+
+not
+
+```vhdl
+if rst = '1' then count <= (others => '0'); valid <= '0';
+elsif enable = '1' then count <= count + 1; end if;
+
+case state is
+  when idle => state <= running;
+  when running => state <= idle;
+end case;
+```
+
+The rule is about statements. A declaration's initial value
+(`signal count : u_unsigned(7 downto 0) := (others => '0');`) is a
+declaration, not an assignment, and is fine. One assignment may still span
+several lines (a conditional or selected assignment, a long aggregate); that
+is still one assignment.
+
+Why: a line then holds exactly one assignment, so a diff, `git blame`, a
+compiler or simulator error, a coverage hit or a lint finding points at that
+assignment alone. A second assignment on the same line is easy to miss in
+review, and its changes hide inside the first one's diff.

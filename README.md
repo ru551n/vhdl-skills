@@ -31,6 +31,7 @@ vhdl-skills/
 │   ├── vh*/                   # the seven skills
 │   └── shared/                # reference docs, plus:
 │       ├── bin/vhdl-tools     #   VUnit, synthesis and waveform command-line tool
+│       ├── speja.yaml         #   house layout for speja, the optional formatter
 │       └── tools/             #   its Python source, tests and command reference
 ├── agents/                    # designer, coder, tester, debugger, synthesizer, documentation, orchestrator
 ├── evals/                     # skill-trigger evals for `claude plugin eval`
