@@ -87,7 +87,7 @@ Times are `10ns` / `1.5us` or integer file ticks. Signals are full names or uniq
 | `analyze` | `--file F` (required), `--signal S` (required), `--start T` (default 0), `--end T` | Period/frequency/duty, pulse widths, X/Z time, min/max/mean, value distribution |
 | `latency` | `--file F` (required), `--a S` (required), `--b S` (required), `--edge {rise,any}` (default rise), `--start T` (default 0), `--end T` | Edge-to-edge delay A -> B: min/max/mean/p50/stddev. A and B the same signal: the interval between its edges |
 | `find` | `--file F` (required), `--signal S` (required), `--value V` (required), `--start T` (default 0), `--limit N` (default 100) | Intervals where a signal holds a value |
-| `plot` | `--file F` (required), `--signals S [S ...]` (required), `--start T` (default 0), `--end T`, `--out PNG` (default: new temp file) | Write a PNG plot; prints its path (`image:` line) + per-trace summary |
+| `plot` | `--file F` (required), `--signals S [S ...]` (required), `--start T` (default 0), `--end T`, `--out PNG` (default: new temp file), `--mark T [T ...]` | Write a PNG plot: numeric lanes as steps labelled with their values and range, X/U/Z in red, a dashed line at each mark; prints its path (`image:` line) + per-trace summary |
 
 ## Development
 

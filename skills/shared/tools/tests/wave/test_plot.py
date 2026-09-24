@@ -49,7 +49,7 @@ class TestPeeperPlot:
         assert "text (" in state_line
         assert "x/z interval" in text
         real_line = next(line for line in text.splitlines() if "real_sig" in line)
-        assert "numeric (99 changes)" in real_line
+        assert "numeric (99 changes" in real_line
 
     def test_decimated(self, bench_path: Path) -> None:
         text = _text(peeper_plot(str(bench_path), ["clk"]))
@@ -126,3 +126,71 @@ class TestLaneDrawing:
         for name in ("cnt", "clk"):
             line = self._lane(all_types_path, name, 50_000_000)
             assert line.get_xdata()[-1] == 50_000_000, name
+
+
+MIXED_VCD = """$timescale 1ns $end
+$scope module tb $end
+$var wire 1 ! valid $end
+$var wire 4 " cnt [3:0] $end
+$upscope $end
+$enddefinitions $end
+#0
+x!
+b0000 "
+#10
+0!
+b0001 "
+#20
+1!
+b0010 "
+#30
+0!
+bxxxx "
+#40
+b0011 "
+"""
+
+
+class TestPlotForAnLlm:
+    """What an agent needs from a picture: shape, exact values, unknowns, the
+    failing time."""
+
+    def _plot(self, tmp_path: Path, **kwargs: object) -> str:
+        path = tmp_path / "mixed.vcd"
+        path.write_text(MIXED_VCD)
+        return _text(
+            peeper_plot(
+                str(path),
+                ["valid", "cnt"],
+                end="50ns",
+                out=str(tmp_path / "p.png"),
+                **kwargs,
+            )
+        )
+
+    def test_unknowns_stay_on_the_signal_lane_in_red(self, tmp_path: Path) -> None:
+        # A std_logic that is X for a while is still a binary lane, and a
+        # counter that goes X is still a numeric lane: the unknown span is
+        # drawn red on it rather than turning the lane into text.
+        out = self._plot(tmp_path)
+        valid = next(ln for ln in out.splitlines() if "tb.valid" in ln)
+        cnt = next(ln for ln in out.splitlines() if "tb.cnt" in ln)
+        assert "binary" in valid and "1 unknown interval in red" in valid
+        assert "numeric" in cnt and "1 unknown interval in red" in cnt
+
+    def test_numeric_steps_carry_their_values(self, tmp_path: Path) -> None:
+        out = self._plot(tmp_path)
+        cnt = next(ln for ln in out.splitlines() if "tb.cnt" in ln)
+        assert "labels on 4 of 4 steps" in cnt
+        assert "min 0, max 3" in cnt
+
+    def test_a_mark_is_drawn_and_reported(self, tmp_path: Path) -> None:
+        out = self._plot(tmp_path, mark=["35ns", "80ns"])
+        assert "marks:    35ns" in out
+        assert "80ns outside the window" in out
+
+    def test_dense_numeric_lanes_drop_their_labels(self, bench_path: Path) -> None:
+        # 200 changes in the window: far too many values to write on the steps.
+        out = _text(peeper_plot(str(bench_path), ["tb_bench.cnt"], end="2us"))
+        cnt = next(ln for ln in out.splitlines() if "tb_bench.cnt" in ln)
+        assert "no labels: too dense" in cnt
