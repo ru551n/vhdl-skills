@@ -210,12 +210,13 @@ async def _probe(
 
 
 @tools.tool()
-async def vunit_status() -> str:
+async def vunit_status(simulator: str | None = None) -> str:
     """Report configuration: project dir, run script, interpreter,
     VUnit version, whether a simulator appears available, and which
     waveform-recording flags the VUnit install supports. Call this first
     when diagnosing setup problems. The waveform-flag support check is
-    probed on every call."""
+    probed on every call. simulator reports for that simulator, as
+    run-tests --simulator would use it."""
     try:
         config = get_config()
     except ConfigError as exc:
@@ -243,7 +244,7 @@ async def vunit_status() -> str:
             "new --wave flag: headless waveforms — records vcd on GHDL, fst on NVC"
         )
     else:
-        sim = effective_simulator(config)
+        sim = effective_simulator(config, simulator)
         if sim and sim.strip().lower() == "nvc":
             wave_note = (
                 "no headless waveforms: NVC on this VUnit needs the --wave "
@@ -255,7 +256,9 @@ async def vunit_status() -> str:
             )
 
     sims = [s for s in SIMULATORS if shutil.which(s)]
-    if config.simulator:
+    if simulator:
+        sims_note = f"{simulator} (--simulator, this call)"
+    elif config.simulator:
         sims_note = f"VUNIT_MCP_SIMULATOR={config.simulator} (passthrough)"
     elif os.environ.get("VUNIT_SIMULATOR"):
         # Effective simulator via VUnit's own env var (not overridden by us).
@@ -275,7 +278,7 @@ async def vunit_status() -> str:
 
     return "\n".join(
         [
-            "vunit-mcp status",
+            "vhdl-tools vunit status",
             f"- project dir : {config.project_dir}",
             f"- run script  : {config.run_script}",
             f"- virtualenv  : {venv_note}",
@@ -397,7 +400,7 @@ async def vunit_run_tests(
     is always written next to the output dir for vhdl-tools vunit get-report.
     Requires a simulator. Pass ``simulator`` to run with a specific
     simulator for this call only (e.g. 'nvc'), overriding the
-    VUNIT_MCP_SIMULATOR environment variable. Set waveform_format to record one waveform per
+    VUNIT_MCP_SIMULATOR environment variable. Set --waveform-format to record one waveform per
     test: 'vcd'/'ghw' work on GHDL with any VUnit, but headless recording
     on NVC needs the --wave flag (upstream PR #1101) in the *project's*
     VUnit — vhdl-tools has no VUnit of its own, so the project's install
@@ -609,7 +612,8 @@ async def vunit_get_report(
     output_dir = _effective_output_dir(config)
     tests = report.failed if input.only_failing else report.tests
     header = "Failing tests:" if input.only_failing else "Per-test:"
-    lines = [report.summary(), "", header]
+    # The first line only: the detailed list below repeats the summary's list.
+    lines = [report.summary().split("\n", 1)[0], "", header]
     if input.only_failing and not tests:
         lines.append("(none)")
     for t in tests:
@@ -693,7 +697,7 @@ _WAVEFORM_USE = {
     ),
     ".ghw": (
         "An agent cannot open GHW itself. For vhdl-tools wave analysis, "
-        're-run the test with waveform_format="vcd" or "fst" and call this '
+        're-run the test with --waveform-format vcd or fst and call this '
         "tool again. GHW is otherwise meant for a human to open in the "
         "gtkwave GUI — tell the user the path if they want to do that."
     ),
@@ -713,9 +717,9 @@ def _human_size(num: int) -> str:
 @tools.tool()
 async def vunit_get_test_waveform(input: GetTestWaveformInput) -> str:
     """Resolves the waveform file recorded for a test by vhdl-tools vunit run-tests
-    (waveform_format 'vcd', 'ghw', or 'fst') and returns its path — pass a
+    (--waveform-format vcd, ghw or fst) and returns its path — pass a
     VCD/FST path to vhdl-tools wave; for a GHW file, re-run
-    with waveform_format='vcd' or 'fst' instead for vhdl-tools wave analysis, or
+    with --waveform-format vcd or fst instead for vhdl-tools wave analysis, or
     tell the human user to open the GHW file in the gtkwave GUI themselves
     (an agent cannot do that). Also reports the failing check's simulation
     time from the test log when present, so you know where to look. No
@@ -741,7 +745,7 @@ async def vunit_get_test_waveform(input: GetTestWaveformInput) -> str:
     if wave is None:
         return (
             f"Error: No waveform recorded for {input.test_name}. Run "
-            "vhdl-tools vunit run-tests with waveform_format to record one (vcd on GHDL, "
+            "vhdl-tools vunit run-tests --waveform-format to record one (vcd on GHDL, "
             "fst on NVC), then call this tool again."
         )
 

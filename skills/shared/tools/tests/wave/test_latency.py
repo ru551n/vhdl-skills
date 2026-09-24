@@ -24,13 +24,15 @@ class TestPeeperLatency:
         assert "last:" in lines
 
     def test_rise_to_rise_same_signal(self, all_types_path: Path) -> None:
-        # A rising edge matches itself on the same signal -> 0 delay.
+        # The same signal on both sides: each edge pairs with the next one,
+        # which is the interval between edges (here the 10 ns clock period),
+        # not with itself at 0.
         out = peeper_latency(str(all_types_path), "clk", "clk", edge="rise", end="50ns")
         lines = out.splitlines()
         assert "a:        tb_wave.clk (5 rising edges)" in lines
-        assert "pairs:    5 (each a edge" in out
-        assert "max:      0ns" in lines
-        assert "min:      0ns" in lines
+        assert "pairs:    4 (each edge -> the next edge)" in out
+        assert "max:      10ns" in lines
+        assert "min:      10ns" in lines
 
     def test_rise_needs_binary(self, all_types_path: Path) -> None:
         # state is a string signal -> rise is rejected.
@@ -77,6 +79,6 @@ class TestPeeperLatency:
 
     def test_bench(self, bench_path: Path) -> None:
         out = peeper_latency(str(bench_path), "clk", "clk", edge="rise")
-        # Same signal, rise->rise: each edge matches itself -> 0.
-        assert "max:      0ns" in out
+        # Same signal, rise->rise: each edge pairs with the next -> the period.
+        assert "max:      10ns" in out
         assert "pairs:" in out

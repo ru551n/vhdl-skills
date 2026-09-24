@@ -353,7 +353,9 @@ def peeper_latency(
     reports min/max/mean/p50/stddev over all such pairs, plus the first
     and last pairs. edge='rise' needs both signals to be binary (0/1);
     use edge='any' for any change. Times are human-readable or ticks.
-    For one signal's own timing use vhdl-tools wave analyze.
+    With A and B the same signal, each edge pairs with the next one: the
+    interval between its edges. vhdl-tools wave analyze gives a clock's
+    period and duty directly.
     """
     error = _open(file)
     if error is not None:
@@ -413,7 +415,10 @@ def peeper_latency(
                 f"window:   [{_tm(f, start_t)}, {end_label})\n"
                 f"no {ea_name} on {ib.full_name} in this window"
             )
-        idx = np.searchsorted(eb, ea, side="left")
+        # One signal against itself: each edge pairs with the next one, the
+        # interval between edges. "At or after" would pair every edge with itself.
+        same = ia.full_name == ib.full_name
+        idx = np.searchsorted(eb, ea, side="right" if same else "left")
         matched = idx < len(eb)
         if not matched.any():
             return (
@@ -434,8 +439,17 @@ def peeper_latency(
             f"a:        {ia.full_name} ({len(ea)} {ea_name})",
             f"b:        {ib.full_name} ({len(eb)} {ea_name})",
             f"window:   [{_tm(f, start_t)}, {end_label})",
-            f"pairs:    {len(deltas)} (each a edge -> first b edge at/after it)"
-            + (f"; {unmatched} a edges unmatched (b quiet)" if unmatched else ""),
+            f"pairs:    {len(deltas)} "
+            + (
+                "(each edge -> the next edge)"
+                if same
+                else "(each a edge -> first b edge at/after it)"
+            )
+            + (
+                f"; {unmatched} a edges unmatched (b quiet)"
+                if unmatched and not same
+                else ""
+            ),
             f"min:      {fmt(deltas.min())}",
             f"max:      {fmt(deltas.max())}",
             f"mean:     {fmt(deltas.mean())}",

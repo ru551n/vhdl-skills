@@ -243,7 +243,7 @@ suffixes (`clk` matches `tb.dut.clk`).
 | `value-at --time T --signals S...` | Values at one instant |
 | `values --signal S --start T --end T` | Transitions in a window |
 | `find --signal S --value V` | When a signal held a value |
-| `latency --a A --b B` | Edge-to-edge delay |
+| `latency --a A --b B` | Edge-to-edge delay; with A and B the same signal, the interval between its edges |
 | `analyze --signal S` | Clock period and duty, X/Z fraction, value statistics |
 | `plot --signals S... --out F.png` | A picture, only when it adds something |
 

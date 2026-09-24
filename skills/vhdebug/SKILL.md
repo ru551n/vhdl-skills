@@ -46,7 +46,7 @@ Given the waveform path (`--file <path>`), and only through these commands. Neve
    - `value-at --time <t> --signals ...` for exact values at a timestamp
    - `values --signal <s> --start <t> --end <t>` for transitions in a small window
    - `find --signal <s> --value <v>` for state or value occupancy
-   - `latency --a <s> --b <s>` for event-to-event cycle or time relationships
+   - `latency --a <s> --b <s>` for event-to-event cycle or time relationships; the same signal for both gives the interval between its edges
    - `analyze --signal <s>` for clocks, pulses, X/Z and distributions
    - `plot --signals ... --out <file>.png` only when a picture adds something
 
