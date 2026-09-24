@@ -58,6 +58,22 @@ def _strip_optional(ann: Any) -> Any:
     return ann
 
 
+class _ExtendSplitCommas(argparse.Action):
+    """`--x a b`, `--x a,b` and `--x a --x b` all give [a, b]: agents write a list
+    every one of those ways."""
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Any,
+        option_string: str | None = None,
+    ) -> None:
+        items = list(getattr(namespace, self.dest, None) or [])
+        items += [p.strip() for v in values for p in v.split(",") if p.strip()]
+        setattr(namespace, self.dest, items)
+
+
 def _add_option(parser: argparse.ArgumentParser, name: str, field: Any) -> None:
     ann = _strip_optional(field.annotation)
     origin = get_origin(ann)
@@ -74,6 +90,8 @@ def _add_option(parser: argparse.ArgumentParser, name: str, field: Any) -> None:
     kwargs["help"] = help_text.strip().replace("%", "%%")
     if ann is bool:
         kwargs["action"] = argparse.BooleanOptionalAction
+    elif origin is list and get_args(ann) == (str,):
+        kwargs.update(nargs="+", action=_ExtendSplitCommas)
     elif origin is list:
         kwargs.update(nargs="+", action="extend")
     elif origin is dict or (isinstance(ann, type) and issubclass(ann, BaseModel)):

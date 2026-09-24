@@ -248,6 +248,10 @@ suffixes (`clk` matches `tb.dut.clk`).
 | `analyze --signal S` | Clock period and duty, X/Z fraction, value statistics |
 | `plot --signals S... --mark T... --out F.png` | A picture of the shape, read back as an image: numeric steps labelled with their values, X/U/Z in red, a dashed line at each `--mark` (pass the failing check's time), and with `--clock C` a dot at each rising edge on the value a register samples; past the file's end is shaded. Exact numbers still come from the commands above |
 
+A waveform lacks arrays unless the simulator was told to dump them: GHDL's
+VCD never has them, NVC does with `nvc.sim_flags` `--dump-arrays` and an FST
+recording. `wave search` answers whether a signal is there at all.
+
 Query the smallest window around the failing check's time. Never read the
 file any other way (see Principle above). When `vhdl-tools wave` cannot run,
 say so and stop: the fallback is GTKWave, for a person to open, not a direct

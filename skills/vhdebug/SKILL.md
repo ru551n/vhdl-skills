@@ -51,6 +51,12 @@ Given the waveform path (`--file <path>`), and only through these commands. Neve
    - `analyze --signal <s>` for clocks, pulses, X/Z and distributions
    - `plot --signals ... --mark <failing time> --clock <clk> --out <file>.png`, then read the PNG, when the shape matters: counting, wrapping, stalls, X spreading, one signal's timing against another's. Numeric steps carry their values and unknowns are red, but take the numbers you report from the commands above, not from the picture.
 
+### What a waveform can lack
+
+A waveform holds only what the simulator dumped, and two gaps come up often:
+- **Arrays** (memories, register files, arrays of vectors). GHDL's VCD never contains them. With NVC, add `vu.set_sim_option("nvc.sim_flags", ["--dump-arrays"])` in `run.py` and record `--waveform-format fst`; elements then appear as `memory.[0]`, `memory.[1]`, ... Without them, a stale or overwritten entry has to be inferred from addresses and data, and the report must say so.
+- **Internal enables and handshakes** (`write_beat`, `read_beat`, a state register): search for them with `wave search` and include them in `sample` and `plot`. The ports alone often show the symptom but not the cause.
+
 ### 3. Source/context evidence — corvidex-mcp
 
 When available:

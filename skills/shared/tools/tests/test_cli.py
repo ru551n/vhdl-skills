@@ -107,3 +107,15 @@ def test_elaborate_passes_flag(tmp_path, monkeypatch):
     # The completed run's output dir survives into the next process.
     pointer = project / ".vunit-mcp-cache" / "last_output_dir"
     assert Path(pointer.read_text()) == project / "vunit_out"
+
+
+def test_list_options_take_commas_as_well_as_spaces(capsys):
+    """Agents write `--signals a,b` as often as `--signals a b`; both work."""
+    fst = str(Path(__file__).parent / "wave" / "fixtures" / "all_types.fst")
+    for signals in (["clk", "cnt"], ["clk,cnt"], ["clk,", "cnt"]):
+        with pytest.raises(SystemExit) as exit_info:
+            cli.main(["wave", "value-at", "--file", fst, "--time", "10ns",
+                      "--signals", *signals])
+        assert exit_info.value.code == 0, signals
+        out = capsys.readouterr().out
+        assert "tb_wave.clk" in out and "tb_wave.cnt" in out, signals
