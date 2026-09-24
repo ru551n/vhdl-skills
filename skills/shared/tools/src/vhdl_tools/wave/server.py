@@ -26,7 +26,7 @@ from vhdl_tools.registry import ToolError, ToolRegistry
 
 from vhdl_tools.wave.analyze import analyze, is_xz, rising_edges, value_runs
 from vhdl_tools.wave.env import env_int
-from vhdl_tools.wave.formatting import format_value
+from vhdl_tools.wave.formatting import format_value, truncation_note
 from vhdl_tools.wave.store import (
     AmbiguousSignal,
     FileStore,
@@ -320,6 +320,78 @@ def peeper_value_at(file: str, time: str | int, signals: list[str]) -> str:
     except (AmbiguousSignal, SignalNotFound, TimeValueError) as exc:
         return ToolError(str(exc))
     return "\n".join([f"file: {f.path}", f"time: {_tm(f, t)}", *rows])
+
+
+@tools.tool()
+def peeper_sample(
+    file: str,
+    clock: str,
+    signals: list[str],
+    start: str | int = "0",
+    end: str | int | None = None,
+    max_rows: int = 100,
+) -> str:
+    """What did these signals hold at each rising edge of this clock?
+
+    Answers "walk me through the cycles around the failure": one row per
+    rising edge of `clock` in [start, end), one column per signal, each the
+    value it had just before the edge, which is what a register clocked there
+    samples. A signal that changes on the edge itself therefore shows its old
+    value, as the hardware sees it. At most max_rows rows; narrow the window
+    for more.
+    """
+    error = _open(file)
+    if error is not None:
+        return ToolError(error)
+    f = _STORE.open(file)
+    if not signals:
+        return ToolError("no signals given — pass at least one signal name")
+    try:
+        start_t = _ticks(f, start)
+        end_t = None if end is None else _ticks(f, end)
+        win_end = end_t if end_t is not None else f.duration() + 1
+        if win_end <= start_t:
+            return ToolError(
+                f"window is empty: end ({_tm(f, win_end)}) "
+                f"must be after start ({_tm(f, start_t)})"
+            )
+        ci = f.resolve(clock).signal
+        ct, cv = f.window(ci.full_name, start_t, win_end)
+        if f.packed(ci.full_name).kind != "int" or np.any((cv < 0) | (cv > 1)):
+            return ToolError(f"clock {ci.full_name} is not a binary signal")
+        edges = rising_edges(ct, cv, int(f.value_at(ci.full_name, start_t)), start_t)
+        infos = []
+        for name in signals:
+            info = f.resolve(name).signal
+            if info not in infos:
+                infos.append(info)
+    except (AmbiguousSignal, SignalNotFound, TimeValueError) as exc:
+        return ToolError(str(exc))
+    lines = [
+        f"file:     {f.path}",
+        f"clock:    {ci.full_name}, {len(edges)} rising edges in"
+        f" [{_tm(f, start_t)}, {_tm(f, win_end)})",
+        "values:   each signal just before the edge, as a register samples it",
+        "columns:  " + ", ".join(f"{i.leaf} = {i.full_name}" for i in infos),
+        "",
+    ]
+    shown = edges[:max_rows]
+    table = [["edge", *(i.leaf for i in infos)]]
+    for e in shown:
+        row = [_tm(f, int(e))]
+        for info in infos:
+            value = f.value_at(info.full_name, int(e) - 1) if e > 0 else None
+            row.append("-" if value is None else _fmt_value(info, value))
+        table.append(row)
+    widths = [max(len(r[c]) for r in table) for c in range(len(table[0]))]
+    for r in table:
+        lines.append("  ".join(v.ljust(w) for v, w in zip(r, widths, strict=True)))
+    lines = [ln.rstrip() for ln in lines]
+    if len(edges) > len(shown):
+        lines.append(
+            f"({truncation_note(len(shown), len(edges), 'edges; narrow the window')})"
+        )
+    return "\n".join(lines)
 
 
 @tools.tool()
@@ -654,8 +726,13 @@ def _draw_plot_lane(
     win_end: int,
     scale: float,
     color: tuple[float, ...],
+    edges: np.ndarray | None = None,
 ) -> str:
-    """Draw one signal's window in its lane; return a one-line summary."""
+    """Draw one signal's window in its lane; return a one-line summary.
+
+    With `edges`, a dot at each one on the value the signal had just before it:
+    the value a register clocked there samples.
+    """
     packed = f.packed(info.full_name)
     times, values = f.window(info.full_name, start_t, win_end)
     entering = f.value_at(info.full_name, start_t)
@@ -783,6 +860,40 @@ def _draw_plot_lane(
         plural = "" if len(spans) == 1 else "s"
         notes.append(f"{len(spans)} unknown interval{plural} in red")
 
+    # A lane that never changes has no edge to show its level: say it.
+    if binary and not unknown.any() and len(np.unique(num)) == 1:
+        level = _fmt_value(info, _plain(raw[0], kind))
+        ax.annotate(
+            f"constant {level}",
+            xy=(0.01, lane_base + 0.5),
+            xycoords=("axes fraction", "data"),
+            va="center",
+            fontsize=7,
+            color="0.1",
+        )
+        notes.append(f"constant {level}")
+
+    if edges is not None and len(edges):
+        before = np.searchsorted(x, edges, side="left") - 1
+        ok = before >= 0
+        sampled = rel[before[ok]]
+        known_dot = ~np.isnan(sampled)
+        ax.plot(
+            edges[ok][known_dot] * scale,
+            lane_base + sampled[known_dot],
+            "o",
+            ms=2.5,
+            color=color,
+        )
+        if (~known_dot).any():
+            ax.plot(
+                edges[ok][~known_dot] * scale,
+                np.full(int((~known_dot).sum()), lane_base + 0.5),
+                "o",
+                ms=2.5,
+                color="red",
+            )
+
     # Values on the steps and the lane's range, so exact numbers are in the
     # picture and not guessed from a height.
     if not binary:
@@ -816,7 +927,11 @@ def _draw_plot_lane(
         if len(known):
             lo = _fmt_value(info, _plain(vmin, kind))
             hi = _fmt_value(info, _plain(vmax, kind))
-            for level, label in ((0.0, lo), (1.0, hi)) if span else ((0.5, lo),):
+            if span:
+                marks = ((0.0, f"min {lo}"), (1.0, f"max {hi}"))
+            else:
+                marks = ((0.5, f"= {lo}"),)
+            for level, label in marks:
                 ax.annotate(
                     label,
                     xy=(1.004, lane_base + level),
@@ -851,6 +966,7 @@ def peeper_plot(
     end: str | int | None = None,
     out: str | None = None,
     mark: list[str] | None = None,
+    clock: str | None = None,
 ) -> str:
     """Show me the waveforms: a PNG plot of these signals in this window.
 
@@ -867,6 +983,9 @@ def peeper_plot(
     Numeric steps carry their values when they fit, and X/U/Z spans are red on
     their own lane. mark draws a labelled vertical line at each given time,
     such as the failing check's time from vhdl-tools vunit get-test-waveform.
+    clock puts a dot at each of its rising edges on the value each signal had
+    just before it, the value a register samples, and a faint line at the edge.
+    Past the last recorded time the window is shaded: there is no data there.
     """
     error = _open(file)
     if error is not None:
@@ -899,6 +1018,21 @@ def peeper_plot(
                 resolved.append(res)
         unit, per_unit = display_unit(duration, f.ticks_per_second)
         scale = float(f.ticks_per_second / per_unit)
+        edges = None
+        clock_line = None
+        if clock is not None:
+            ci = f.resolve(clock).signal
+            ct, cv = f.window(ci.full_name, start_t, win_end)
+            if f.packed(ci.full_name).kind != "int" or np.any((cv < 0) | (cv > 1)):
+                return ToolError(f"clock {ci.full_name} is not a binary signal")
+            edges = rising_edges(
+                ct, cv, int(f.value_at(ci.full_name, start_t)), start_t
+            )
+            clock_line = (
+                f"clock:    {ci.full_name}, {len(edges)} rising edges (dots: the"
+                " value each signal had just before the edge, as a register"
+                " samples it)"
+            )
         n = len(resolved)
         fig, ax = plt.subplots(figsize=(10, 0.9 * n + 1.4))
         ax.set_xlim(start_t * scale, win_end * scale)
@@ -915,8 +1049,42 @@ def peeper_plot(
                     win_end,
                     scale,
                     color,
+                    edges,
                 )
             )
+        if edges is not None:
+            ax.vlines(
+                edges * scale,
+                -0.2,
+                (n - 1) * (_LANE_HEIGHT + _LANE_GAP) + _LANE_HEIGHT + 0.2,
+                color="0.85",
+                lw=0.5,
+                zorder=0,
+            )
+        # No data past the file's last recorded time: shade it, so a missing
+        # edge there does not read as a signal that stopped.
+        data_end = max(
+            [duration]
+            + [
+                int(f.packed(r.signal.full_name).times[-1])
+                for r in resolved
+                if len(f.packed(r.signal.full_name).times)
+            ]
+        )
+        end_line = None
+        if win_end > data_end:
+            ax.axvspan(
+                data_end * scale, win_end * scale, color="0.93", zorder=0, lw=0
+            )
+            ax.annotate(
+                "no data",
+                xy=((data_end + win_end) / 2 * scale, 0.02),
+                xycoords=("data", "axes fraction"),
+                ha="center",
+                fontsize=7,
+                color="0.4",
+            )
+            end_line = f"data:     no data after {_tm(f, data_end)} (end of file)"
         ax.set_yticks([i * (_LANE_HEIGHT + _LANE_GAP) + 0.5 for i in range(n)])
         ax.set_yticklabels([res.signal.leaf for res in resolved])
         ax.set_ylim(-0.2, (n - 1) * (_LANE_HEIGHT + _LANE_GAP) + _LANE_HEIGHT + 0.2)
@@ -957,6 +1125,9 @@ def peeper_plot(
             f"image:    {png_path}",
             f"traces:   {n}",
         ]
+        for extra in (clock_line, end_line):
+            if extra:
+                lines.insert(3, extra)
         if marked or outside:
             note = f" ({', '.join(outside)} outside the window)" if outside else ""
             lines.insert(3, f"marks:    {', '.join(marked) or 'none'}{note}")

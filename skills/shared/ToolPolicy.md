@@ -241,11 +241,12 @@ suffixes (`clk` matches `tb.dut.clk`).
 | `open` | Timescale, duration, signal count, and the design's scopes (package scopes are counted, not listed) |
 | `search --pattern P` | Exact hierarchical signal names |
 | `value-at --time T --signals S...` | Values at one instant |
+| `sample --clock C --signals S... --start T --end T` | One row per rising edge of the clock, each signal's value just before it, as a register samples it: the cycle-by-cycle view of a synchronous design |
 | `values --signal S --start T --end T` | Transitions in a window |
 | `find --signal S --value V` | When a signal held a value |
 | `latency --a A --b B` | Edge-to-edge delay; with A and B the same signal, the interval between its edges |
 | `analyze --signal S` | Clock period and duty, X/Z fraction, value statistics |
-| `plot --signals S... --mark T... --out F.png` | A picture of the shape, read back as an image: numeric steps labelled with their values, X/U/Z in red, a dashed line at each `--mark` (pass the failing check's time). Exact numbers still come from the commands above |
+| `plot --signals S... --mark T... --out F.png` | A picture of the shape, read back as an image: numeric steps labelled with their values, X/U/Z in red, a dashed line at each `--mark` (pass the failing check's time), and with `--clock C` a dot at each rising edge on the value a register samples; past the file's end is shaded. Exact numbers still come from the commands above |
 
 Query the smallest window around the failing check's time. Never read the
 file any other way (see Principle above). When `vhdl-tools wave` cannot run,

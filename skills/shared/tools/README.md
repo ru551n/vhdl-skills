@@ -84,10 +84,11 @@ Times are `10ns` / `1.5us` or integer file ticks. Signals are full names or uniq
 | `search` | `--file F` (required), `--pattern S`, `--limit N` (default 100) | List signals (substring filter) |
 | `values` | `--file F` (required), `--signal S` (required), `--start T` (default 0), `--end T`, `--max-changes N` (default 1000) | Change list of one signal in `[start, end)` |
 | `value-at` | `--file F` (required), `--time T` (required), `--signals S [S ...]` (required) | Values of several signals at one time |
+| `sample` | `--file F` (required), `--clock C` (required), `--signals S [S ...]` (required), `--start T` (default 0), `--end T`, `--max-rows N` (default 100) | One row per rising edge of C: each signal's value just before the edge, as a register samples it |
 | `analyze` | `--file F` (required), `--signal S` (required), `--start T` (default 0), `--end T` | Period/frequency/duty, pulse widths, X/Z time, min/max/mean, value distribution |
 | `latency` | `--file F` (required), `--a S` (required), `--b S` (required), `--edge {rise,any}` (default rise), `--start T` (default 0), `--end T` | Edge-to-edge delay A -> B: min/max/mean/p50/stddev. A and B the same signal: the interval between its edges |
 | `find` | `--file F` (required), `--signal S` (required), `--value V` (required), `--start T` (default 0), `--limit N` (default 100) | Intervals where a signal holds a value |
-| `plot` | `--file F` (required), `--signals S [S ...]` (required), `--start T` (default 0), `--end T`, `--out PNG` (default: new temp file), `--mark T [T ...]` | Write a PNG plot: numeric lanes as steps labelled with their values and range, X/U/Z in red, a dashed line at each mark; prints its path (`image:` line) + per-trace summary |
+| `plot` | `--file F` (required), `--signals S [S ...]` (required), `--start T` (default 0), `--end T`, `--out PNG` (default: new temp file), `--mark T [T ...]`, `--clock C` | Write a PNG plot: numeric lanes as steps labelled with their values and range, flat lanes with their level, X/U/Z in red, a dashed line at each mark, dots at C's rising edges on the sampled values, no-data region shaded; prints its path (`image:` line) + per-trace summary |
 
 ## Development
 

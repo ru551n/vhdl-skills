@@ -43,12 +43,13 @@ Given the waveform path (`--file <path>`), and only through these commands. Neve
 2. `vhdl-tools wave search --pattern <name>` for exact hierarchical signal names
 3. focus on the window around the failing check's simulation time
 4. use:
-   - `value-at --time <t> --signals ...` for exact values at a timestamp
+   - `sample --clock <clk> --signals ... --start <t> --end <t>` for a synchronous design: a table of every signal at each rising edge, the values registers actually sample. Prefer it to calling `value-at` edge by edge
+   - `value-at --time <t> --signals ...` for exact values at one timestamp
    - `values --signal <s> --start <t> --end <t>` for transitions in a small window
    - `find --signal <s> --value <v>` for state or value occupancy
    - `latency --a <s> --b <s>` for event-to-event cycle or time relationships; the same signal for both gives the interval between its edges
    - `analyze --signal <s>` for clocks, pulses, X/Z and distributions
-   - `plot --signals ... --mark <failing time> --out <file>.png`, then read the PNG, when the shape matters: counting, wrapping, stalls, X spreading, one signal's timing against another's. Numeric steps carry their values and unknowns are red, but take the numbers you report from the commands above, not from the picture.
+   - `plot --signals ... --mark <failing time> --clock <clk> --out <file>.png`, then read the PNG, when the shape matters: counting, wrapping, stalls, X spreading, one signal's timing against another's. Numeric steps carry their values and unknowns are red, but take the numbers you report from the commands above, not from the picture.
 
 ### 3. Source/context evidence — corvidex-mcp
 

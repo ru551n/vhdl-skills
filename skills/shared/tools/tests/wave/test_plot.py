@@ -194,3 +194,76 @@ class TestPlotForAnLlm:
         out = _text(peeper_plot(str(bench_path), ["tb_bench.cnt"], end="2us"))
         cnt = next(ln for ln in out.splitlines() if "tb_bench.cnt" in ln)
         assert "no labels: too dense" in cnt
+
+
+EDGE_VCD = """$timescale 1ns $end
+$scope module tb $end
+$var wire 1 ! clk $end
+$var wire 4 " d [3:0] $end
+$var wire 1 # en $end
+$upscope $end
+$enddefinitions $end
+#0
+0!
+b0000 "
+1#
+#5
+1!
+b0001 "
+#10
+0!
+#15
+1!
+b0010 "
+#20
+0!
+"""
+
+
+class TestWhatTheImageAgentFoundHard:
+    """Each case an agent reading a plot could not settle from the picture."""
+
+    def _plot(self, tmp_path: Path, signals: list[str], **kwargs: object) -> str:
+        path = tmp_path / "edge.vcd"
+        path.write_text(EDGE_VCD)
+        return _text(
+            peeper_plot(str(path), signals, out=str(tmp_path / "p.png"), **kwargs)
+        )
+
+    def test_a_flat_binary_lane_says_its_level(self, tmp_path: Path) -> None:
+        out = self._plot(tmp_path, ["en"], end="20ns")
+        assert "constant 1" in next(ln for ln in out.splitlines() if "tb.en" in ln)
+
+    def test_the_range_is_named(self, tmp_path: Path) -> None:
+        out = self._plot(tmp_path, ["d"], end="20ns")
+        assert "min 0, max 2" in next(ln for ln in out.splitlines() if "tb.d" in ln)
+
+    def test_the_end_of_the_data_is_shown(self, tmp_path: Path) -> None:
+        out = self._plot(tmp_path, ["clk", "d"], end="40ns")
+        assert "no data after 20ns (end of file)" in out
+
+    def test_sampled_values_are_marked_at_clock_edges(self, tmp_path: Path) -> None:
+        # d changes on the very edges it is sampled at: the dot shows the
+        # value a register sees, the one before the edge.
+        out = self._plot(tmp_path, ["d"], end="20ns", clock="clk")
+        assert "clock:    tb.clk, 2 rising edges" in out
+
+
+class TestSample:
+    def test_one_row_per_rising_edge_with_the_value_before_it(
+        self, tmp_path: Path
+    ) -> None:
+        from vhdl_tools.wave.server import peeper_sample
+
+        path = tmp_path / "edge.vcd"
+        path.write_text(EDGE_VCD)
+        out = _text(peeper_sample(str(path), "clk", ["d", "en"]))
+        rows = [ln.split() for ln in out.splitlines() if ln.startswith(("5ns", "15ns"))]
+        # d changes on each edge; the register sees the old value.
+        assert rows == [["5ns", "0", "1"], ["15ns", "1", "1"]]
+
+    def test_rows_are_limited(self, all_types_path: Path) -> None:
+        from vhdl_tools.wave.server import peeper_sample
+
+        out = _text(peeper_sample(str(all_types_path), "clk", ["cnt"], max_rows=10))
+        assert "showing 10 of" in out
