@@ -14,9 +14,9 @@ compilation misses, without simulating anything.
 
 ### 2. Run tests
 
-`vhdl-tools vunit run-tests --test-patterns '<pattern>' --num-threads 0`
+`vhdl-tools vunit run-tests --test-patterns '<pattern>'`
 
-- **Parallelism.** `--num-threads 0` uses every logical CPU. GHDL's per-test elaborate-and-start cost dominates at the default of one thread, so always pass it unless debugging one test interactively.
+- **Parallelism.** Tests run on half the logical CPUs by default, leaving the rest for the editor, the agent and anything else running. VUnit's own default of one thread is slow, because GHDL's per-test elaborate-and-start cost dominates. Pass `--num-threads N` only to change that: `1` when debugging one test interactively, fewer when other simulation runs share the machine.
 - **Scope.** Run the smallest pattern that answers the question; run full regressions only when required.
 - **Waveforms.** Add `--waveform-format vcd` (GHDL) or `--waveform-format fst` (NVC) so a failing test can be diagnosed at signal level. Skip it when the run is expected to be green and no debugging is planned.
 - **Simulator.** VUnit 5 has no `--simulator` flag of its own; it reads `VUNIT_SIMULATOR`. `vhdl-tools vunit run-tests --simulator nvc` sets it for one call, and `VUNIT_MCP_SIMULATOR` sets it for every call. Pass it whenever more than one simulator is on `PATH`. Prefer NVC for speed (about 0.1 s per test against 1-5 s on GHDL 7.0); use GHDL when its tooling is required.
@@ -49,7 +49,7 @@ Do not claim a root cause unless it is directly obvious; `vhdebug` owns diagnosi
 If `vhdl-tools` cannot run (no `uv`, or a project it cannot drive):
 1. run the project's VUnit `run.py` directly — select the simulator with
    the `VUNIT_SIMULATOR` env var (`VUNIT_SIMULATOR=nvc python run.py ...`),
-   and pass `-p 0` for all-CPU parallelism
+   and pass `-p $(( $(nproc) / 2 ))` to run on half the CPUs
 2. use standalone GHDL only for a non-VUnit project
 
 For standalone tests, process exit status plus the final `[FINISH] PASS/FAIL` token determine verdict.

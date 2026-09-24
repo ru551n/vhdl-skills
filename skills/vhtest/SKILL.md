@@ -35,9 +35,9 @@ A new testbench usually needs `planning.md` then `authoring.md`. A failing test 
 ## Core commands
 
 - `vhdl-tools vunit elaborate --test-patterns '<pattern>'`: elaborate without simulating, which catches port, generic and type mismatches that analyze-only compilation misses.
-- `vhdl-tools vunit run-tests --test-patterns '<pattern>' --num-threads 0`: run on all CPUs. Pass `--simulator nvc` or `--simulator ghdl` whenever more than one simulator is on `PATH`.
+- `vhdl-tools vunit run-tests --test-patterns '<pattern>'`: runs on half the logical CPUs unless `--num-threads N` says otherwise. Pass `--simulator nvc` or `--simulator ghdl` whenever more than one simulator is on `PATH`.
 - `vhdl-tools vunit get-report --only-failing`, then `get-test-log --test-name <test>`.
-- Without `uv`, the fallback is the project's `python run.py` (`--elaborate`, `-p 0`, `VUNIT_SIMULATOR=nvc`).
+- Without `uv`, the fallback is the project's `python run.py` (`--elaborate`, `-p $(( $(nproc) / 2 ))`, `VUNIT_SIMULATOR=nvc`).
 
 ## References
 
