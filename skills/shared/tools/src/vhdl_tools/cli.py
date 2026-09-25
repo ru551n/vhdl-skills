@@ -31,6 +31,11 @@ GROUPS = {
         "Yosys+GHDL synthesis and tsfpga project builds",
     ),
     "wave": ("vhdl_tools.wave.server", "peeper_", "VCD/FST waveform measurements"),
+    "vivado": (
+        "vhdl_tools.vivado.server",
+        "vivado_",
+        "Query a built Vivado design (.dcp) through a persistent Vivado",
+    ),
 }
 
 
@@ -150,7 +155,7 @@ def main(argv: list[str] | None = None) -> None:
     argv = sys.argv[1:] if argv is None else list(argv)
     parser = argparse.ArgumentParser(
         prog="vhdl-tools",
-        description="VUnit, synthesis and waveform tools for HDL projects.",
+        description="VUnit, synthesis, waveform and Vivado design-query tools for HDL projects.",
     )
     groups = parser.add_subparsers(dest="group", required=True, metavar="group")
     registry: ToolRegistry | None = None

@@ -290,6 +290,10 @@ Rules:
 Fallback: Yosys with the GHDL plugin by hand, or the project's
 `build_fpga.py` and its generated report files.
 
+To query a design that is already built (paths, logic depth, fanout,
+structure) without rebuilding it, use `vhdl-tools vivado` on its checkpoint;
+the `vivado` skill has the commands and rules.
+
 ### Multi-library designs
 
 When the design under synthesis spans more than one VHDL library — e.g. a

@@ -1,6 +1,6 @@
 # vhdl-tools
 
-One CLI, `vhdl-tools <group> <command> [options]`, replacing three MCP servers:
+One CLI, `vhdl-tools <group> <command> [options]`. Three groups replace MCP servers:
 
 | Group | Ported from | Commit |
 |---|---|---|
@@ -8,13 +8,15 @@ One CLI, `vhdl-tools <group> <command> [options]`, replacing three MCP servers:
 | `synth` | [ru551n/tsfpga-mcp](https://github.com/ru551n/tsfpga-mcp) (`tsfpga_mcp`) | `04ba5de` |
 | `wave` | [ru551n/peeper-mcp](https://github.com/ru551n/peeper-mcp) (`peeper_mcp`) | `d468acf` |
 
+The fourth group, `vivado`, is native: it queries a built Vivado checkpoint through a persistent Vivado session.
+
 Command = MCP tool name without its prefix, `_` -> `-` (`vunit_run_tests` -> `vunit run-tests`).
 Run it through `skills/shared/bin/vhdl-tools`, which calls `uv run --project` on this directory and keeps your working directory.
 
 ## Requirements
 
 - [uv](https://docs.astral.sh/uv/). It builds `.venv` here on the first call from `uv.lock`: pydantic, tsfpga (git), pywellen, numpy, matplotlib.
-- System tools, as needed: GHDL and/or NVC (vunit), Yosys + ghdl-yosys-plugin + GHDL (synth), Vivado (only the `synth project-get-*-report` commands).
+- System tools, as needed: GHDL and/or NVC (vunit), Yosys + ghdl-yosys-plugin + GHDL (synth), Vivado (only the `synth project-get-*-report` commands and the `vivado` group; `TSFPGA_MCP_VIVADO` or `vivado` on PATH).
 - VUnit comes from the HDL project, not from here. `vunit` commands run the project's own `run.py` with the project's interpreter. That is its `.venv`/`venv`, which is created with uv from `pyproject.toml`/`requirements.txt` if missing, else `python3` on PATH. `synth project-*` does the same with `build.py`/`build_fpga.py`.
 
 ## Conventions
@@ -36,6 +38,7 @@ Run it through `skills/shared/bin/vhdl-tools`, which calls `uv run --project` on
   - `vunit compile|run-tests|elaborate` hold a lock at `<project>/.vunit-mcp-cache/run.lock`.
   - `synth synthesize` holds a per-user lock at `$TMPDIR/vhdl-tools-synth.lock`.
   - `synth project-build` holds `<projects path>/../.vhdl-tools-build.lock`.
+  - `vivado` holds `~/.cache/vhdl-tools/vivado/<hash>/lock` only while it finds or starts the session for a checkpoint, so simultaneous first calls share one startup. Queries to one session run one at a time.
   - A second call waits, and prints one line on stderr while it does.
 - The last completed run's output dir is remembered in `<project>/.vunit-mcp-cache/last_output_dir`, so `get-report`/`get-test-log`/`get-test-waveform` follow a `run-tests --output-dir`.
 
@@ -89,6 +92,16 @@ Times are `10ns` / `1.5us` or integer file ticks. Signals are full names or uniq
 | `latency` | `--file F` (required), `--a S` (required), `--b S` (required), `--edge {rise,any}` (default rise), `--start T` (default 0), `--end T` | Edge-to-edge delay A -> B: min/max/mean/p50/stddev. A and B the same signal: the interval between its edges |
 | `find` | `--file F` (required), `--signal S` (required), `--value V` (required), `--start T` (default 0), `--limit N` (default 100) | Intervals where a signal holds a value |
 | `plot` | `--file F` (required), `--signals S [S ...]` (required), `--start T` (default 0), `--end T`, `--out PNG` (default: new temp file), `--mark T [T ...]`, `--clock C` | Write a PNG plot: numeric lanes as steps labelled with their values and range, flat lanes with their level, X/U/Z in red, a dashed line at each mark, dots at C's rising edges on the sampled values, no-data region shaded; prints its path (`image:` line) + per-trace summary |
+
+### vivado
+
+Every command names a checkpoint. The first command for a checkpoint starts a background Vivado with it open, serving Tcl on a localhost socket (a random token, kept in a user-only state file, guards it). Later commands from any process reuse it. Each checkpoint gets its own Vivado; a rebuilt checkpoint (new mtime) gets a fresh one. A session exits after 30 idle minutes. State and `vivado.log` are in `~/.cache/vhdl-tools/vivado/<hash>/`.
+
+| Command | Options | Purpose |
+|---|---|---|
+| `tcl` | `--dcp F` (required), `--script TCL` (required, `-` reads stdin) | Run Tcl against the design: what it `puts`, then its result, cut at 200 lines. A Tcl error exits 1 |
+| `hierarchy` | `--dcp F` (required), `--node INST`, `--depth N` (default 2) | `report_utilization -hierarchical` table: LUT, FF, SRL, RAMB, DSP per instance |
+| `stop` | `--dcp F` (default: all) | Shut down sessions |
 
 ## Development
 

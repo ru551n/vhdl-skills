@@ -35,7 +35,7 @@ vhdl-skills/
 │   ├── vh*/                   # the seven vendor-neutral skills
 │   ├── vivado/                # AMD/Xilinx with Vivado: the vendor layer
 │   └── shared/                # reference docs, plus:
-│       ├── bin/vhdl-tools     #   VUnit, synthesis and waveform command-line tool
+│       ├── bin/vhdl-tools     #   VUnit, synthesis, waveform and Vivado query command-line tool
 │       ├── speja.yaml         #   house layout for speja, the optional formatter
 │       └── tools/             #   its Python source, tests and command reference
 ├── agents/                    # designer, coder, tester, debugger, synthesizer, documentation, orchestrator
@@ -46,8 +46,10 @@ vhdl-skills/
 
 `vhdl-tools` replaces the vunit-mcp, tsfpga-mcp and peeper-mcp servers: it
 runs VUnit compiles, tests and reports, Yosys/GHDL synthesis and tsfpga
-Vivado builds and reports, and VCD/FST waveform measurements. The command
-reference is in `skills/shared/tools/README.md`.
+Vivado builds and reports, and VCD/FST waveform measurements. It also queries
+a built Vivado design (paths, logic depth, fanout, hierarchy) through a
+persistent Vivado session. The command reference is in
+`skills/shared/tools/README.md`.
 
 ## Install
 
