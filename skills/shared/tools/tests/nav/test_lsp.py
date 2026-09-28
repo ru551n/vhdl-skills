@@ -175,3 +175,10 @@ def test_close_is_quick_when_exit_is_ignored(tmp_path):
     start = time.monotonic()
     session.close()
     assert time.monotonic() - start < 0.5
+
+
+def test_malformed_reply_fails_fast(tmp_path):
+    start = time.monotonic()
+    with _session(tmp_path, "garbage", timeout=30.0) as session, pytest.raises(NavError, match="malformed"):
+        session.request("workspace/symbol", {"query": ""})
+    assert time.monotonic() - start < 5

@@ -24,6 +24,9 @@ from vhdl_tools.nav import NavError
 
 DEFAULT_TIMEOUT = 30.0
 
+#: Inbox key the reader uses to report a message it could not parse.
+_MALFORMED = "_nav_malformed"
+
 #: Where vhdl_ls looks for its standard libraries by itself (vhdl_lang's
 #: config.rs); relative entries are relative to the binary's directory.
 INSTALLED_LIBRARY_DIRS = (
@@ -137,6 +140,12 @@ class LspSession:
         self.close()
 
     def _read_loop(self) -> None:
+        try:
+            self._read_messages()
+        except (ValueError, OSError) as exc:  # bad Content-Length or JSON body
+            self._inbox.put({_MALFORMED: str(exc)})
+
+    def _read_messages(self) -> None:
         stream = self._proc.stdout
         assert stream is not None
         while True:
@@ -181,6 +190,11 @@ class LspSession:
             if message is None:
                 self._inbox.put(None)  # later calls see the exit too
                 raise self._crashed(method)
+            if _MALFORMED in message:
+                self._inbox.put(message)  # the reader has stopped; later calls fail too
+                raise NavError(
+                    f"vhdl_ls sent a malformed message during {method}: {message[_MALFORMED]}"
+                )
             if "method" in message:  # a server request or notification
                 if "id" in message:
                     self._send({"jsonrpc": "2.0", "id": message["id"], "result": None})

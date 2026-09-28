@@ -1,6 +1,6 @@
 """Stand-in language server for LspSession tests.
 
-Mode (argv[1]): echo | crash | hang | server_request | error | lsp_server. Every mode
+Mode (argv[1]): echo | crash | hang | server_request | error | lsp_server | garbage. Every mode
 answers ``initialize``; other requests get an echo of their method, params and
 the notifications seen so far, unless the mode says otherwise. ``lsp_server``
 behaves like vhdl_ls on the way out: it ignores a bare ``exit`` and the end of
@@ -56,6 +56,10 @@ while True:
         sys.stderr.flush()
         sys.exit(101)
     if mode == "hang":
+        time.sleep(60)
+    if mode == "garbage":
+        sys.stdout.buffer.write(b"Content-Length: abc\r\n\r\n{}")
+        sys.stdout.buffer.flush()
         time.sleep(60)
     if mode == "error":
         send({"jsonrpc": "2.0", "id": message["id"], "error": {"code": -32601, "message": "no such method"}})
