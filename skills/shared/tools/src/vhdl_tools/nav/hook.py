@@ -12,6 +12,10 @@ the source of any regions the user's last message names.
 regions the message names) is attached before Claude starts, so its first
 read can already be a range.
 
+``SessionStart``: in a directory that holds VHDL, one line tells Claude that
+``vhdl-tools nav`` exists; measured, cross-file questions then cost about a
+third (it is not found otherwise: ToolPolicy loads only with a VHDL skill).
+
 Anything unexpected allows the read or attaches nothing: these hooks must
 never be the reason a file cannot be read. Run as ``python -m
 vhdl_tools.nav.hook`` (see ``skills/shared/bin/vhdl-read-hook``).
@@ -27,6 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from vhdl_tools.nav import NavError
+from vhdl_tools.nav.config import find_config
 from vhdl_tools.nav.index import FileIndex, excerpt
 from vhdl_tools.nav.server import file_index
 
@@ -49,6 +54,16 @@ MAX_PROMPT_FILES = 3
 PROMPT_CONTEXT_CAP = 40_000
 #: Bytes of the transcript read from its end to find the last user message.
 TRANSCRIPT_TAIL = 1_000_000
+#: Set to 0 to leave out the session hint.
+SESSION_HINT_ENV = "VHDL_NAV_SESSION_HINT"
+#: Directory entries looked at, at most, to decide whether a project holds VHDL.
+SESSION_SCAN_LIMIT = 20_000
+#: Directories that hold tools, builds or copies, not the project's own VHDL.
+_SKIP_DIRS = frozenset(
+    {"node_modules", "venv", "vunit_out", "build", "generated", "__pycache__", "site-packages"}
+)
+#: vhdl-tools next to this package: tools/src/vhdl_tools/nav -> skills/shared/bin.
+TOOL = Path(__file__).resolve().parents[4] / "bin" / "vhdl-tools"
 
 _VHDL_PATH = re.compile(
     r"""(?:^|(?<=[\s'"`(<\[]))([^\s'"`()<>\[\]]+\.vhdl?)(?=$|[\s'"`)>\],.;:!?])""", re.IGNORECASE
@@ -200,10 +215,51 @@ def prompt_context(event: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def _holds_vhdl(root: Path) -> bool:
+    """Whether ``root`` holds a .vhd/.vhdl file, looking at no more than
+    ``SESSION_SCAN_LIMIT`` entries and skipping hidden and tool directories."""
+    seen = 0
+    for directory, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in _SKIP_DIRS]
+        seen += len(dirnames) + len(filenames)
+        if any(Path(name).suffix.lower() in VHDL_SUFFIXES for name in filenames):
+            return True
+        if seen > SESSION_SCAN_LIMIT:
+            return False
+    return False
+
+
+def session_hint(event: dict[str, Any]) -> dict[str, Any] | None:
+    """The SessionStart output telling Claude about vhdl-tools nav, or None."""
+    if os.environ.get(SESSION_HINT_ENV) == "0":
+        return None
+    cwd = Path(str(event.get("cwd") or ".")).resolve()
+    if not _holds_vhdl(cwd):
+        return None
+    hint = (
+        f"For VHDL questions in this project, use the command-line tool `{TOOL} nav` "
+        "(commands: find --name N, refs --name N, show --name N, def --name N, "
+        "tree --top E, index --file F; names may be library-qualified, e.g. fifo.fifo). "
+        "It answers through the VHDL language server in a few lines, usually cheaper "
+        f"than grep and reading files. `{TOOL} nav <command> --help` lists options."
+    )
+    try:
+        find_config(cwd)
+    except NavError:
+        hint += (
+            f" This project has no vhdl_ls.toml yet; `{TOOL} nav init` writes one "
+            "(index works without it)."
+        )
+    return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": hint}}
+
+
 def main() -> None:
     try:
         event = json.load(sys.stdin)
-        if event.get("hook_event_name") == "UserPromptSubmit":
+        name = event.get("hook_event_name")
+        if name == "SessionStart":
+            output = session_hint(event)
+        elif name == "UserPromptSubmit":
             output = prompt_context(event)
         else:
             output = decide(event)

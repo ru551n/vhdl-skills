@@ -62,6 +62,7 @@ def _defaults(monkeypatch):
     (2000) is tested on its own."""
     monkeypatch.setenv(hook.MIN_LINES_ENV, "400")
     monkeypatch.delenv(hook.TIMEOUT_ENV, raising=False)
+    monkeypatch.delenv(hook.SESSION_HINT_ENV, raising=False)
 
 
 def _reason(decision: dict | None) -> str:
@@ -274,12 +275,71 @@ def test_prompt_allows_when_index_fails(tmp_path, monkeypatch):
     assert hook.prompt_context(_prompt("see big.vhd", tmp_path)) is None
 
 
+# --- Session hint ----------------------------------------------------------
+
+
+def _session(cwd: Path) -> dict:
+    return {"hook_event_name": "SessionStart", "source": "startup", "cwd": str(cwd)}
+
+
+def _hint(result: dict | None) -> str:
+    assert result is not None
+    output = result["hookSpecificOutput"]
+    assert output["hookEventName"] == "SessionStart"
+    return output["additionalContext"]
+
+
+def test_session_hint_in_a_vhdl_project(tmp_path):
+    (tmp_path / "modules" / "fifo" / "src").mkdir(parents=True)
+    (tmp_path / "modules" / "fifo" / "src" / "fifo.vhd").write_text("entity fifo is end entity;\n")
+    hint = _hint(hook.session_hint(_session(tmp_path)))
+    tool = Path(hook.__file__).resolve().parents[4] / "bin" / "vhdl-tools"
+    assert tool.is_file()
+    assert f"`{tool} nav`" in hint
+    for command in ("find --name", "refs --name", "show --name", "tree --top", "index --file"):
+        assert command in hint
+    assert f"{tool} nav init" in hint  # no vhdl_ls.toml yet
+
+
+def test_session_hint_with_a_library_map(tmp_path):
+    (tmp_path / "vhdl_ls.toml").write_text("[libraries]\n")
+    (tmp_path / "top.vhdl").write_text("")
+    hint = _hint(hook.session_hint(_session(tmp_path)))
+    assert "nav init" not in hint
+
+
+def test_no_session_hint_without_vhdl(tmp_path):
+    (tmp_path / "main.py").write_text("")
+    (tmp_path / ".venv" / "lib").mkdir(parents=True)
+    (tmp_path / ".venv" / "lib" / "osvvm.vhd").write_text("")  # tooling, not the project
+    (tmp_path / "vunit_out").mkdir()
+    (tmp_path / "vunit_out" / "copy.vhd").write_text("")
+    assert hook.session_hint(_session(tmp_path)) is None
+
+
+def test_session_hint_can_be_turned_off(tmp_path, monkeypatch):
+    (tmp_path / "top.vhd").write_text("")
+    monkeypatch.setenv(hook.SESSION_HINT_ENV, "0")
+    assert hook.session_hint(_session(tmp_path)) is None
+
+
+def test_session_hint_search_is_bounded(tmp_path, monkeypatch):
+    for n in range(50):
+        (tmp_path / f"d{n}").mkdir()
+    (tmp_path / "d49" / "late.vhd").write_text("")
+    monkeypatch.setattr(hook, "SESSION_SCAN_LIMIT", 10)
+    assert hook.session_hint(_session(tmp_path)) is None
+
+
 # --- main and the launcher -------------------------------------------------
 
 
-def test_main_dispatches_both_events(tmp_path, monkeypatch, capsys):
+def test_main_dispatches_all_events(tmp_path, monkeypatch, capsys):
     _stub(monkeypatch)
     big = _vhdl(tmp_path, 500)
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(_session(tmp_path))))
+    hook.main()
+    assert "nav" in json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(_event(big))))
     hook.main()
     assert json.loads(capsys.readouterr().out)["hookSpecificOutput"]["permissionDecision"] == "deny"
@@ -363,6 +423,14 @@ def test_launcher_attaches_index_to_a_prompt(nav, fixture_dir, tmp_path):
 
 
 @needs_uv
+def test_launcher_passes_session_start(tmp_path):
+    (tmp_path / "top.vhd").write_text("")
+    result = _launch(_session(tmp_path), timeout=60)
+    assert result.returncode == 0
+    assert "nav" in json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+
+
+@needs_uv
 def test_launcher_allows_when_vhdl_ls_never_answers(tmp_path):
     stuck = tmp_path / "vhdl_ls"
     stuck.write_text("#!/bin/sh\nexec sleep 60\n")
@@ -386,4 +454,6 @@ def test_hooks_json_registers_both_hooks():
     (prompt,) = config["UserPromptSubmit"]
     assert "matcher" not in prompt
     assert [h["command"] for h in prompt["hooks"]] == [command]
+    (session,) = config["SessionStart"]
+    assert [h["command"] for h in session["hooks"]] == [command]
     assert LAUNCHER.is_file()
