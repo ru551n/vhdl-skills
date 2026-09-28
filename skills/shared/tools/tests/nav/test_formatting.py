@@ -121,3 +121,10 @@ def test_format_tree():
         "  u_comp : entity leaf  [lib_a]  lib_a/leaf.vhd:6  (component)",
         "  u_bad : work.gone  (unresolved)",
     ]
+
+
+def test_format_hits_cap_after_project_search():
+    from vhdl_tools.nav.formatting import CAP_NOTE_SEARCHED
+
+    assert format_hits([], ROOT, truncated=True, completed=True) == f"0 hits\n{CAP_NOTE_SEARCHED}"
+    assert "standard libraries" in CAP_NOTE_SEARCHED

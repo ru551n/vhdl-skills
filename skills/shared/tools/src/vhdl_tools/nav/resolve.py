@@ -7,7 +7,7 @@ vhdl_ls's workspace/symbol match is fuzzy (``leaf`` also returns
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -16,9 +16,11 @@ from vhdl_tools.nav import NavError
 from vhdl_tools.nav.formatting import count, format_hits
 from vhdl_tools.nav.symbols import (
     Hit,
+    Node,
     hit_from_symbol,
     kind_matches,
     matches_name,
+    nodes_from_document_symbols,
     prefer_declarations,
     qualifier_matches,
     split_name,
@@ -43,11 +45,53 @@ _KEYWORDS = frozenset(
 class Requester(Protocol):
     def request(self, method: str, params: Any) -> Any: ...
 
+    def open(self, path: Path) -> None: ...
+
 
 @dataclass
 class Found:
+    """``truncated``: vhdl_ls stopped at its cap. ``completed``: the project's
+    own files were then searched directly, so only standard-library matches
+    can be missing."""
+
     hits: list[Hit]
     truncated: bool
+    completed: bool = False
+
+
+#: documentSymbol entries workspace/symbol does not list either.
+_NOT_DECLARATIONS = frozenset({"", "instance", "process", "generate", "block", "parameter"})
+
+
+def _declarations(nodes: list[Node], path: Path, container: str) -> Iterator[Hit]:
+    for node in nodes:
+        if node.kind not in _NOT_DECLARATIONS and node.name:
+            yield Hit(node.kind, node.name, container, path, node.line, node.col, node.detail)
+        inner = f"{container}.{node.name}" if node.name else container
+        yield from _declarations(node.children, path, inner)
+
+
+def _search_files(
+    session: Requester, files: Mapping[Path, str], ident: str, substring: bool
+) -> list[Hit]:
+    """Declarations in the project files that mention ``ident``, from their outline."""
+    word = re.compile(
+        re.escape(ident) if substring else rf"(?<![\w]){re.escape(ident)}(?![\w])", re.IGNORECASE
+    )
+    hits: list[Hit] = []
+    for path, library in files.items():
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if not word.search(text):
+            continue
+        session.open(path)
+        nodes = nodes_from_document_symbols(
+            session.request("textDocument/documentSymbol", {"textDocument": {"uri": path.as_uri()}})
+        )
+        hits.extend(_declarations(nodes, path, library))
+    return hits
 
 
 @dataclass(frozen=True)
@@ -67,12 +111,23 @@ def find_hits(
     kind: str | None = None,
     substring: bool = False,
     libraries: Iterable[str] = (),
+    files: Mapping[Path, str] | None = None,
 ) -> Found:
     """Declarations named ``name`` (or, with ``substring``, containing it and in
-    one of ``libraries``)."""
+    one of ``libraries``). ``files`` (project file -> library) is searched
+    directly when vhdl_ls's result stops at its cap."""
     prefix, ident = split_name(name)
     raw = session.request("workspace/symbol", {"query": ident}) or []
     hits = [hit_from_symbol(symbol) for symbol in raw]
+    truncated = len(raw) >= WORKSPACE_SYMBOL_CAP
+    completed = truncated and files is not None
+    if completed:
+        seen = {(h.path, h.line, h.col) for h in hits}
+        hits += [
+            h
+            for h in _search_files(session, files, ident, substring)
+            if (h.path, h.line, h.col) not in seen
+        ]
     if substring:
         own = {library.lower() for library in libraries}
         hits = [
@@ -87,7 +142,7 @@ def find_hits(
     if kind:
         hits = [h for h in hits if kind_matches(h.kind, kind)]
     hits.sort(key=lambda h: (str(h.path), h.line, h.col))
-    return Found(hits, len(raw) >= WORKSPACE_SYMBOL_CAP)
+    return Found(hits, truncated, completed)
 
 
 def not_found_message(name: str, libraries: list[str], kind: str | None = None) -> str:
@@ -104,10 +159,15 @@ def not_found_message(name: str, libraries: list[str], kind: str | None = None) 
 
 
 def resolve_one(
-    session: Requester, name: str, root: Path, libraries: list[str], kind: str | None = None
+    session: Requester,
+    name: str,
+    root: Path,
+    libraries: list[str],
+    kind: str | None = None,
+    files: Mapping[Path, str] | None = None,
 ) -> Hit:
     """The one declaration ``name`` means; NavError when there is none or several."""
-    found = find_hits(session, name, kind)
+    found = find_hits(session, name, kind, files=files)
     hits = prefer_declarations(found.hits)
     if len(hits) == 1:
         return hits[0]
@@ -116,14 +176,16 @@ def resolve_one(
     ident = split_name(name)[1]
     raise NavError(
         f"{name} is ambiguous; pass lib.{ident}, --kind or --pos:\n"
-        + format_hits(hits, root, found.truncated)
+        + format_hits(hits, root, found.truncated, found.completed)
     )
 
 
-def hit_at(session: Requester, path: Path, line: int, name: str) -> Hit:
+def hit_at(
+    session: Requester, path: Path, line: int, name: str, files: Mapping[Path, str] | None = None
+) -> Hit:
     """The declaration of ``name`` at ``path:line`` (0-based), if workspace/symbol
-    lists it; else a bare Hit for that place."""
-    for hit in find_hits(session, name).hits:
+    (or the project search past its cap) lists it; else a bare Hit for that place."""
+    for hit in find_hits(session, name, files=files).hits:
         if hit.path == path and hit.line == line:
             return hit
     return Hit("", name, "", path, line, 0)

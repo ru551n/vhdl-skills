@@ -10,6 +10,10 @@ CAP_NOTE = (
     "vhdl_ls returns at most 200 symbols per query, so this list may be "
     "incomplete; use a longer name or --kind"
 )
+CAP_NOTE_SEARCHED = (
+    "vhdl_ls returns at most 200 symbols per query; the project's own files were "
+    "searched directly, so only matches in the standard libraries may be missing"
+)
 
 #: documentSymbol children that repeat what their parent's line already says.
 _OUTLINE_SKIP = frozenset({"parameter", "literal"})
@@ -41,7 +45,7 @@ def header(hit: Hit, root: Path) -> str:
     return f"{describe(hit)}  [{hit.container}]  {rel(hit.path, root)}:{hit.line + 1}"
 
 
-def format_hits(hits: list[Hit], root: Path, truncated: bool = False) -> str:
+def format_hits(hits: list[Hit], root: Path, truncated: bool = False, completed: bool = False) -> str:
     rows = [(describe(h), f"[{h.container}]", f"{rel(h.path, root)}:{h.line + 1}") for h in hits]
     lines = []
     if rows:
@@ -49,7 +53,7 @@ def format_hits(hits: list[Hit], root: Path, truncated: bool = False) -> str:
         lines = ["  ".join(cell.ljust(w) for cell, w in zip(row, widths)).rstrip() for row in rows]
     lines.append(count(len(hits), "hit"))
     if truncated:
-        lines.append(CAP_NOTE)
+        lines.append(CAP_NOTE_SEARCHED if completed else CAP_NOTE)
     return "\n".join(lines)
 
 

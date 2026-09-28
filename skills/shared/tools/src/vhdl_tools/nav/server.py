@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -9,7 +10,13 @@ from pathlib import Path
 from typing import Literal
 
 from vhdl_tools.nav import NavError
-from vhdl_tools.nav.config import empty_libraries, find_config, read_libraries, write_init
+from vhdl_tools.nav.config import (
+    empty_libraries,
+    find_config,
+    library_files,
+    read_libraries,
+    write_init,
+)
 from vhdl_tools.nav.formatting import (
     count,
     format_context,
@@ -69,6 +76,15 @@ class Project:
     def library_names(self) -> list[str]:
         return list(self.libraries)
 
+    @functools.cached_property
+    def files(self) -> dict[Path, str]:
+        """Project file -> library, for searching past vhdl_ls's symbol cap."""
+        return {
+            path: library
+            for library, patterns in self.libraries.items()
+            for path in library_files(self.config, patterns)
+        }
+
 
 def _run(config: str | None, body: Callable[[Project, LspSession], str]) -> str:
     project: Project | None = None
@@ -102,7 +118,7 @@ def _target(
     if (name is None) == (pos is None):
         raise NavError("give exactly one of --name or --pos")
     if name is not None:
-        hit = resolve_one(session, name, project.root, project.library_names, kind)
+        hit = resolve_one(session, name, project.root, project.library_names, kind, project.files)
         return Position(hit.path, hit.line, hit.col), hit
     position = parse_pos(pos, project.root)
     if position.guessed:
@@ -120,8 +136,8 @@ def _definitions(session: LspSession, position: Position) -> list[tuple[Path, in
     return locations(session.request("textDocument/definition", position_params(position)))
 
 
-def _declaration_at(session: LspSession, path: Path, line: int, col: int) -> Hit:
-    return hit_at(session, path, line, identifier_at(path, line, col))
+def _declaration_at(project: Project, session: LspSession, path: Path, line: int, col: int) -> Hit:
+    return hit_at(session, path, line, identifier_at(path, line, col), project.files)
 
 
 def _document_symbols(session: LspSession, path: Path) -> list[Node]:
@@ -148,10 +164,10 @@ def nav_find(
     constant, port, generic."""
 
     def body(project: Project, session: LspSession) -> str:
-        found = find_hits(session, name, kind, substring, project.library_names)
-        if not found.hits and not found.truncated:
+        found = find_hits(session, name, kind, substring, project.library_names, project.files)
+        if not found.hits and (not found.truncated or found.completed):
             return not_found_message(name, project.library_names, kind)
-        return format_hits(found.hits, project.root, found.truncated)
+        return format_hits(found.hits, project.root, found.truncated, found.completed)
 
     return _run(config, body)
 
@@ -179,7 +195,7 @@ def nav_def(
             raise NavError(f"vhdl_ls found no declaration for {word} at {pos}")
         blocks = []
         for path, line, col in found:
-            decl = _declaration_at(session, path, line, col)
+            decl = _declaration_at(project, session, path, line, col)
             blocks.append(format_context(path, line, context, _title(decl, project.root)))
         return "\n\n".join(blocks)
 
@@ -249,7 +265,7 @@ def nav_show(
             found = _definitions(session, position)
             if found:
                 path, line, col = found[0]
-                hit = _declaration_at(session, path, line, col)
+                hit = _declaration_at(project, session, path, line, col)
                 position = Position(path, line, col)
         title = (
             _title(hit, project.root)
@@ -309,8 +325,11 @@ def nav_tree(top: str, depth: int = 0, config: str | None = None) -> str:
     name; notes in parentheses mark components, cycles and unresolved units."""
 
     def body(project: Project, session: LspSession) -> str:
-        hit = resolve_one(session, top, project.root, project.library_names, kind="entity")
-        return "\n".join(format_tree(build_tree(session, hit, depth), project.root))
+        hit = resolve_one(
+            session, top, project.root, project.library_names, "entity", project.files
+        )
+        tree = build_tree(session, hit, depth, project.files)
+        return "\n".join(format_tree(tree, project.root))
 
     return _run(config, body)
 

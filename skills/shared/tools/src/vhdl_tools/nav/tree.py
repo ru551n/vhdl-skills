@@ -11,7 +11,7 @@ one entity of that name instead, when there is exactly one.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 
 from vhdl_tools.nav.formatting import source_lines
@@ -67,9 +67,10 @@ def _add_note(note: str, extra: str) -> str:
 
 
 class _TreeBuilder:
-    def __init__(self, session: LspSession, depth: int) -> None:
+    def __init__(self, session: LspSession, depth: int, files: Mapping[Path, str] | None) -> None:
         self.session = session
         self.depth = depth
+        self.files = files
         self.cache: dict[Path, list[str]] = {}
 
     def expand(self, node: TreeNode, seen: tuple[tuple[str, str], ...], level: int) -> None:
@@ -131,7 +132,7 @@ class _TreeBuilder:
         how, unit, line, col = target
         last = unit.rsplit(".", 1)[-1]
         if how == "component":
-            entities = prefer_declarations(find_hits(self.session, last, kind="entity").hits)
+            entities = prefer_declarations(find_hits(self.session, last, kind="entity", files=self.files).hits)
             if len(entities) == 1:
                 return TreeNode(instance.name, unit, entities[0], "component")
             return TreeNode(instance.name, unit, None, f"component; no unique entity named {last}")
@@ -144,11 +145,14 @@ class _TreeBuilder:
         if not found:
             return TreeNode(instance.name, unit, None, "unresolved")
         target_path, target_line, _ = found[0]
-        return TreeNode(instance.name, unit, hit_at(self.session, target_path, target_line, last))
+        return TreeNode(instance.name, unit, hit_at(self.session, target_path, target_line, last, self.files))
 
 
-def build_tree(session: LspSession, top: Hit, depth: int = 0) -> TreeNode:
-    """The instances below ``top``; ``depth`` 0 means no limit."""
+def build_tree(
+    session: LspSession, top: Hit, depth: int = 0, files: Mapping[Path, str] | None = None
+) -> TreeNode:
+    """The instances below ``top``; ``depth`` 0 means no limit. ``files`` (project
+    file -> library) lets name lookups search past vhdl_ls's symbol cap."""
     root = TreeNode("", top.name, top)
-    _TreeBuilder(session, depth).expand(root, (_key(top),), 1)
+    _TreeBuilder(session, depth, files).expand(root, (_key(top),), 1)
     return root

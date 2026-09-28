@@ -377,3 +377,16 @@ def test_tree_names_the_branch_of_repeated_labels(nav, fixture_copy):
         "  v : entity dup  [lib_b]  lib_b/dup.vhd:1  (branch: when 0)",
         "  v : entity dup  [lib_b]  lib_b/dup.vhd:1  (branch: when others)",
     ]
+
+
+def test_find_past_the_symbol_cap(nav, fixture_copy):
+    """vhdl_ls's 200 fuzzy hits for "s" (all from ieee) miss this signal; the
+    project search past the cap finds it."""
+    (fixture_copy / "lib_b" / "short.vhd").write_text(
+        "entity short is\nend entity;\n\narchitecture rtl of short is\n"
+        "  signal s : bit;\nbegin\nend architecture;\n"
+    )
+    code, out = nav("find", "--name", "s", config=fixture_copy)
+    assert code == 0
+    assert out.splitlines()[:2] == ["signal s  [lib_b.rtl]  lib_b/short.vhd:5", "1 hit"]
+    assert "only matches in the standard libraries may be missing" in out

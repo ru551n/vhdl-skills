@@ -178,3 +178,68 @@ def test_find_hits_substring_accepts_package_qualifier():
     symbols = [sym("constant 'ram_style_auto'", "common.types_pkg", "common/types_pkg.vhd", 9)]
     found = find_hits(FakeSession(symbols), "types_pkg.ram_style", substring=True, libraries=["common"])
     assert [h.name for h in found.hits] == ["ram_style_auto"]
+
+
+class CappedSession:
+    """workspace/symbol stops at 200 unrelated symbols; documentSymbol answers
+    from ``outlines`` (path -> symbols)."""
+
+    def __init__(self, outlines: dict[Path, list[dict]]) -> None:
+        self.outlines = outlines
+        self.outlined: list[Path] = []
+
+    def open(self, path: Path) -> None:
+        pass
+
+    def request(self, method: str, params: Any) -> Any:
+        if method == "workspace/symbol":
+            return [sym(f"constant 'Vital{i}'", "ieee.x", "ieee/x.vhdl", i) for i in range(200)]
+        assert method == "textDocument/documentSymbol"
+        path = Path(params["textDocument"]["uri"].removeprefix("file://"))
+        self.outlined.append(path)
+        return self.outlines.get(path, [])
+
+
+def _outline_symbol(name: str, line: int, children: list[dict] | None = None) -> dict:
+    rng = {"start": {"line": line, "character": 2}, "end": {"line": line, "character": 9}}
+    return {"name": name, "range": rng, "selectionRange": rng, "children": children or []}
+
+
+@pytest.fixture
+def capped(tmp_path):
+    x = tmp_path / "lib_a" / "x.vhd"
+    y = tmp_path / "lib_a" / "y.vhd"
+    x.parent.mkdir()
+    x.write_text("entity x is\nend entity;\narchitecture rtl of x is\n  signal s : bit;\nbegin\nend;\n")
+    y.write_text("entity y is\nend entity;\n")
+    outlines = {
+        x: [
+            _outline_symbol("entity 'x'", 0),
+            _outline_symbol("architecture 'rtl'", 2, [_outline_symbol("signal 's'", 3)]),
+        ],
+        y: [_outline_symbol("entity 'y'", 0)],
+    }
+    return CappedSession(outlines), {x: "lib_a", y: "lib_a"}, x, y
+
+
+def test_find_hits_searches_project_files_past_the_cap(capped):
+    session, files, x, y = capped
+    found = find_hits(session, "s", files=files)
+    assert [(h.kind, h.name, h.container, h.path, h.line) for h in found.hits] == [
+        ("signal", "s", "lib_a.rtl", x, 3)
+    ]
+    assert found.truncated and found.completed
+    assert session.outlined == [x]  # y does not mention the name
+
+
+def test_find_hits_without_files_reports_the_cap_only(capped):
+    session, _, _, _ = capped
+    found = find_hits(session, "s")
+    assert found.hits == [] and found.truncated and not found.completed
+    assert session.outlined == []
+
+
+def test_resolve_one_uses_the_project_search(capped):
+    session, files, x, _ = capped
+    hit = resolve_one(session, "lib_a.s", ROOT, ["lib_a"], files=files)
+    assert (hit.path, hit.line) == (x, 3)
