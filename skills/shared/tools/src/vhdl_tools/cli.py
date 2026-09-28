@@ -36,6 +36,11 @@ GROUPS = {
         "vivado_",
         "Query a built Vivado design (.dcp) through a persistent Vivado",
     ),
+    "nav": (
+        "vhdl_tools.nav.server",
+        "nav_",
+        "VHDL file index and exact lookups through vhdl_ls (index, find, def, refs, show, tree)",
+    ),
 }
 
 
@@ -155,7 +160,7 @@ def main(argv: list[str] | None = None) -> None:
     argv = sys.argv[1:] if argv is None else list(argv)
     parser = argparse.ArgumentParser(
         prog="vhdl-tools",
-        description="VUnit, synthesis, waveform and Vivado design-query tools for HDL projects.",
+        description="VUnit, synthesis, waveform, Vivado design-query and VHDL lookup tools for HDL projects.",
     )
     groups = parser.add_subparsers(dest="group", required=True, metavar="group")
     registry: ToolRegistry | None = None

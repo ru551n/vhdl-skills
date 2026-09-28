@@ -1,0 +1,3 @@
+[libraries]
+lib_a.files = ["lib_a/*.vhd"]
+lib_b.files = ["lib_b/*.vhd"]
