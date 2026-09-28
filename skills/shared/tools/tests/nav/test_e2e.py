@@ -275,3 +275,23 @@ def test_tree_unknown_entity(nav):
     code, out = nav("tree", "--top", "nope")
     assert code == 1
     assert out.startswith("Error: No entity named nope")
+
+
+def test_init_then_lookup(nav, tmp_path, fixture_dir):
+    import shutil
+
+    project = tmp_path / "proj"
+    for library in ("lib_a", "lib_b"):
+        shutil.copytree(fixture_dir / library, project / "modules" / library)
+    code, out = nav("init", "--directory", str(project), config=None)
+    assert code == 0
+    assert out.splitlines()[0] == f"Wrote {project / 'vhdl_ls.toml'} with 2 libraries: lib_a, lib_b"
+    code, out = nav("find", "--name", "leaf", config=project)
+    assert code == 0
+    assert "entity leaf  [lib_a]  modules/lib_a/leaf.vhd:6" in out
+
+
+def test_init_refuses_to_overwrite(nav_cli, fixture_dir):
+    code, out = nav_cli("init", "--directory", str(fixture_dir), config=None)
+    assert code == 1
+    assert "already exists" in out

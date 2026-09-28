@@ -6,10 +6,12 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from vhdl_tools.nav import NavError
-from vhdl_tools.nav.config import empty_libraries, find_config, read_libraries
+from vhdl_tools.nav.config import empty_libraries, find_config, read_libraries, write_init
 from vhdl_tools.nav.formatting import (
+    count,
     format_context,
     format_hits,
     format_outline,
@@ -298,3 +300,23 @@ def nav_tree(top: str, depth: int = 0, config: str | None = None) -> str:
         return "\n".join(format_tree(build_tree(session, hit, depth), project.root))
 
     return _run(config, body)
+
+
+@tools.tool()
+def nav_init(layout: Literal["auto", "tsfpga", "flat"] = "auto", directory: str = ".") -> str:
+    """Write a vhdl_ls.toml for the project in --directory (never overwrites one).
+
+    tsfpga: one library per modules/<name>/ (auto picks it when modules/ holds
+    VHDL); flat: one library 'lib' with every .vhd/.vhdl file. The standard
+    libraries come from vhdl_ls's library directory; add third-party libraries
+    (VUnit, OSVVM) by hand."""
+    try:
+        path, names = write_init(Path(directory).expanduser().resolve(), layout)
+    except NavError as exc:
+        return ToolError(f"Error: {exc}")
+    lines = [f"Wrote {path} with {count(len(names), 'library', 'libraries')}: {', '.join(names)}"]
+    try:
+        find_std_libraries(find_vhdl_ls())
+    except NavError as exc:
+        lines.append(f"Note: lookups need vhdl_ls and its standard libraries first. {exc}")
+    return "\n".join(lines)
