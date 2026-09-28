@@ -32,7 +32,7 @@ from vhdl_tools.nav.formatting import (
     rel,
     source_lines,
 )
-from vhdl_tools.nav.index import build_index
+from vhdl_tools.nav.index import FileIndex, build_index, regions
 from vhdl_tools.nav.lsp import DEFAULT_TIMEOUT, LspSession, find_std_libraries, find_vhdl_ls, vhdl_ls_command
 from vhdl_tools.nav.resolve import (
     Position,
@@ -289,42 +289,52 @@ def nav_show(
     return _run(config, body)
 
 
+def file_index(file: str | Path, config: str | None = None, timeout: float = DEFAULT_TIMEOUT) -> FileIndex:
+    """The index of one file, its named regions and its lines; NavError on failure.
+
+    Uses the nearest vhdl_ls.toml above the file (or ``config``); without one,
+    the file's directory is mapped as one library so sibling files resolve."""
+    path = Path(file).expanduser()
+    if not path.is_file():
+        raise NavError(f"no file {file}")
+    path = path.resolve()
+    try:
+        root = find_config(path.parent, config).parent
+        directory_map = None
+    except NavError:
+        if config:
+            raise
+        root = path.parent
+        directory_map = write_directory_map(path.parent)
+    vhdl_ls = find_vhdl_ls()
+    command = vhdl_ls_command(vhdl_ls, find_std_libraries(vhdl_ls))
+    try:
+        env = {"VHDL_LS_CONFIG": str(directory_map)} if directory_map else None
+        with LspSession(root, command, timeout, env) as session:
+            nodes = _document_symbols(session, path)
+    finally:
+        if directory_map:
+            shutil.rmtree(directory_map.parent, ignore_errors=True)
+    lines = source_lines(path, {})
+    text = build_index(str(file), nodes, lines)
+    if directory_map:
+        title, _, rest = text.partition("\n")
+        text = "\n".join(part for part in (title, DIRECTORY_MAP_NOTE, rest) if part)
+    return FileIndex(text, regions(nodes), lines)
+
+
 @tools.tool()
 def nav_index(file: str, config: str | None = None, timeout: float = DEFAULT_TIMEOUT) -> str:
     """A compact skeleton of one VHDL file with [start-end] line ranges: context
-    clauses, units, generics and ports with their types, declarations,
-    subprograms, processes, generates and instances. Use it before reading a
-    VHDL file, then read only the ranges you need.
+    clauses, units, generics and ports with their types, declarations with
+    types, subprograms, processes with sensitivity lists, generates and
+    instances with generic maps. Use it before reading a VHDL file, then read
+    only the ranges you need.
 
     Needs no vhdl_ls.toml; the nearest one above the file (or --config) is
     used when present, so types resolve. --timeout is in seconds."""
     try:
-        path = Path(file).expanduser()
-        if not path.is_file():
-            raise NavError(f"no file {file}")
-        path = path.resolve()
-        try:
-            root = find_config(path.parent, config).parent
-            directory_map = None
-        except NavError:
-            if config:
-                raise
-            root = path.parent
-            directory_map = write_directory_map(path.parent)
-        vhdl_ls = find_vhdl_ls()
-        command = vhdl_ls_command(vhdl_ls, find_std_libraries(vhdl_ls))
-        try:
-            env = {"VHDL_LS_CONFIG": str(directory_map)} if directory_map else None
-            with LspSession(root, command, timeout, env) as session:
-                nodes = _document_symbols(session, path)
-        finally:
-            if directory_map:
-                shutil.rmtree(directory_map.parent, ignore_errors=True)
-        index = build_index(file, nodes, source_lines(path, {}))
-        if directory_map:
-            title, _, rest = index.partition("\n")
-            index = "\n".join(part for part in (title, DIRECTORY_MAP_NOTE, rest) if part)
-        return index
+        return file_index(file, config, timeout).text
     except NavError as exc:
         return ToolError(f"Error: {exc}")
 

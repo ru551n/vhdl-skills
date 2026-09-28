@@ -7,6 +7,7 @@ Nodes carry 0-based lines; the output uses 1-based ``[start-end]`` ranges.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
 from vhdl_tools.nav.symbols import Node
 
@@ -216,6 +217,63 @@ def _body(node: Node, lines: list[str], indent: int) -> list[str]:
             if item.kind in _NESTED:
                 out.extend(_body(item, lines, indent + 1))
     return out
+
+
+@dataclass(frozen=True)
+class Region:
+    """A named item of the index (process, subprogram, instance, generate,
+    block, protected type), 0-based lines."""
+
+    label: str
+    name: str
+    start: int
+    end: int
+
+
+@dataclass(frozen=True)
+class FileIndex:
+    """An index with what the hooks need to quote source: its named regions
+    and the file's lines."""
+
+    text: str
+    regions: list[Region]
+    lines: list[str]
+
+
+def regions(nodes: list[Node]) -> list[Region]:
+    """Every named item, at every level, in source order."""
+    found = []
+    for node in nodes:
+        if node.kind in _ITEMS and node.name:
+            found.append(Region(f"{node.kind} {node.name}", node.name, node.start_line, node.end_line))
+        found.extend(regions(node.children))
+    return sorted(found, key=lambda r: (r.start, -r.end))
+
+
+def excerpt(
+    request: str, found: list[Region], lines: list[str], max_lines: int = 150, max_regions: int = 3
+) -> str:
+    """Source of the regions whose names ``request`` mentions, in source order,
+    within ``max_lines`` lines and ``max_regions`` regions; "" if none."""
+    words = {word.lower() for word in re.findall(r"[A-Za-z]\w{2,}", request)}
+    chosen: list[Region] = []
+    used = 0
+    for region in found:
+        size = region.end - region.start + 1
+        if region.name.lower() not in words or used + size > max_lines:
+            continue
+        chosen.append(region)
+        used += size
+        if len(chosen) == max_regions:
+            break
+    if not chosen:
+        return ""
+    width = len(str(max(r.end for r in chosen) + 1))
+    out = ["Source of the regions your request names (read anything else by range):"]
+    for region in chosen:
+        out.append(f"--- {region.label} {span(region.start, region.end)}")
+        out.extend(f"{n + 1:>{width}}  {lines[n]}" for n in range(region.start, min(region.end + 1, len(lines))))
+    return "\n".join(out)
 
 
 def build_index(title: str, nodes: list[Node], lines: list[str]) -> str:

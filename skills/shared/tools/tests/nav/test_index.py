@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from vhdl_tools.nav.index import build_index, declared_text, instance_target, span
+from vhdl_tools.nav.index import build_index, declared_text, excerpt, instance_target, regions, span
 from vhdl_tools.nav.symbols import Node
 
 
@@ -186,3 +186,56 @@ def test_richer_items():
     assert out[6].startswith("  instance u2 : entity work.leaf generic map (g0 => 0, g1 => 1")
     assert out[6].endswith("...) [14]")
     assert len(out[6]) < 220
+
+
+def _arch_with_items():
+    lines = [f"-- line {n + 1}" for n in range(400)]
+    arch = N("architecture", "a", 0, 13, 0, 399, [
+        N("process", "status", 10, 2, 10, 124),       # 115 lines
+        N("process", "assertions", 130, 2, 130, 139),  # 10 lines
+        N("generate", "read_addr_calc", 150, 2, 150, 171, [
+            N("process", "calc_peek_addr", 153, 4, 153, 165),
+        ]),
+        N("instance", "handshake_pipeline", 300, 2, 300, 321),
+        N("process", "", 330, 2, 330, 340),
+    ])
+    return [arch], lines
+
+
+def test_regions_are_named_items_at_every_level():
+    nodes, _ = _arch_with_items()
+    assert [(r.label, r.start, r.end) for r in regions(nodes)] == [
+        ("process status", 10, 124),
+        ("process assertions", 130, 139),
+        ("generate read_addr_calc", 150, 171),
+        ("process calc_peek_addr", 153, 165),
+        ("instance handshake_pipeline", 300, 321),
+    ]
+
+
+def test_excerpt_includes_the_regions_a_request_names():
+    nodes, lines = _arch_with_items()
+    text = excerpt("What do the Status and calc_peek_addr processes do?", regions(nodes), lines)
+    assert text.splitlines()[0].startswith("Source of the regions your request names")
+    assert "--- process status [11-125]" in text
+    assert "--- process calc_peek_addr [154-166]" in text
+    assert " 11  -- line 11" in text and "125  -- line 125" in text
+
+
+def test_excerpt_respects_the_line_budget_and_region_count():
+    nodes, lines = _arch_with_items()
+    # Source order: status (115) + assertions (10) + read_addr_calc (22) = 147
+    # lines, three regions; handshake_pipeline would be a fourth.
+    text = excerpt("status read_addr_calc handshake_pipeline assertions", regions(nodes), lines)
+    headers = [line for line in text.splitlines() if line.startswith("--- ")]
+    assert headers == [
+        "--- process status [11-125]",
+        "--- process assertions [131-140]",
+        "--- generate read_addr_calc [151-172]",
+    ]
+
+
+def test_excerpt_empty_without_matches():
+    nodes, lines = _arch_with_items()
+    assert excerpt("what are the generics?", regions(nodes), lines) == ""
+    assert excerpt("", regions(nodes), lines) == ""
