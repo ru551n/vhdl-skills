@@ -171,6 +171,9 @@ def test_decide_allows_when_nothing_parsed(tmp_path, monkeypatch):
     assert hook.decide(_event(_vhdl(tmp_path, 200))) is None
     monkeypatch.setattr(hook, "nav_index", lambda file, **_: "big.vhd  200 lines\ncontext [1-2]: ieee.std_logic_1164.all")
     assert hook.decide(_event(_vhdl(tmp_path, 200))) is None
+    note_only = "big.vhd  200 lines\nNote: no vhdl_ls.toml; this directory was read as one library, ..."
+    monkeypatch.setattr(hook, "nav_index", lambda file, **_: note_only)
+    assert hook.decide(_event(_vhdl(tmp_path, 200))) is None
 
 
 def test_decide_allows_when_index_is_not_much_smaller(tmp_path, monkeypatch):

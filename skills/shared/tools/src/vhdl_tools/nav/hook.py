@@ -65,7 +65,7 @@ def decide(event: dict[str, Any]) -> dict[str, Any] | None:
         return None
     # No design units means vhdl_ls could not parse the file (e.g. mid-edit),
     # and an index not much smaller than the file saves nothing: allow both.
-    if not any(not line.startswith("context ") for line in index.splitlines()[1:]):
+    if not any(not line.startswith(("context ", "Note:")) for line in index.splitlines()[1:]):
         return None
     if len(index) * 2 > path.stat().st_size:
         return None

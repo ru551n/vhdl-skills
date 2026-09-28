@@ -10,6 +10,7 @@ import glob
 import json
 import os
 import re
+import tempfile
 from pathlib import Path
 
 try:
@@ -97,6 +98,29 @@ def _has_vhdl(directory: Path) -> bool:
 
 def _key(name: str) -> str:
     return name if _BARE_KEY.fullmatch(name) else json.dumps(name)
+
+
+DIRECTORY_MAP_NOTE = (
+    "Note: no vhdl_ls.toml; this directory was read as one library, "
+    "so names from other libraries may be unresolved and left out."
+)
+
+
+def write_directory_map(directory: Path) -> Path:
+    """A throwaway vhdl_ls.toml (in a new temp directory; the caller removes it)
+    mapping ``directory``'s VHDL files as one library, so ``work.x`` between
+    neighbouring files resolves. vhdl_ls leaves out declarations whose types
+    it cannot resolve, which without any map loses most of a package."""
+    name = re.sub(r"\W", "_", directory.name).strip("_") or "lib"
+    if name.lower() == "work" or not name[0].isalpha():
+        name = f"lib_{name}"
+    patterns = [str(directory / "*.vhd"), str(directory / "*.vhdl")]
+    target = Path(tempfile.mkdtemp(prefix="vhdl-nav-")) / CONFIG_NAME
+    target.write_text(
+        f"[libraries]\n{_key(name)}.files = [{', '.join(json.dumps(p) for p in patterns)}]\n",
+        encoding="utf-8",
+    )
+    return target
 
 
 def write_init(directory: Path, layout: str = "auto") -> tuple[Path, list[str]]:

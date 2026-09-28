@@ -21,8 +21,12 @@ _CONTEXT = re.compile(r"\s*(library|use|context)\s+([^;]+);", re.IGNORECASE)
 _ARCH_OF = re.compile(r"\s*architecture\s+\w+\s+of\s+(\w+)", re.IGNORECASE)
 _INTERFACE = ("generic", "port")
 #: One line each, in source order; generate and block bodies are nested.
-_ITEMS = frozenset({"process", "function", "procedure", "instance", "generate", "block"})
-_NESTED = frozenset({"generate", "block"})
+_ITEMS = frozenset(
+    {"process", "function", "procedure", "instance", "generate", "block"}
+    | {"protected type", "protected type body"}
+)
+#: Regions whose contents are listed too (a protected type's methods, say).
+_NESTED = frozenset({"generate", "block", "protected type", "protected type body"})
 _HIDDEN = frozenset({"parameter", "literal"})
 #: Names shown per declaration kind; generated register packages hold thousands.
 _GROUP_NAME_CAP = 20

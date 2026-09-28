@@ -132,3 +132,19 @@ def test_declarations_spanning_lines():
         "    a : in std_ulogic [11]",
         "    b : in std_ulogic [11]",
     ]
+
+
+def test_protected_types_list_their_methods():
+    lines = ["package p is", "  type rand_t is protected", "    procedure seed (s : integer);",
+             "    impure function next return integer;", "  end protected;", "end package;"]
+    ptype = N("protected type", "rand_t", 1, 7, 1, 4, [
+        N("procedure", "seed", 2, 14, 2, 2, [N("parameter", "s", 2, 20, 2, 2)], detail="[INTEGER]"),
+        N("function", "next", 3, 20, 3, 3, detail="[return INTEGER]"),
+    ])
+    package = N("package", "p", 0, 8, 0, 5, [ptype])
+    assert build_index("p.vhd", [package], lines).splitlines()[1:] == [
+        "package p [1-6]",
+        "  protected type rand_t [2-5]",
+        "    procedure seed[INTEGER] [3]",
+        "    function next[return INTEGER] [4]",
+    ]

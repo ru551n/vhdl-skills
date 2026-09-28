@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import re
+import shutil
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -11,10 +12,12 @@ from typing import Literal
 
 from vhdl_tools.nav import NavError
 from vhdl_tools.nav.config import (
+    DIRECTORY_MAP_NOTE,
     empty_libraries,
     find_config,
     library_files,
     read_libraries,
+    write_directory_map,
     write_init,
 )
 from vhdl_tools.nav.formatting import (
@@ -302,15 +305,26 @@ def nav_index(file: str, config: str | None = None, timeout: float = DEFAULT_TIM
         path = path.resolve()
         try:
             root = find_config(path.parent, config).parent
+            directory_map = None
         except NavError:
             if config:
                 raise
             root = path.parent
+            directory_map = write_directory_map(path.parent)
         vhdl_ls = find_vhdl_ls()
         command = vhdl_ls_command(vhdl_ls, find_std_libraries(vhdl_ls))
-        with LspSession(root, command, timeout) as session:
-            nodes = _document_symbols(session, path)
-        return build_index(file, nodes, source_lines(path, {}))
+        try:
+            env = {"VHDL_LS_CONFIG": str(directory_map)} if directory_map else None
+            with LspSession(root, command, timeout, env) as session:
+                nodes = _document_symbols(session, path)
+        finally:
+            if directory_map:
+                shutil.rmtree(directory_map.parent, ignore_errors=True)
+        index = build_index(file, nodes, source_lines(path, {}))
+        if directory_map:
+            title, _, rest = index.partition("\n")
+            index = "\n".join(part for part in (title, DIRECTORY_MAP_NOTE, rest) if part)
+        return index
     except NavError as exc:
         return ToolError(f"Error: {exc}")
 

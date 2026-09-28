@@ -390,3 +390,26 @@ def test_find_past_the_symbol_cap(nav, fixture_copy):
     assert code == 0
     assert out.splitlines()[:2] == ["signal s  [lib_b.rtl]  lib_b/short.vhd:5", "1 hit"]
     assert "only matches in the standard libraries may be missing" in out
+
+
+def test_index_without_config_resolves_sibling_files(nav, tmp_path, monkeypatch):
+    """vhdl_ls drops declarations whose types it cannot resolve; with no
+    vhdl_ls.toml the file's directory is mapped as one library so work.x works."""
+    (tmp_path / "base_pkg.vhd").write_text(
+        "package base_pkg is\n  type seed_t is array (0 to 1) of integer;\nend package;\n"
+    )
+    (tmp_path / "rand_pkg.vhd").write_text(
+        "use work.base_pkg.all;\n\npackage rand_pkg is\n  type rand_t is protected\n"
+        "    procedure set_seed (s : seed_t);\n    impure function get_seed return seed_t;\n"
+        "  end protected;\nend package;\n"
+    )
+    monkeypatch.chdir(tmp_path)
+    code, out = nav("index", "--file", "rand_pkg.vhd", config=None)
+    assert code == 0
+    lines = out.splitlines()
+    assert lines[1] == (
+        "Note: no vhdl_ls.toml; this directory was read as one library, "
+        "so names from other libraries may be unresolved and left out."
+    )
+    assert "    procedure set_seed[seed_t] [5]" in lines
+    assert "    function get_seed[return seed_t] [6]" in lines

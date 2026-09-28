@@ -17,6 +17,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -97,7 +98,14 @@ class LspSession:
     """One language-server process for one command; ``timeout`` covers all of
     its requests together."""
 
-    def __init__(self, root: Path, command: list[str], timeout: float = DEFAULT_TIMEOUT) -> None:
+    def __init__(
+        self,
+        root: Path,
+        command: list[str],
+        timeout: float = DEFAULT_TIMEOUT,
+        env: Mapping[str, str] | None = None,
+    ) -> None:
+        """``env``: extra environment variables for the server process."""
         self.root = root
         self._timeout = timeout
         self._deadline = time.monotonic() + timeout
@@ -109,6 +117,7 @@ class LspSession:
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=self._stderr,
+                env={**os.environ, **env} if env else None,
             )
         except OSError as exc:
             self._stderr.close()
