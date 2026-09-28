@@ -157,3 +157,89 @@ def test_missing_vhdl_ls_is_a_clean_error(nav_cli, tmp_path, monkeypatch):
     assert out.strip() == (
         "Error: vhdl_ls not found (checked $VHDL_LS, PATH, ~/.cargo/bin). Install: cargo install vhdl_ls"
     )
+
+
+def test_index_top(nav, fixture_dir, monkeypatch):
+    monkeypatch.chdir(fixture_dir)
+    code, out = nav("index", "--file", "lib_b/top.vhd", config=None)
+    assert code == 0
+    assert out.splitlines() == [
+        "lib_b/top.vhd  35 lines",
+        "context [1-4]: ieee.std_logic_1164.all",
+        "entity top [6-12]",
+        "  ports:",
+        "    clk : in std_ulogic [8]",
+        "    d : in std_ulogic_vector(7 downto 0) [9]",
+        "    q : out std_ulogic_vector(7 downto 0) [10]",
+        "architecture rtl of top [14-35]",
+        "  signals: mid_q [15]",
+        "  instance leaf_inst : entity lib_a.leaf [17-25]",
+        "  generate gen_mid [27-34]",
+        "    instance mid_inst : entity work.mid [28-33]",
+    ]
+
+
+def test_index_generics_and_unlabelled_process(nav, fixture_dir, monkeypatch):
+    monkeypatch.chdir(fixture_dir)
+    code, out = nav("index", "--file", "lib_a/leaf.vhd", config=None)
+    assert code == 0
+    assert out.splitlines() == [
+        "lib_a/leaf.vhd  27 lines",
+        "context [1-4]: ieee.std_logic_1164.all, work.pkg_a.all",
+        "entity leaf [6-15]",
+        "  generics:",
+        "    width : positive := 8 [8]",
+        "  ports:",
+        "    clk : in std_ulogic [11]",
+        "    d : in std_ulogic_vector(width - 1 downto 0) [12]",
+        "    q : out std_ulogic_vector(width - 1 downto 0) [13]",
+        "architecture rtl of leaf [17-27]",
+        "  signals: state [18]",
+        "  process [20-26]",
+    ]
+
+
+def test_index_package_and_body(nav, fixture_dir, monkeypatch):
+    monkeypatch.chdir(fixture_dir)
+    code, out = nav("index", "--file", "lib_a/pkg_a.vhd", config=None)
+    assert code == 0
+    assert out.splitlines() == [
+        "lib_a/pkg_a.vhd  14 lines",
+        "context [1-2]: ieee.std_logic_1164.all",
+        "package pkg_a [4-7]",
+        "  types: state_t [5]",
+        "  function add1[NATURAL return NATURAL] [6]",
+        "package body pkg_a [9-14]",
+        "  function add1[NATURAL return NATURAL] [10-13]",
+    ]
+
+
+def test_index_component_declaration(nav, fixture_dir, monkeypatch):
+    monkeypatch.chdir(fixture_dir)
+    code, out = nav("index", "--file", "lib_b/comp_user.vhd", config=None)
+    assert code == 0
+    assert out.splitlines()[-3:] == [
+        "  components: leaf [11-20]",
+        "  signals: d, q [22]",
+        "  instance leaf_comp_inst : component leaf [24-29]",
+    ]
+
+
+def test_index_without_any_config(nav, fixture_dir, tmp_path, monkeypatch):
+    import shutil
+
+    lone = tmp_path / "lone" / "leaf.vhd"
+    lone.parent.mkdir()
+    shutil.copy(fixture_dir / "lib_a" / "leaf.vhd", lone)
+    monkeypatch.chdir(lone.parent)
+    code, out = nav("index", "--file", "leaf.vhd", config=None)
+    assert code == 0
+    assert "entity leaf [6-15]" in out
+    assert "  process [20-26]" in out
+
+
+def test_index_missing_file(nav_cli, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    code, out = nav_cli("index", "--file", "nope.vhd", config=None)
+    assert code == 1
+    assert out.strip() == "Error: no file nope.vhd"

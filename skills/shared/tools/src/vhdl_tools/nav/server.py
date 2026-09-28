@@ -19,6 +19,7 @@ from vhdl_tools.nav.formatting import (
     rel,
     source_lines,
 )
+from vhdl_tools.nav.index import build_index
 from vhdl_tools.nav.lsp import LspSession, find_std_libraries, find_vhdl_ls, vhdl_ls_command
 from vhdl_tools.nav.resolve import (
     Position,
@@ -250,3 +251,32 @@ def nav_show(
         return f"{title}\n{text}"
 
     return _run(config, body)
+
+
+@tools.tool()
+def nav_index(file: str, config: str | None = None) -> str:
+    """A compact skeleton of one VHDL file with [start-end] line ranges: context
+    clauses, units, generics and ports with their types, declarations,
+    subprograms, processes, generates and instances. Use it before reading a
+    VHDL file, then read only the ranges you need.
+
+    Needs no vhdl_ls.toml; the nearest one above the file (or --config) is
+    used when present, so types resolve."""
+    try:
+        path = Path(file).expanduser()
+        if not path.is_file():
+            raise NavError(f"no file {file}")
+        path = path.resolve()
+        try:
+            root = find_config(path.parent, config).parent
+        except NavError:
+            if config:
+                raise
+            root = path.parent
+        vhdl_ls = find_vhdl_ls()
+        command = vhdl_ls_command(vhdl_ls, find_std_libraries(vhdl_ls))
+        with LspSession(root, command) as session:
+            nodes = _document_symbols(session, path)
+        return build_index(file, nodes, source_lines(path, {}))
+    except NavError as exc:
+        return ToolError(f"Error: {exc}")
