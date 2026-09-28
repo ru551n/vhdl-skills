@@ -166,3 +166,12 @@ def test_std_libraries_missing(tmp_path, monkeypatch):
         find_std_libraries(_executable(tmp_path / "bin" / "vhdl_ls"))
     assert str(exc.value) == STD_LIBRARIES_HELP
     assert "VHDL_LS_LIBRARIES" in STD_LIBRARIES_HELP and "rust_hdl" in STD_LIBRARIES_HELP
+
+
+def test_close_is_quick_when_exit_is_ignored(tmp_path):
+    """vhdl_ls stops only after shutdown + exit; closing must not wait out a timeout."""
+    session = _session(tmp_path, "lsp_server")
+    session.request("x", {})
+    start = time.monotonic()
+    session.close()
+    assert time.monotonic() - start < 0.5

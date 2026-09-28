@@ -7,6 +7,7 @@ daemon and no cache.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import queue
@@ -221,10 +222,14 @@ class LspSession:
 
     def close(self) -> None:
         if self._proc.poll() is None:
-            try:
+            # vhdl_ls ignores a bare "exit": it stops only after shutdown + exit.
+            # Past the deadline the shutdown request fails at once and we kill.
+            with contextlib.suppress(NavError):
+                self.request("shutdown", None)
                 self.notify("exit", None)
-            except NavError:
-                pass
+            with contextlib.suppress(OSError):
+                assert self._proc.stdin is not None
+                self._proc.stdin.close()
             try:
                 self._proc.wait(timeout=1)
             except subprocess.TimeoutExpired:

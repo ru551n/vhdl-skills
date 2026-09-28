@@ -1,8 +1,10 @@
 """Stand-in language server for LspSession tests.
 
-Mode (argv[1]): echo | crash | hang | server_request | error. Every mode
+Mode (argv[1]): echo | crash | hang | server_request | error | lsp_server. Every mode
 answers ``initialize``; other requests get an echo of their method, params and
-the notifications seen so far, unless the mode says otherwise.
+the notifications seen so far, unless the mode says otherwise. ``lsp_server``
+behaves like vhdl_ls on the way out: it ignores a bare ``exit`` and the end of
+its input, and stops only after ``shutdown`` then ``exit``.
 """
 
 from __future__ import annotations
@@ -17,6 +19,8 @@ def read() -> dict:
     while True:
         line = sys.stdin.buffer.readline()
         if not line:
+            if mode == "lsp_server":
+                time.sleep(60)
             sys.exit(0)
         if line in (b"\r\n", b"\n"):
             break
@@ -34,8 +38,13 @@ def send(message: dict) -> None:
 
 mode = sys.argv[1]
 notifications: list[str] = []
+shut_down = False
 while True:
     message = read()
+    if message.get("method") == "exit" and (shut_down or mode != "lsp_server"):
+        sys.exit(0)
+    if message.get("method") == "shutdown":
+        shut_down = True
     if "id" not in message:
         notifications.append(message["method"])
         continue
