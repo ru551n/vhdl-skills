@@ -239,3 +239,17 @@ def test_excerpt_empty_without_matches():
     nodes, lines = _arch_with_items()
     assert excerpt("what are the generics?", regions(nodes), lines) == ""
     assert excerpt("", regions(nodes), lines) == ""
+
+
+def test_overloads_share_one_line():
+    lines = [f"-- {n}" for n in range(20)]
+    subprograms = [N("function", "f", n, 11, n, n, detail=f"[T{n} return INTEGER]") for n in range(1, 10)]
+    package = N("package", "p", 0, 8, 0, 19, [
+        subprograms[0],
+        N("function", "g", 11, 11, 11, 13, detail="[BIT return BIT]"),
+        *subprograms[1:],
+    ])
+    assert build_index("p.vhd", [package], lines).splitlines()[2:] == [
+        "  function f[T1 return INTEGER] [2] +8 overloads at 3, 4, 5, 6, 7, 8, ...",
+        "  function g[BIT return BIT] [12-14]",
+    ]
