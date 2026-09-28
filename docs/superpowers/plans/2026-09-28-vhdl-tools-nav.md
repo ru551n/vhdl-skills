@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a `vhdl-tools nav` command group that answers exact VHDL lookups (find, def, refs, show, outline, tree, init) through the stock `vhdl_ls` binary in a few lines of text.
+**Goal:** Give Claude Code what tree-sitter's `index` gives Maki, for VHDL: a `vhdl-tools nav index` skeleton with line ranges that a plugin Read hook serves in place of large full-file reads, plus exact cross-file lookups (find, def, refs, show, tree, init), all through the stock `vhdl_ls` binary.
 
-**Architecture:** Each command finds the project's `vhdl_ls.toml`, starts `vhdl_ls --silent --no-lint [-l <stdlib dir>]` over stdio, sends a few LSP requests through a ~150-line stdlib-only client, formats the replies compactly and stops the process (~0.1 s cold). Pure modules (symbol parsing, config, formatting, name/position resolution) are unit-tested without vhdl_ls; the commands are tested end to end against a small two-library VHDL fixture.
+**Architecture:** Each command finds the project's `vhdl_ls.toml`, starts `vhdl_ls --silent --no-lint [-l <stdlib dir>]` over stdio, sends a few LSP requests through a ~150-line stdlib-only client, formats the replies compactly and stops the process (~0.1 s cold). A `PreToolUse` hook on `Read` (shipped in the plugin's `hooks/hooks.json`) denies full reads of VHDL files of 150+ lines and hands Claude the index instead; it allows the read whenever the index cannot be built. Pure modules (symbol parsing, config, formatting, name/position resolution, index layout, hook decision) are unit-tested without vhdl_ls; the commands are tested end to end against a small two-library VHDL fixture.
 
 **Tech Stack:** Python ≥3.10, stdlib (`subprocess`, `threading`, `json`, `tomllib`/`tomli`), the existing `vhdl_tools` CLI generator (`cli.py`, `registry.py`), pytest, vhdl_ls 0.88.0.
 
@@ -20,11 +20,13 @@
 - vhdl_ls is started with `-l <directory>` (the directory holding the standard libraries' `vhdl_ls.toml`, never the file), found via `$VHDL_LS_LIBRARIES` → vhdl_ls's own install locations (then no `-l`) → `~/.cache/speja/vhdl_libraries-*` (highest version).
 - The binary is `$VHDL_LS` → `vhdl_ls` on PATH → `~/.cargo/bin/vhdl_ls`.
 - One command = one vhdl_ls process, 30 s timeout over all its requests; no daemon, no cache.
+- `nav index` needs no `vhdl_ls.toml` (it uses the nearest one above the file when present).
+- The Read hook denies only when: tool is `Read`, no `offset` and no `limit`, suffix `.vhd`/`.vhdl`, file has ≥ `VHDL_NAV_INDEX_MIN_LINES` lines (default 150; `0` disables), and the index was built. Any failure means allow (exit 0, no output).
 - Match the existing code style: `from __future__ import annotations`, module docstrings, type hints, comments only where the code does not say it.
 
 ## Review Focus
 
-- A name that exists only in the standard libraries (`std_ulogic`): `find`/`show` should find it in `ieee`, not say "not found". Test: Task 6 `test_find_standard_library_name`.
+- The Read hook when the index cannot be built (vhdl_ls missing, unparsable input, crash): the Read must go through untouched, never be blocked. Tests: Task 9 `test_decide_allows_when_index_fails`, `test_main_allows_on_bad_input`.
 - Running from a subdirectory of the project without `--config`, with a `--pos` path relative to that subdirectory: the config is found upward and the file relative to the cwd. Test: Task 6 `test_def_from_subdirectory_without_config`.
 - A library whose globs match no files: the command still answers and says so on a leading `Warning:` line. Test: Task 6 `test_warning_for_library_without_files`.
 - Different letter case in names (`LEAF`, `Lib_A.Leaf`): VHDL is case-insensitive, so lookups must be too. Tests: Task 1 `test_matches_name_is_case_insensitive`, Task 6 `test_def_name_case_insensitive`.
@@ -42,8 +44,12 @@
 | `src/vhdl_tools/nav/lsp.py` | Locate vhdl_ls and its standard libraries; `LspSession` stdio client |
 | `src/vhdl_tools/nav/formatting.py` | All text output: hits, context, references, hover, outline, tree |
 | `src/vhdl_tools/nav/resolve.py` | `--name` → declaration (`find_hits`, `resolve_one`), `--pos` → position |
+| `src/vhdl_tools/nav/index.py` | Per-file skeleton with line ranges (the Maki-style index); instance target parsing |
 | `src/vhdl_tools/nav/tree.py` | Instantiation tree below an entity |
 | `src/vhdl_tools/nav/server.py` | `ToolRegistry` and the seven `nav_*` commands |
+| `src/vhdl_tools/nav/hook.py` | Claude Code `PreToolUse` hook logic for `Read` |
+| `skills/shared/bin/vhdl-read-hook` (repo root path) | Hook launcher: cheap `.vhd` pre-filter, then `uv run` |
+| `hooks/hooks.json` (repo root path) | Registers the hook with the plugin |
 | `src/vhdl_tools/cli.py` | Register the `nav` group |
 | `pyproject.toml`, `uv.lock` | `tomli` for Python 3.10 |
 | `tests/nav/fixture/**` | Two-library VHDL project used by the end-to-end tests |
@@ -128,6 +134,11 @@ def test_parse_subprograms_and_literals():
     )
     assert parse_symbol_name("idle[return state_t]") == ("literal", "idle", "[return state_t]")
     assert parse_symbol_name("something odd") == ("", "something odd", "")
+    assert parse_symbol_name("if statement") == ("", "if statement", "")
+
+
+def test_parse_unlabelled_process():
+    assert parse_symbol_name("process") == ("process", "", "")
 
 
 def test_hit_from_symbol():
@@ -269,12 +280,16 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 _QUOTED = re.compile(r"(?P<kind>[a-z][a-z ]*?) '(?P<name>[^']+)'(?P<detail>.*)")
+#: Statements vhdl_ls lists without a label (``'process'``): kind only, no name.
+_UNLABELLED = frozenset({"process", "block", "generate"})
 _SUBPROGRAM = re.compile(r"(?P<kind>function|procedure) (?P<name>[^\[\s]+)(?P<detail>.*)")
 _LITERAL = re.compile(r"(?P<name>[^\[\s]+)(?P<detail>\[.*)")
 
 
 def parse_symbol_name(text: str) -> tuple[str, str, str]:
     """``"port 'clk' : in"`` -> ``("port", "clk", ": in")``."""
+    if text in _UNLABELLED:
+        return text, "", ""
     match = _QUOTED.fullmatch(text) or _SUBPROGRAM.fullmatch(text)
     if match:
         return match["kind"], match["name"], match["detail"].strip()
@@ -417,7 +432,7 @@ class TreeNode:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/nav/test_symbols.py -v`
-Expected: 10 passed.
+Expected: 11 passed.
 
 - [ ] **Step 5: Commit**
 
@@ -2401,7 +2416,7 @@ In `src/vhdl_tools/cli.py`, add to `GROUPS` after the `"wave"` entry:
     "nav": (
         "vhdl_tools.nav.server",
         "nav_",
-        "Exact VHDL lookups through vhdl_ls (find, def, refs, show, outline, tree)",
+        "VHDL file index and exact lookups through vhdl_ls (index, find, def, refs, show, tree)",
     ),
 ```
 
@@ -2454,10 +2469,10 @@ from vhdl_tools.registry import ToolError, ToolRegistry
 tools = ToolRegistry(
     "vhdl_tools.nav",
     instructions=(
-        "Exact VHDL lookups through vhdl_ls, the VHDL language server: where a name "
-        "is declared (find, def), who uses it (refs), its declaration or a "
-        "package's contents (show), a file's or library's outline, and an entity's "
-        "instantiation tree. Names are identifiers, optionally library-qualified "
+        "VHDL through vhdl_ls, the VHDL language server: a file's skeleton with "
+        "line ranges to read from (index), where a name is declared (find, def), "
+        "who uses it (refs), its declaration or a package's contents (show), and "
+        "an entity's instantiation tree. Names are identifiers, optionally library-qualified "
         "(fifo, fifo.fifo); --pos is FILE:LINE[:COL], 1-based. The project's "
         "vhdl_ls.toml (found upward from the current directory, or --config) "
         "defines the libraries; nav init writes one. Output paths are relative "
@@ -2684,87 +2699,466 @@ git commit -m "feat(nav): find, def, refs and show commands"
 
 ---
 
-### Task 7: `outline` and `tree`
+### Task 7: The per-file index
 
 **Files:**
-- Create: `src/vhdl_tools/nav/tree.py`
-- Modify: `src/vhdl_tools/nav/server.py` (add two commands, imports)
-- Test: `tests/nav/test_e2e.py` (append), `tests/nav/test_tree.py`
+- Create: `src/vhdl_tools/nav/index.py`
+- Modify: `src/vhdl_tools/nav/server.py` (add `nav_index`, imports)
+- Test: `tests/nav/test_index.py`, `tests/nav/test_e2e.py` (append)
 
 **Interfaces:**
-- Consumes: `LspSession` (Task 3), `find_hits`, `hit_at`, `existing_file` (Task 5), `source_lines`, `format_outline`, `format_tree`, `count`, `rel` (Task 4), `Node`, `TreeNode`, `locations`, `nodes_from_document_symbols`, `prefer_declarations` (Task 1), `library_files` (Task 2), `_run`, `_document_symbols`, `Project` (Task 6).
-- Produces: `build_tree(session: LspSession, top: Hit, depth: int = 0) -> TreeNode`; `TARGET` regex; commands `nav_outline`, `nav_tree`.
+- Consumes: `Node` (Task 1), `NavError`, `find_config` (Task 2), `LspSession`, `find_vhdl_ls`, `find_std_libraries`, `vhdl_ls_command` (Task 3), `source_lines` (Task 4), `_document_symbols` (Task 6).
+- Produces:
+  - `TARGET: re.Pattern` (what follows an instance label).
+  - `span(start: int, end: int) -> str` (0-based in, `"[a-b]"` / `"[a]"` 1-based out).
+  - `declared_text(line: str, col: int) -> str` (text after the `:` of the declaration whose name starts at `col`, up to `;` or the closing parenthesis, whitespace collapsed).
+  - `instance_target(instance: Node, lines: list[str]) -> tuple[str, str, int, int] | None` → `(how, unit, line, col)`: `how` in `entity|component|configuration`, `unit` as written without spaces (`work.mid`), `line`/`col` 0-based of the unit name's last segment.
+  - `build_index(title: str, nodes: list[Node], lines: list[str]) -> str`.
+  - Command `nav_index(file: str, config: str | None = None) -> str`.
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Write the failing unit tests**
 
-`tests/nav/test_tree.py`:
+`tests/nav/test_index.py`:
 
 ```python
-"""Reading the unit name out of an instantiation statement."""
+"""Index layout and instantiation parsing, without vhdl_ls."""
 
 from __future__ import annotations
 
-from vhdl_tools.nav.tree import TARGET
+from vhdl_tools.nav.index import build_index, declared_text, instance_target, span
+from vhdl_tools.nav.symbols import Node
 
 
-def _unit(text: str) -> tuple[str | None, str]:
-    match = TARGET.match(text)
-    assert match is not None
-    return match["how"], match["unit"]
+def N(kind, name, line, col, start, end, children=(), detail=""):
+    return Node(kind, name, detail, line, col, start, end, list(children))
 
 
-def test_entity_instantiation():
-    assert _unit(" : entity lib_a.leaf\n    generic map (") == ("entity", "lib_a.leaf")
-    assert _unit(" : entity work.mid(rtl)\n") == ("entity", "work.mid")
+def test_span():
+    assert span(4, 4) == "[5]"
+    assert span(4, 9) == "[5-10]"
 
 
-def test_component_instantiation():
-    assert _unit(" : leaf\n    port map (") == (None, "leaf")
-    assert _unit(" : component leaf port map (") == ("component", "leaf")
+def test_declared_text():
+    assert declared_text("    clk : in std_ulogic;", 4) == "in std_ulogic"
+    assert declared_text("    q : out std_ulogic_vector(width - 1 downto 0)", 4) == (
+        "out std_ulogic_vector(width - 1 downto 0)"
+    )
+    assert declared_text("    width : positive := 8", 4) == "positive := 8"
+    assert declared_text("    level : out natural range 0 to depth := 0; -- note", 4) == (
+        "out natural range 0 to depth := 0"
+    )
+    assert declared_text("  port (a, b : in bit);", 11) == "in bit"
+    assert declared_text("  process (clk)", 2) == ""
 
 
-def test_configuration_instantiation():
-    assert _unit(" : configuration lib.cfg_top") == ("configuration", "lib.cfg_top")
+def test_instance_target_forms():
+    lines = [
+        "  u1 : entity lib_a.leaf",
+        "    generic map (width => 8)",
+        "    port map (clk => clk);",
+        "  u2 : leaf port map (clk);",
+        "  u3 : configuration lib.cfg_top;",
+        "  u4 : entity work.mid(rtl) port map (clk);",
+    ]
+    assert instance_target(N("instance", "u1", 0, 2, 0, 2), lines) == ("entity", "lib_a.leaf", 0, 20)
+    assert instance_target(N("instance", "u2", 3, 2, 3, 3), lines) == ("component", "leaf", 3, 7)
+    assert instance_target(N("instance", "u3", 4, 2, 4, 4), lines) == ("configuration", "lib.cfg_top", 4, 25)
+    assert instance_target(N("instance", "u4", 5, 2, 5, 5), lines) == ("entity", "work.mid", 5, 19)
+    assert instance_target(N("instance", "u5", 0, 2, 0, 0), ["  u5"]) is None
+
+
+def test_build_index():
+    lines = [
+        "library ieee;",
+        "use ieee.std_logic_1164.all;",
+        "entity e is",
+        "  generic (ram_type : ram_style_t := auto);",
+        "  port (clk : in std_ulogic;",
+        "        q : out std_ulogic := '0');",
+        "end entity;",
+        "architecture a of e is",
+        "  signal x, y : bit;",
+        "  signal z : bit;",
+        "begin",
+        "  g : if true generate",
+        "    u : entity work.leaf port map (clk);",
+        "  end generate;",
+        "  process begin wait; end process;",
+        "end architecture;",
+    ]
+    entity = N("entity", "e", 2, 7, 2, 6, [
+        N("signal", "ram_type", 3, 11, 3, 3),  # an unresolved generic type, as vhdl_ls reports it
+        N("port", "clk", 4, 8, 4, 4, detail=": in"),
+        N("port", "q", 5, 8, 5, 5, detail=": out"),
+    ])
+    arch = N("architecture", "a", 7, 13, 7, 15, [
+        N("signal", "x", 8, 9, 8, 8),
+        N("signal", "y", 8, 12, 8, 8),
+        N("signal", "z", 9, 9, 9, 9),
+        N("generate", "g", 11, 2, 11, 13, [N("instance", "u", 12, 4, 12, 12)]),
+        N("process", "", 14, 2, 14, 14, [N("", "if statement", 14, 10, 14, 14)]),
+    ])
+    assert build_index("e.vhd", [entity, arch], lines) == "\n".join([
+        "e.vhd  16 lines",
+        "context [1-2]: ieee.std_logic_1164.all",
+        "entity e [3-7]",
+        "  generics:",
+        "    ram_type : ram_style_t := auto [4]",
+        "  ports:",
+        "    clk : in std_ulogic [5]",
+        "    q : out std_ulogic [6]",
+        "architecture a of e [8-16]",
+        "  signals: x, y [9]; z [10]",
+        "  generate g [12-14]",
+        "    instance u : entity work.leaf [13]",
+        "  process [15]",
+    ])
 ```
+
+- [ ] **Step 2: Append the failing end-to-end tests**
 
 Append to `tests/nav/test_e2e.py`:
 
 ```python
 
 
-def test_outline_file(nav, fixture_dir, monkeypatch):
+def test_index_top(nav, fixture_dir, monkeypatch):
     monkeypatch.chdir(fixture_dir)
-    code, out = nav("outline", "--file", "lib_b/top.vhd")
+    code, out = nav("index", "--file", "lib_b/top.vhd", config=None)
     assert code == 0
     assert out.splitlines() == [
-        "lib_b/top.vhd",
-        "  entity top  L6",
-        "    port clk : in  L8",
-        "    port d : in  L9",
-        "    port q : out  L10",
-        "  architecture rtl  L14",
-        "    signal mid_q  L15",
-        "    instance leaf_inst  L17",
-        "    generate gen_mid  L27",
-        "      instance mid_inst  L28",
+        "lib_b/top.vhd  35 lines",
+        "context [1-4]: ieee.std_logic_1164.all",
+        "entity top [6-12]",
+        "  ports:",
+        "    clk : in std_ulogic [8]",
+        "    d : in std_ulogic_vector(7 downto 0) [9]",
+        "    q : out std_ulogic_vector(7 downto 0) [10]",
+        "architecture rtl of top [14-35]",
+        "  signals: mid_q [15]",
+        "  instance leaf_inst : entity lib_a.leaf [17-25]",
+        "  generate gen_mid [27-34]",
+        "    instance mid_inst : entity work.mid [28-33]",
     ]
 
 
-def test_outline_library(nav):
-    code, out = nav("outline", "--library", "LIB_A")
+def test_index_generics_and_unlabelled_process(nav, fixture_dir, monkeypatch):
+    monkeypatch.chdir(fixture_dir)
+    code, out = nav("index", "--file", "lib_a/leaf.vhd", config=None)
     assert code == 0
     assert out.splitlines() == [
-        "lib_a/dup.vhd: entity dup L1, architecture rtl L4",
-        "lib_a/leaf.vhd: entity leaf L6, architecture rtl L17",
-        "lib_a/pkg_a.vhd: package pkg_a L4, package body pkg_a L9",
-        "3 files in library lib_a",
+        "lib_a/leaf.vhd  27 lines",
+        "context [1-4]: ieee.std_logic_1164.all, work.pkg_a.all",
+        "entity leaf [6-15]",
+        "  generics:",
+        "    width : positive := 8 [8]",
+        "  ports:",
+        "    clk : in std_ulogic [11]",
+        "    d : in std_ulogic_vector(width - 1 downto 0) [12]",
+        "    q : out std_ulogic_vector(width - 1 downto 0) [13]",
+        "architecture rtl of leaf [17-27]",
+        "  signals: state [18]",
+        "  process [20-26]",
     ]
 
 
-def test_outline_unknown_library(nav):
-    code, out = nav("outline", "--library", "nope")
+def test_index_package_and_body(nav, fixture_dir, monkeypatch):
+    monkeypatch.chdir(fixture_dir)
+    code, out = nav("index", "--file", "lib_a/pkg_a.vhd", config=None)
+    assert code == 0
+    assert out.splitlines() == [
+        "lib_a/pkg_a.vhd  14 lines",
+        "context [1-2]: ieee.std_logic_1164.all",
+        "package pkg_a [4-7]",
+        "  types: state_t [5]",
+        "  function add1[NATURAL return NATURAL] [6]",
+        "package body pkg_a [9-14]",
+        "  function add1[NATURAL return NATURAL] [10-13]",
+    ]
+
+
+def test_index_component_declaration(nav, fixture_dir, monkeypatch):
+    monkeypatch.chdir(fixture_dir)
+    code, out = nav("index", "--file", "lib_b/comp_user.vhd", config=None)
+    assert code == 0
+    assert out.splitlines()[-3:] == [
+        "  components: leaf [11-20]",
+        "  signals: d, q [22]",
+        "  instance leaf_comp_inst : component leaf [24-29]",
+    ]
+
+
+def test_index_without_any_config(nav, fixture_dir, tmp_path, monkeypatch):
+    import shutil
+
+    lone = tmp_path / "lone" / "leaf.vhd"
+    lone.parent.mkdir()
+    shutil.copy(fixture_dir / "lib_a" / "leaf.vhd", lone)
+    monkeypatch.chdir(lone.parent)
+    code, out = nav("index", "--file", "leaf.vhd", config=None)
+    assert code == 0
+    assert "entity leaf [6-15]" in out
+    assert "  process [20-26]" in out
+
+
+def test_index_missing_file(nav_cli, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    code, out = nav_cli("index", "--file", "nope.vhd", config=None)
     assert code == 1
-    assert "no library nope" in out and "lib_a, lib_b" in out
+    assert out.strip() == "Error: no file nope.vhd"
+```
+
+- [ ] **Step 3: Run the tests to verify they fail**
+
+Run: `uv run pytest tests/nav/test_index.py tests/nav/test_e2e.py -k "index or span or declared or instance_target" -v`
+Expected: `test_index.py` fails with `ModuleNotFoundError: No module named 'vhdl_tools.nav.index'`; the e2e index tests fail with `invalid choice: 'index'` (exit 2).
+
+- [ ] **Step 4: Write `index.py`**
+
+`src/vhdl_tools/nav/index.py`:
+
+```python
+"""Per-file skeleton with line ranges: the VHDL counterpart of the tree-sitter
+``index`` tool in the Maki harness. Built from vhdl_ls documentSymbol (which is
+syntactic, so it needs no library map) plus declaration text from the source.
+Nodes carry 0-based lines; the output uses 1-based ``[start-end]`` ranges.
+"""
+
+from __future__ import annotations
+
+import re
+
+from vhdl_tools.nav.symbols import Node
+
+#: What follows an instance label: ``: [entity|component|configuration] name``.
+TARGET = re.compile(
+    r"\s*:\s*(?:(?P<how>entity|component|configuration)\s+)?"
+    r"(?P<unit>[A-Za-z]\w*(?:\s*\.\s*[A-Za-z]\w*)*)",
+    re.IGNORECASE,
+)
+
+_CONTEXT = re.compile(r"\s*(library|use|context)\s+([^;]+);", re.IGNORECASE)
+_ARCH_OF = re.compile(r"\s*architecture\s+\w+\s+of\s+(\w+)", re.IGNORECASE)
+_INTERFACE = ("generic", "port")
+#: One line each, in source order; generate and block bodies are nested.
+_ITEMS = frozenset({"process", "function", "procedure", "instance", "generate", "block"})
+_NESTED = frozenset({"generate", "block"})
+_HIDDEN = frozenset({"parameter", "literal"})
+
+
+def span(start: int, end: int) -> str:
+    return f"[{start + 1}]" if start == end else f"[{start + 1}-{end + 1}]"
+
+
+def declared_text(line: str, col: int) -> str:
+    """``clk : in std_ulogic;`` with ``col`` at ``clk`` -> ``in std_ulogic``."""
+    text = line[col:].split("--", 1)[0]
+    _, colon, rest = text.partition(":")
+    if not colon:
+        return ""
+    out = []
+    depth = 0
+    for char in rest:
+        if char == ";" and depth == 0:
+            break
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            if depth == 0:
+                break
+            depth -= 1
+        out.append(char)
+    return " ".join("".join(out).split())
+
+
+def instance_target(instance: Node, lines: list[str]) -> tuple[str, str, int, int] | None:
+    """``(how, unit, line, col)`` for an instance: how it instantiates, the unit
+    name as written, and where that name's last segment is (0-based)."""
+    statement = "\n".join(lines[instance.start_line : instance.end_line + 1])
+    label_end = (
+        sum(len(lines[i]) + 1 for i in range(instance.start_line, instance.line))
+        + instance.col
+        + len(instance.name)
+    )
+    match = TARGET.match(statement, label_end)
+    if match is None:
+        return None
+    unit = re.sub(r"\s+", "", match["unit"])
+    last = unit.rsplit(".", 1)[-1]
+    index = statement.rfind(last, match.start("unit"), match.end("unit"))
+    line = instance.start_line + statement.count("\n", 0, index)
+    col = index - (statement.rfind("\n", 0, index) + 1)
+    return (match["how"] or "component").lower(), unit, line, col
+
+
+def _plural(kind: str) -> str:
+    return kind + ("es" if kind.endswith("s") else "s")
+
+
+def _context(lines: list[str], start: int, end: int) -> str | None:
+    first = last = None
+    names: list[str] = []
+    for n in range(start, min(end, len(lines))):
+        match = _CONTEXT.match(lines[n])
+        if not match:
+            continue
+        first = n if first is None else first
+        last = n
+        if match[1].lower() != "library":
+            names += [name.strip() for name in match[2].split(",")]
+    if first is None or last is None:
+        return None
+    return f"context {span(first, last)}" + (f": {', '.join(names)}" if names else "")
+
+
+def _unit_header(unit: Node, lines: list[str]) -> str:
+    text = " ".join(part for part in (unit.kind, unit.name) if part)
+    if unit.kind == "architecture" and unit.line < len(lines):
+        match = _ARCH_OF.match(lines[unit.line])
+        if match:
+            text += f" of {match[1]}"
+    return f"{text} {span(unit.start_line, unit.end_line)}"
+
+
+def _body(node: Node, lines: list[str], indent: int) -> list[str]:
+    pad = "  " * indent
+    interface: dict[str, list[Node]] = {kind: [] for kind in _INTERFACE}
+    groups: dict[str, list[Node]] = {}
+    items: list[Node] = []
+    seen_port = False
+    for child in node.children:
+        kind = child.kind
+        if not kind or kind in _HIDDEN:
+            continue
+        if node.kind == "entity" and kind == "signal" and not seen_port:
+            kind = "generic"  # a generic whose type vhdl_ls could not resolve
+        seen_port = seen_port or kind == "port"
+        if kind in interface:
+            interface[kind].append(child)
+        elif kind in _ITEMS:
+            items.append(child)
+        else:
+            groups.setdefault(kind, []).append(child)
+
+    out = []
+    for kind, members in interface.items():
+        if not members:
+            continue
+        out.append(f"{pad}{_plural(kind)}:")
+        for member in members:
+            text = declared_text(lines[member.line], member.col) if member.line < len(lines) else ""
+            if kind == "port":
+                text = text.split(":=")[0].strip()
+            where = span(member.start_line, member.end_line)
+            out.append(f"{pad}  {member.name} : {text} {where}" if text else f"{pad}  {member.name} {where}")
+    for kind, members in groups.items():
+        runs: list[tuple[int, int, list[str]]] = []
+        for member in members:
+            if runs and (runs[-1][0], runs[-1][1]) == (member.start_line, member.end_line):
+                runs[-1][2].append(member.name)
+            else:
+                runs.append((member.start_line, member.end_line, [member.name]))
+        parts = "; ".join(f"{', '.join(names)} {span(a, b)}" for a, b, names in runs)
+        out.append(f"{pad}{_plural(kind)}: {parts}")
+    for item in items:
+        where = span(item.start_line, item.end_line)
+        label = " ".join(part for part in (item.kind, item.name) if part)
+        if item.kind in ("function", "procedure"):
+            out.append(f"{pad}{label}{item.detail} {where}")
+        elif item.kind == "instance":
+            target = instance_target(item, lines)
+            via = f" : {target[0]} {target[1]}" if target else ""
+            out.append(f"{pad}{label}{via} {where}")
+        else:
+            out.append(f"{pad}{label} {where}")
+            if item.kind in _NESTED:
+                out.extend(_body(item, lines, indent + 1))
+    return out
+
+
+def build_index(title: str, nodes: list[Node], lines: list[str]) -> str:
+    out = [f"{title}  {len(lines)} lines"]
+    previous_end = 0
+    for unit in nodes:
+        context = _context(lines, previous_end, unit.start_line)
+        if context:
+            out.append(context)
+        out.append(_unit_header(unit, lines))
+        out.extend(_body(unit, lines, 1))
+        previous_end = unit.end_line + 1
+    return "\n".join(out)
+```
+
+- [ ] **Step 5: Add `nav_index` to `server.py`**
+
+Add imports:
+
+```python
+from vhdl_tools.nav.index import build_index
+```
+
+and append:
+
+```python
+@tools.tool()
+def nav_index(file: str, config: str | None = None) -> str:
+    """A compact skeleton of one VHDL file with [start-end] line ranges: context
+    clauses, units, generics and ports with their types, declarations,
+    subprograms, processes, generates and instances. Use it before reading a
+    VHDL file, then read only the ranges you need.
+
+    Needs no vhdl_ls.toml; the nearest one above the file (or --config) is
+    used when present, so types resolve."""
+    try:
+        path = Path(file).expanduser()
+        if not path.is_file():
+            raise NavError(f"no file {file}")
+        path = path.resolve()
+        try:
+            root = find_config(path.parent, config).parent
+        except NavError:
+            if config:
+                raise
+            root = path.parent
+        vhdl_ls = find_vhdl_ls()
+        command = vhdl_ls_command(vhdl_ls, find_std_libraries(vhdl_ls))
+        with LspSession(root, command) as session:
+            nodes = _document_symbols(session, path)
+        return build_index(file, nodes, source_lines(path, {}))
+    except NavError as exc:
+        return ToolError(f"Error: {exc}")
+```
+
+- [ ] **Step 6: Run the tests to verify they pass**
+
+Run: `uv run pytest tests/nav tests/test_cli.py -v`
+Expected: all passed.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/vhdl_tools/nav/index.py src/vhdl_tools/nav/server.py tests/nav/test_index.py tests/nav/test_e2e.py
+git commit -m "feat(nav): Maki-style per-file index"
+```
+
+---
+
+### Task 8: The instantiation tree
+
+**Files:**
+- Create: `src/vhdl_tools/nav/tree.py`
+- Modify: `src/vhdl_tools/nav/server.py` (add `nav_tree`, imports)
+- Test: `tests/nav/test_e2e.py` (append)
+
+**Interfaces:**
+- Consumes: `LspSession` (Task 3), `source_lines`, `format_tree` (Task 4), `find_hits`, `hit_at`, `resolve_one` (Task 5), `instance_target` (Task 7), `Hit`, `Node`, `TreeNode`, `locations`, `nodes_from_document_symbols`, `prefer_declarations` (Task 1), `_run`, `Project` (Task 6).
+- Produces: `build_tree(session: LspSession, top: Hit, depth: int = 0) -> TreeNode`; command `nav_tree(top: str, depth: int = 0, config: str | None = None) -> str`.
+
+- [ ] **Step 1: Append the failing end-to-end tests**
+
+Append to `tests/nav/test_e2e.py`:
+
+```python
 
 
 def test_tree(nav):
@@ -2791,12 +3185,18 @@ def test_tree_component_instantiation(nav):
         "entity comp_user  [lib_b]  lib_b/comp_user.vhd:4",
         "  leaf_comp_inst : entity leaf  [lib_a]  lib_a/leaf.vhd:6  (component)",
     ]
+
+
+def test_tree_unknown_entity(nav):
+    code, out = nav("tree", "--top", "nope")
+    assert code == 1
+    assert out.startswith("Error: No entity named nope")
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `uv run pytest tests/nav/test_tree.py tests/nav/test_e2e.py -v`
-Expected: `test_tree.py` fails with `ModuleNotFoundError: No module named 'vhdl_tools.nav.tree'`; the new e2e tests fail with `invalid choice: 'outline'` / `'tree'` (exit 2).
+Run: `uv run pytest tests/nav/test_e2e.py -k tree -v`
+Expected: FAIL with `invalid choice: 'tree'` (exit 2).
 
 - [ ] **Step 3: Write `tree.py`**
 
@@ -2806,11 +3206,11 @@ Expected: `test_tree.py` fails with `ModuleNotFoundError: No module named 'vhdl_
 """Instantiation tree below an entity.
 
 An entity's architectures are the ``architecture <a> of <entity>`` lines among
-its references; their instances come from documentSymbol (``instance`` entries,
-also inside generate blocks). An entity or configuration instantiation is
-resolved with ``definition`` on the unit name. A component instantiation
-resolves to the component declaration, so the tree uses the one entity of
-that name instead, when there is exactly one.
+its references (vhdl_ls always includes them); their instances come from
+documentSymbol, also inside generate blocks. An entity or configuration
+instantiation is resolved with ``definition`` on the unit name. A component
+instantiation resolves to the component declaration, so the tree uses the
+one entity of that name instead, when there is exactly one.
 """
 
 from __future__ import annotations
@@ -2820,6 +3220,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from vhdl_tools.nav.formatting import source_lines
+from vhdl_tools.nav.index import instance_target
 from vhdl_tools.nav.lsp import LspSession
 from vhdl_tools.nav.resolve import find_hits, hit_at
 from vhdl_tools.nav.symbols import (
@@ -2829,13 +3230,6 @@ from vhdl_tools.nav.symbols import (
     locations,
     nodes_from_document_symbols,
     prefer_declarations,
-)
-
-#: What follows an instance label: ``: [entity|component|configuration] name``.
-TARGET = re.compile(
-    r"\s*:\s*(?:(?P<how>entity|component|configuration)\s+)?"
-    r"(?P<unit>[A-Za-z]\w*(?:\s*\.\s*[A-Za-z]\w*)*)",
-    re.IGNORECASE,
 )
 
 
@@ -2908,26 +3302,16 @@ class _TreeBuilder:
         return found
 
     def resolve_instance(self, path: Path, instance: Node) -> TreeNode:
-        lines = source_lines(path, self.cache)
-        statement = "\n".join(lines[instance.start_line : instance.end_line + 1])
-        label_end = (
-            sum(len(lines[i]) + 1 for i in range(instance.start_line, instance.line))
-            + instance.col
-            + len(instance.name)
-        )
-        match = TARGET.match(statement, label_end)
-        if match is None:
+        target = instance_target(instance, source_lines(path, self.cache))
+        if target is None:
             return TreeNode(instance.name, "?", None, "could not read the instantiation")
-        unit = re.sub(r"\s+", "", match["unit"])
+        how, unit, line, col = target
         last = unit.rsplit(".", 1)[-1]
-        if (match["how"] or "component").lower() == "component":
+        if how == "component":
             entities = prefer_declarations(find_hits(self.session, last, kind="entity").hits)
             if len(entities) == 1:
                 return TreeNode(instance.name, unit, entities[0], "component")
             return TreeNode(instance.name, unit, None, f"component; no unique entity named {last}")
-        index = statement.rfind(last, match.start("unit"), match.end("unit"))
-        line = instance.start_line + statement.count("\n", 0, index)
-        col = index - (statement.rfind("\n", 0, index) + 1)
         found = locations(
             self.session.request(
                 "textDocument/definition",
@@ -2936,8 +3320,8 @@ class _TreeBuilder:
         )
         if not found:
             return TreeNode(instance.name, unit, None, "unresolved")
-        target, target_line, _ = found[0]
-        return TreeNode(instance.name, unit, hit_at(self.session, target, target_line, last))
+        target_path, target_line, _ = found[0]
+        return TreeNode(instance.name, unit, hit_at(self.session, target_path, target_line, last))
 
 
 def build_tree(session: LspSession, top: Hit, depth: int = 0) -> TreeNode:
@@ -2947,78 +3331,11 @@ def build_tree(session: LspSession, top: Hit, depth: int = 0) -> TreeNode:
     return root
 ```
 
-- [ ] **Step 4: Add the commands to `server.py`**
+- [ ] **Step 4: Add `nav_tree` to `server.py`**
 
-Add imports in `src/vhdl_tools/nav/server.py`:
-
-```python
-from vhdl_tools.nav.config import empty_libraries, find_config, library_files, read_libraries
-from vhdl_tools.nav.formatting import (
-    count,
-    format_context,
-    format_hits,
-    format_outline,
-    format_refs,
-    format_tree,
-    header,
-    hover_text,
-    rel,
-    source_lines,
-)
-from vhdl_tools.nav.resolve import (
-    Position,
-    existing_file,
-    find_hits,
-    hit_at,
-    identifier_at,
-    not_found_message,
-    parse_pos,
-    position_params,
-    resolve_one,
-)
-from vhdl_tools.nav.tree import build_tree
-```
-
-(replacing the existing `config`, `formatting` and `resolve` import blocks), and append the two commands:
+Extend the formatting import with `format_tree`, add `from vhdl_tools.nav.tree import build_tree`, and append:
 
 ```python
-@tools.tool()
-def nav_outline(
-    file: str | None = None, library: str | None = None, config: str | None = None
-) -> str:
-    """The structure of a file (units, generics, ports, signals, processes,
-    instances, with line numbers) or of a library (each file's design units).
-
-    Give --file (relative to the current directory or the project root) or
-    --library (a name from vhdl_ls.toml)."""
-
-    def body(project: Project, session: LspSession) -> str:
-        if (file is None) == (library is None):
-            raise NavError("give exactly one of --file or --library")
-        if file is not None:
-            path = existing_file(file, project.root)
-            nodes = _document_symbols(session, path)
-            return "\n".join([rel(path, project.root), *format_outline(nodes, indent=1)])
-        names = {name.lower(): name for name in project.libraries}
-        match = names.get(library.lower())
-        if match is None:
-            raise NavError(
-                f"no library {library} in {project.config}; libraries: "
-                + ", ".join(project.library_names)
-            )
-        files = library_files(project.config, project.libraries[match])
-        out = []
-        for path in files:
-            units = ", ".join(
-                f"{n.kind} {n.name} L{n.line + 1}" for n in _document_symbols(session, path)
-            )
-            out.append(f"{rel(path, project.root)}: {units}")
-        out.append(f"{count(len(files), 'file')} in library {match}")
-        return "\n".join(out)
-
-    return _run(config, body)
-
-
 @tools.tool()
 def nav_tree(top: str, depth: int = 0, config: str | None = None) -> str:
     """The instantiation tree below an entity: one line per instance (label,
@@ -3043,21 +3360,346 @@ Expected: all passed.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/vhdl_tools/nav/tree.py src/vhdl_tools/nav/server.py tests/nav/test_tree.py tests/nav/test_e2e.py
-git commit -m "feat(nav): outline and instantiation tree"
+git add src/vhdl_tools/nav/tree.py src/vhdl_tools/nav/server.py tests/nav/test_e2e.py
+git commit -m "feat(nav): instantiation tree"
 ```
 
 ---
 
-### Task 8: `init`, docs, validation and measurement
+### Task 9: The Read hook
+
+**Files:**
+- Create: `src/vhdl_tools/nav/hook.py`
+- Create (repo root paths): `skills/shared/bin/vhdl-read-hook` (executable), `hooks/hooks.json`
+- Test: `tests/nav/test_hook.py`
+
+**Interfaces:**
+- Consumes: `nav_index` (Task 7), `ToolError`.
+- Produces: `MIN_LINES_ENV = "VHDL_NAV_INDEX_MIN_LINES"`, `DEFAULT_MIN_LINES = 150`, `min_lines() -> int`, `decide(event: dict) -> dict | None` (the hook's JSON output, or None to allow), `main() -> None` (stdin event → stdout JSON; `python -m vhdl_tools.nav.hook`).
+
+- [ ] **Step 1: Write the failing tests**
+
+`tests/nav/test_hook.py`:
+
+```python
+"""The Claude Code Read hook: deny big full VHDL reads with the index, allow the rest."""
+
+from __future__ import annotations
+
+import io
+import json
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from vhdl_tools.nav import hook
+from vhdl_tools.registry import ToolError
+
+LAUNCHER = Path(__file__).parents[3] / "bin" / "vhdl-read-hook"
+HOOKS_JSON = Path(__file__).parents[5] / "hooks" / "hooks.json"
+
+
+def _event(path: Path, tool: str = "Read", **extra: object) -> dict:
+    return {
+        "hook_event_name": "PreToolUse",
+        "tool_name": tool,
+        "tool_input": {"file_path": str(path), **extra},
+    }
+
+
+def _vhdl(tmp_path: Path, lines: int, name: str = "big.vhd") -> Path:
+    path = tmp_path / name
+    path.write_text("-- line\n" * lines)
+    return path
+
+
+@pytest.fixture
+def fake_index(monkeypatch):
+    monkeypatch.delenv(hook.MIN_LINES_ENV, raising=False)
+    monkeypatch.setattr(hook, "nav_index", lambda file: "INDEX")
+
+
+def test_decide_denies_big_full_read(tmp_path, fake_index):
+    big = _vhdl(tmp_path, 200)
+    output = hook.decide(_event(big))["hookSpecificOutput"]
+    assert output["hookEventName"] == "PreToolUse"
+    assert output["permissionDecision"] == "deny"
+    reason = output["permissionDecisionReason"]
+    assert reason.startswith(f"{big} has 200 lines")
+    assert "offset=1, limit=200" in reason
+    assert reason.endswith("\n\nINDEX")
+
+
+def test_decide_threshold_is_inclusive(tmp_path, fake_index):
+    assert hook.decide(_event(_vhdl(tmp_path, 149, "a.vhd"))) is None
+    assert hook.decide(_event(_vhdl(tmp_path, 150, "b.vhdl"))) is not None
+
+
+def test_decide_allows_ranged_reads(tmp_path, fake_index):
+    big = _vhdl(tmp_path, 200)
+    assert hook.decide(_event(big, offset=1)) is None
+    assert hook.decide(_event(big, limit=50)) is None
+
+
+def test_decide_allows_other_files_and_tools(tmp_path, fake_index):
+    text = tmp_path / "notes.txt"
+    text.write_text("x\n" * 500)
+    assert hook.decide(_event(text)) is None
+    assert hook.decide(_event(_vhdl(tmp_path, 200), tool="Edit")) is None
+    assert hook.decide(_event(tmp_path / "missing.vhd")) is None
+    assert hook.decide({}) is None
+
+
+def test_env_threshold(tmp_path, fake_index, monkeypatch):
+    small = _vhdl(tmp_path, 20)
+    monkeypatch.setenv(hook.MIN_LINES_ENV, "10")
+    assert hook.decide(_event(small)) is not None
+    monkeypatch.setenv(hook.MIN_LINES_ENV, "0")
+    assert hook.decide(_event(_vhdl(tmp_path, 500, "huge.vhd"))) is None
+    monkeypatch.setenv(hook.MIN_LINES_ENV, "junk")
+    assert hook.min_lines() == hook.DEFAULT_MIN_LINES
+
+
+def test_decide_allows_when_index_fails(tmp_path, monkeypatch):
+    monkeypatch.delenv(hook.MIN_LINES_ENV, raising=False)
+    monkeypatch.setattr(hook, "nav_index", lambda file: ToolError("Error: vhdl_ls not found"))
+    assert hook.decide(_event(_vhdl(tmp_path, 200))) is None
+
+
+def test_main_prints_the_decision(tmp_path, fake_index, monkeypatch, capsys):
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(_event(_vhdl(tmp_path, 200)))))
+    hook.main()
+    output = json.loads(capsys.readouterr().out)
+    assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_main_allows_on_bad_input(monkeypatch, capsys):
+    monkeypatch.setattr("sys.stdin", io.StringIO("not json"))
+    hook.main()
+    assert capsys.readouterr().out == ""
+
+
+def test_main_allows_when_decide_raises(tmp_path, monkeypatch, capsys):
+    def boom(event: dict) -> None:
+        raise RuntimeError("bug")
+
+    monkeypatch.setattr(hook, "decide", boom)
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(_event(_vhdl(tmp_path, 200)))))
+    hook.main()
+    assert capsys.readouterr().out == ""
+
+
+def test_hook_with_real_index(nav, fixture_dir, monkeypatch):
+    """``nav`` only supplies the skip when vhdl_ls is missing."""
+    monkeypatch.setenv(hook.MIN_LINES_ENV, "10")
+    leaf = fixture_dir / "lib_a" / "leaf.vhd"
+    reason = hook.decide(_event(leaf))["hookSpecificOutput"]["permissionDecisionReason"]
+    assert "entity leaf [6-15]" in reason
+    assert "  process [20-26]" in reason
+
+
+@pytest.mark.skipif(shutil.which("uv") is None, reason="uv is not installed")
+def test_launcher_skips_non_vhdl_quickly(tmp_path):
+    result = subprocess.run(
+        [str(LAUNCHER)],
+        input=json.dumps(_event(tmp_path / "x.py")),
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    assert (result.returncode, result.stdout) == (0, "")
+
+
+@pytest.mark.skipif(shutil.which("uv") is None, reason="uv is not installed")
+def test_launcher_denies_big_vhdl(nav, fixture_dir, monkeypatch):
+    monkeypatch.setenv(hook.MIN_LINES_ENV, "10")
+    result = subprocess.run(
+        [str(LAUNCHER)],
+        input=json.dumps(_event(fixture_dir / "lib_a" / "leaf.vhd")),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode == 0
+    output = json.loads(result.stdout)["hookSpecificOutput"]
+    assert output["permissionDecision"] == "deny"
+
+
+def test_hooks_json_points_at_the_launcher():
+    config = json.loads(HOOKS_JSON.read_text())
+    (entry,) = config["hooks"]["PreToolUse"]
+    assert entry["matcher"] == "Read"
+    (command,) = entry["hooks"]
+    assert command["type"] == "command"
+    assert command["command"] == '"${CLAUDE_PLUGIN_ROOT}/skills/shared/bin/vhdl-read-hook"'
+    assert LAUNCHER.is_file()
+```
+
+Path check: `tests/nav/test_hook.py` → `parents[3]` is `skills/shared`, `parents[5]` is the repo root.
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `uv run pytest tests/nav/test_hook.py -v`
+Expected: FAIL with `ImportError: cannot import name 'hook' from 'vhdl_tools.nav'`.
+
+- [ ] **Step 3: Write `hook.py`**
+
+`src/vhdl_tools/nav/hook.py`:
+
+```python
+"""Claude Code ``PreToolUse`` hook for ``Read``.
+
+A full read (no offset, no limit) of a VHDL file with at least
+``VHDL_NAV_INDEX_MIN_LINES`` lines (default 150; 0 turns the hook off) is
+denied, and the reason Claude sees is the file's ``vhdl-tools nav index``, so
+it reads only the ranges it needs. Anything unexpected allows the read: this
+hook must never be the reason a file cannot be read.
+
+Run as ``python -m vhdl_tools.nav.hook`` (see ``skills/shared/bin/vhdl-read-hook``).
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+from pathlib import Path
+from typing import Any
+
+from vhdl_tools.nav.server import nav_index
+from vhdl_tools.registry import ToolError
+
+MIN_LINES_ENV = "VHDL_NAV_INDEX_MIN_LINES"
+DEFAULT_MIN_LINES = 150
+VHDL_SUFFIXES = frozenset({".vhd", ".vhdl"})
+
+
+def min_lines() -> int:
+    try:
+        return int(os.environ.get(MIN_LINES_ENV, DEFAULT_MIN_LINES))
+    except ValueError:
+        return DEFAULT_MIN_LINES
+
+
+def decide(event: dict[str, Any]) -> dict[str, Any] | None:
+    """The hook output that denies this Read, or None to allow it."""
+    if event.get("tool_name") != "Read":
+        return None
+    tool_input = event.get("tool_input") or {}
+    if tool_input.get("offset") is not None or tool_input.get("limit") is not None:
+        return None
+    path = Path(str(tool_input.get("file_path") or ""))
+    if path.suffix.lower() not in VHDL_SUFFIXES or not path.is_file():
+        return None
+    threshold = min_lines()
+    if threshold <= 0:
+        return None
+    with path.open(encoding="utf-8", errors="replace") as handle:
+        lines = sum(1 for _ in handle)
+    if lines < threshold:
+        return None
+    index = nav_index(str(path))
+    if isinstance(index, ToolError) or index.startswith("Error:"):
+        return None
+    reason = (
+        f"{path} has {lines} lines, so the vhdl-tools nav hook shows its index "
+        "instead of the full text. Read the ranges you need with offset and limit "
+        "(a range [a-b] is offset=a, limit=b-a+1). To read the whole file anyway, "
+        f"use offset=1, limit={lines}.\n\n{index}"
+    )
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": reason,
+        }
+    }
+
+
+def main() -> None:
+    try:
+        decision = decide(json.load(sys.stdin))
+    except Exception:  # a broken hook must never block a read
+        decision = None
+    if decision is not None:
+        json.dump(decision, sys.stdout)
+
+
+if __name__ == "__main__":
+    main()
+```
+
+- [ ] **Step 4: Write the launcher and register it** (paths from the repo root)
+
+`skills/shared/bin/vhdl-read-hook`:
+
+```bash
+#!/usr/bin/env bash
+# Claude Code PreToolUse hook for Read, registered in hooks/hooks.json: a full
+# read of a large VHDL file gets its `vhdl-tools nav index` instead (see
+# vhdl_tools/nav/hook.py). Exits 0 with no output, which allows the read,
+# whenever the input is not about a VHDL file or anything is missing or fails.
+here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+input="$(cat)"
+pattern='\.[vV][hH][dD]([lL])?"'
+[[ $input =~ $pattern ]] || exit 0
+command -v uv >/dev/null 2>&1 || exit 0
+printf '%s' "$input" | uv run --quiet --frozen --project "$here/../tools" python -m vhdl_tools.nav.hook 2>/dev/null
+exit 0
+```
+
+Run: `chmod +x skills/shared/bin/vhdl-read-hook`
+
+`hooks/hooks.json`:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/skills/shared/bin/vhdl-read-hook\"",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+- [ ] **Step 5: Run the tests and the plugin validator**
+
+Run (from `skills/shared/tools`): `uv run pytest tests/nav/test_hook.py -v`
+Expected: all passed (the two vhdl_ls-backed tests skip without vhdl_ls).
+
+Run (from the repo root): `claude plugin validate --strict .claude-plugin/plugin.json`
+Expected: exit 0, no errors about `hooks/hooks.json`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/vhdl_tools/nav/hook.py tests/nav/test_hook.py
+git -C ~/git/vhdl-skills add skills/shared/bin/vhdl-read-hook hooks/hooks.json
+git commit -m "feat(nav): Read hook serves the index for large VHDL files"
+```
+
+---
+
+### Task 10: `init`, docs, validation and measurement
 
 **Files:**
 - Modify: `src/vhdl_tools/nav/server.py` (add `nav_init`)
-- Modify: `skills/shared/ToolPolicy.md`, `skills/shared/tools/README.md`, `SETUP.md`, `README.md`, `validate.sh` (paths from the repo root)
+- Modify (repo root paths): `skills/shared/ToolPolicy.md`, `skills/shared/tools/README.md`, `SETUP.md`, `README.md`, `validate.sh`, `install.sh`
 - Test: `tests/nav/test_e2e.py` (append)
 
 **Interfaces:**
-- Consumes: `write_init` (Task 2), `find_vhdl_ls`, `find_std_libraries` (Task 3), `tools` (Task 6).
+- Consumes: `write_init` (Task 2), `find_vhdl_ls`, `find_std_libraries` (Task 3), `count` (Task 4), `tools` (Task 6).
 - Produces: command `nav_init(layout: Literal["auto", "tsfpga", "flat"] = "auto", directory: str = ".") -> str`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -3094,7 +3736,7 @@ Expected: FAIL — `invalid choice: 'init'` (exit 2).
 
 - [ ] **Step 3: Add `nav_init`**
 
-In `src/vhdl_tools/nav/server.py` add `from typing import Literal`, extend the config import to `from vhdl_tools.nav.config import empty_libraries, find_config, library_files, read_libraries, write_init`, and append:
+In `src/vhdl_tools/nav/server.py` add `from typing import Literal`, add `write_init` to the config import, and append:
 
 ```python
 @tools.tool()
@@ -3117,7 +3759,9 @@ def nav_init(layout: Literal["auto", "tsfpga", "flat"] = "auto", directory: str 
     return "\n".join(lines)
 ```
 
-- [ ] **Step 4: Run the whole suite**
+(`count` comes from the formatting import; add it there if Task 8 did not.)
+
+- [ ] **Step 4: Run the whole nav suite**
 
 Run: `uv run pytest tests/nav tests/test_cli.py -v`
 Expected: all passed.
@@ -3126,14 +3770,22 @@ Expected: all passed.
 
 `validate.sh`: change `for group in vunit synth wave; do` to `for group in vunit synth wave nav; do`.
 
+`install.sh`, in `install_claude()`, after the line `copy_or_link_dir "$ROOT/agents" "$PROJECT/.claude/agents"` insert:
+
+```bash
+  echo "Note: the VHDL Read hook (large .vhd reads get their vhdl-tools nav index) comes with the plugin install only."
+```
+
 `skills/shared/ToolPolicy.md`, section "Principle": after the `vhdl-tools` bullet insert:
 
 ```markdown
-- `vhdl-tools nav` for exact VHDL lookups: where a name is declared, who
-  uses it, an entity's ports, a file's or library's outline, an
-  instantiation tree. It asks vhdl_ls through the project's `vhdl_ls.toml`,
-  answers in a few lines in ~0.1 s and needs no index. Use it before
-  reading whole files or grepping for an identifier you already know.
+- `vhdl-tools nav` for VHDL structure and exact lookups. `nav index --file F`
+  is a compact skeleton of a file with `[start-end]` line ranges: look at it
+  first, then read only the ranges you need. With the Claude Code plugin, a
+  full Read of a VHDL file of 150+ lines is answered with that index
+  automatically. `find`/`def`/`refs`/`show`/`tree` answer "where is X
+  declared, who uses it, what are its ports, what instantiates what" through
+  vhdl_ls in a few lines, with no index to build.
 ```
 
 In the corvidex section, replace the bullet that starts `- **Exact identifier already known**` (five lines, ending `already know.`) with:
@@ -3152,32 +3804,36 @@ Insert before `### Multi-library designs`:
 ```markdown
 ### 5. `vhdl-tools nav`
 
-Exact lookups through vhdl_ls, the VHDL language server. Needs `vhdl_ls`
-(`cargo install vhdl_ls`), its standard libraries (found automatically in
-speja's cache, else set `VHDL_LS_LIBRARIES`) and a `vhdl_ls.toml` in the
-project (`vhdl-tools nav init` writes one; it never overwrites). Names may
-be library-qualified (`fifo.fifo`); `--pos` is `FILE:LINE[:COL]`, 1-based.
+VHDL structure and exact lookups through vhdl_ls, the VHDL language server.
+Needs `vhdl_ls` (`cargo install vhdl_ls`) and its standard libraries (found
+automatically in speja's cache, else set `VHDL_LS_LIBRARIES`). `index` works
+on any file; the other commands need a `vhdl_ls.toml` in the project
+(`vhdl-tools nav init` writes one; it never overwrites). Names may be
+library-qualified (`fifo.fifo`); `--pos` is `FILE:LINE[:COL]`, 1-based.
 
 | Command | Use |
 |---|---|
+| `index --file F` | Skeleton of one file with line ranges; read the ranges you need after it |
 | `find --name N [--kind K] [--substring]` | Declarations with that name, one line each |
 | `def --name N \| --pos P [--context C]` | Where it is declared, with source lines |
 | `refs --name N \| --pos P [--with-decl]` | Every use, grouped by file |
 | `show --name N \| --pos P` | Ports/generics, a signature, or a package's declarations |
-| `outline --file F \| --library L` | Structure of a file, or each file's units in a library |
 | `tree --top E [--depth D]` | Instantiation tree below an entity |
 | `init [--layout auto\|tsfpga\|flat]` | Write `vhdl_ls.toml` |
 
-An ambiguous name lists the candidates and exits 1: pass `lib.name`,
-`--kind` or `--pos`. "No declaration named X in the library map" means the
-map does not cover it, not that it does not exist; check the libraries it
-lists. A leading `Warning:` line names libraries whose globs match no
-files. Fallback: grep, then read the file.
+The Claude Code plugin's Read hook denies a full Read of a `.vhd`/`.vhdl`
+file of 150+ lines (`VHDL_NAV_INDEX_MIN_LINES`, 0 = off) and returns the
+index instead: read ranges with offset/limit, or `offset=1, limit=<lines>`
+for the whole file. An ambiguous name lists the candidates and exits 1: pass
+`lib.name`, `--kind` or `--pos`. "No declaration named X in the library map"
+means the map does not cover it, not that it does not exist. A leading
+`Warning:` line names libraries whose globs match no files. Fallback: grep,
+then read the file.
 ```
 
 `skills/shared/tools/README.md`:
-- After the ported-groups table, add: ``The `nav` group is native, not a port: exact VHDL lookups through vhdl_ls (see below).``
-- Under "Requirements", add: ``- `nav`: `vhdl_ls` (`cargo install vhdl_ls`) and its standard libraries: `$VHDL_LS_LIBRARIES`, else vhdl_ls's own install locations, else `~/.cache/speja/vhdl_libraries-*`. The project needs a `vhdl_ls.toml` (`vhdl-tools nav init`).``
+- After the ported-groups table, add: ``The `nav` group is native, not a port: a per-file VHDL index and exact lookups through vhdl_ls (see below).``
+- Under "Requirements", add: ``- `nav`: `vhdl_ls` (`cargo install vhdl_ls`) and its standard libraries: `$VHDL_LS_LIBRARIES`, else vhdl_ls's own install locations, else `~/.cache/speja/vhdl_libraries-*`. All commands but `index` need a `vhdl_ls.toml` (`vhdl-tools nav init`).``
 - In the exit-code `1` bullet, append: ``For nav it is `Error: ...`.``
 - After the `### wave` section, add:
 
@@ -3188,29 +3844,31 @@ Names are identifiers, optionally library-qualified (`fifo`, `fifo.fifo`), match
 
 | Command | Options | Purpose |
 |---|---|---|
+| `index` | `--file F` (required) | Skeleton with `[start-end]` ranges: context clauses, units, generics/ports with types, declarations, subprograms, processes, generates, instances. No `vhdl_ls.toml` needed |
 | `find` | `--name N` (required), `--kind K`, `--substring` | Declarations with that name: kind, name, [library], file:line |
 | `def` | `--name N` or `--pos P`, `--kind K`, `--context C` (default 3) | Declaration location plus source lines |
 | `refs` | `--name N` or `--pos P`, `--kind K`, `--with-decl` | Uses, grouped by file |
 | `show` | `--name N` or `--pos P`, `--kind K` | Declaration text (entity ports/generics, signature); a package's declarations |
-| `outline` | `--file F` or `--library L` | File structure with line numbers, or each file's units in a library |
 | `tree` | `--top E` (required), `--depth D` (default 0 = all) | Instantiation tree below an entity |
 | `init` | `--layout {auto,tsfpga,flat}`, `--directory D` (default `.`) | Write `vhdl_ls.toml`; never overwrites |
 
 Each command starts vhdl_ls (`--silent --no-lint`, `-l <std library dir>`), asks, and stops it: ~0.1 s, no daemon or cache. Binary: `$VHDL_LS`, else PATH, else `~/.cargo/bin/vhdl_ls`.
+
+The plugin's `hooks/hooks.json` runs `skills/shared/bin/vhdl-read-hook` before every Claude Code Read. A Read without offset/limit of a `.vhd`/`.vhdl` file with at least `VHDL_NAV_INDEX_MIN_LINES` lines (default 150, `0` = off) is denied with the file's `nav index` as the reason. Non-VHDL Reads exit in the bash pre-filter without starting uv; any failure allows the Read.
 ```
 
 `SETUP.md`, under "Requirements", add after the waveform bullets:
 
 ```markdown
-- For `vhdl-tools nav` (exact VHDL lookups): `vhdl_ls` (`cargo install vhdl_ls`), its VHDL standard libraries (picked up from speja's cache when present; otherwise `git clone --depth 1 https://github.com/VHDL-LS/rust_hdl ~/.local/share/rust_hdl` and `export VHDL_LS_LIBRARIES=~/.local/share/rust_hdl/vhdl_libraries`), and a `vhdl_ls.toml` in the project (`vhdl-tools nav init` writes one).
+- For `vhdl-tools nav` (VHDL index and exact lookups) and the plugin's Read hook: `vhdl_ls` (`cargo install vhdl_ls`) and its VHDL standard libraries (picked up from speja's cache when present; otherwise `git clone --depth 1 https://github.com/VHDL-LS/rust_hdl ~/.local/share/rust_hdl` and `export VHDL_LS_LIBRARIES=~/.local/share/rust_hdl/vhdl_libraries`). Lookups other than `index` need a `vhdl_ls.toml` in the project (`vhdl-tools nav init`). Without vhdl_ls the hook simply lets reads through.
 ```
 
-`README.md`: change `#   VUnit, synthesis and waveform command-line tool` to `#   VUnit, synthesis, waveform and VHDL lookup command-line tool`, and after the paragraph starting `` `vhdl-tools` replaces the vunit-mcp`` add the sentence: ``Its `nav` group answers exact VHDL lookups (declarations, references, ports, outlines, instantiation trees) through vhdl_ls.``
+`README.md`: change `#   VUnit, synthesis and waveform command-line tool` to `#   VUnit, synthesis, waveform and VHDL index/lookup command-line tool`, add a tree line `├── hooks/hooks.json           # Read hook: large VHDL reads get the nav index` after the `.mcp.json` line, and after the paragraph starting `` `vhdl-tools` replaces the vunit-mcp`` add: ``Its `nav` group gives a per-file VHDL index with line ranges (served automatically by the plugin's Read hook for large files) and exact lookups (declarations, references, ports, instantiation trees) through vhdl_ls.``
 
 - [ ] **Step 6: Run validation and the full test suite**
 
 Run (from the repo root): `./validate.sh`
-Expected: exit 0 with no `documented command does not exist` errors.
+Expected: exit 0; no `documented command does not exist` errors; `claude plugin validate --strict` passes with `hooks/hooks.json`.
 
 Run (from `skills/shared/tools`): `uv run pytest`
 Expected: all passed (the existing groups' suites unchanged).
@@ -3222,20 +3880,23 @@ S=$(mktemp -d)
 cp -r ~/lance-compare/hdl-modules/modules "$S/"
 cd "$S"
 T=~/git/vhdl-skills/skills/shared/bin/vhdl-tools
+$T nav index --file modules/fifo/src/fifo.vhd | wc -c
+wc -c modules/fifo/src/fifo.vhd
 $T nav init
 $T nav show --name fifo.fifo | wc -c
-wc -c modules/fifo/src/fifo.vhd
 $T nav refs --name fifo.fifo | wc -c
 grep -rn "fifo" modules --include=*.vhd | wc -c
 time $T nav tree --top fifo.fifo_wrapper
+printf '{"tool_name":"Read","tool_input":{"file_path":"%s"}}' "$S/modules/fifo/src/fifo.vhd" \
+  | time ~/git/vhdl-skills/skills/shared/bin/vhdl-read-hook | head -c 300
 ```
 
-Expected: `nav show` well under the size of `fifo.vhd`; `nav refs` a small fraction of the grep output; `nav tree` runs in about a second or less, including `uv run` start-up. Record the four sizes and the time for the final summary.
+Expected: the index is a small fraction of `fifo.vhd` (the Maki-style 70–90% saving); `nav show`/`nav refs` well under reading the file or the grep output; `nav tree` and the hook each about a second or less including `uv run` start-up. Record the sizes and times for the final summary.
 
 - [ ] **Step 8: Commit**
 
 ```bash
 git add src/vhdl_tools/nav/server.py tests/nav/test_e2e.py
-git -C ~/git/vhdl-skills add validate.sh skills/shared/ToolPolicy.md skills/shared/tools/README.md SETUP.md README.md
-git commit -m "feat(nav): init command; document nav in ToolPolicy, README and SETUP"
+git -C ~/git/vhdl-skills add validate.sh install.sh skills/shared/ToolPolicy.md skills/shared/tools/README.md SETUP.md README.md
+git commit -m "feat(nav): init command; document nav index, lookups and the Read hook"
 ```
