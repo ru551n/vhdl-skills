@@ -37,14 +37,31 @@ def find_config(start: Path, explicit: str | None = None) -> Path:
             )
         return path.resolve()
     start = start.resolve()
+    ignored = None
     for directory in (start, *start.parents):
         candidate = directory / CONFIG_NAME
         if candidate.is_file():
+            if _catch_all(directory):
+                ignored = candidate
+                continue
             return candidate
+    skipped = (
+        f" ({ignored} was ignored: a map in your home directory or / covers every "
+        f"VHDL file below it, which makes each lookup slow; pass --config {ignored} "
+        "to use it anyway.)"
+        if ignored
+        else ""
+    )
     raise NavError(
-        f"No {CONFIG_NAME} in {start} or any parent directory. "
+        f"No {CONFIG_NAME} in {start} or any parent directory.{skipped} "
         "Create one: vhdl-tools nav init"
     )
+
+
+def _catch_all(directory: Path) -> bool:
+    """A map here would cover every VHDL file on the machine (or the user's)."""
+    directory = directory.resolve()
+    return directory == Path.home().resolve() or directory == Path(directory.anchor)
 
 
 def read_libraries(config: Path) -> dict[str, list[str]]:
@@ -86,6 +103,11 @@ def write_init(directory: Path, layout: str = "auto") -> tuple[Path, list[str]]:
     """Write ``directory/vhdl_ls.toml`` listing the project's own libraries."""
     if not directory.is_dir():
         raise NavError(f"no directory {directory}")
+    if _catch_all(directory):
+        raise NavError(
+            f"nav init does not write a map in your home directory or / ({directory}): "
+            "it would cover every VHDL file below it. Run it in the project's root."
+        )
     target = directory / CONFIG_NAME
     if target.exists():
         raise NavError(f"{target} already exists; nav init never overwrites it")

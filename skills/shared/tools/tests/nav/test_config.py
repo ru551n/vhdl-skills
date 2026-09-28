@@ -121,3 +121,42 @@ def test_init_without_vhdl(tmp_path):
 def test_init_missing_directory(tmp_path):
     with pytest.raises(NavError, match="no directory"):
         write_init(tmp_path / "nope")
+
+
+def test_find_config_skips_a_catch_all_map_in_home(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    catch_all = _touch(home / "vhdl_ls.toml")
+    deep = home / "proj" / "sub"
+    deep.mkdir(parents=True)
+    with pytest.raises(NavError) as exc:
+        find_config(deep)
+    message = str(exc.value)
+    assert f"{catch_all} was ignored" in message
+    assert f"--config {catch_all}" in message
+    assert "vhdl-tools nav init" in message
+
+
+def test_find_config_prefers_the_project_map_below_home(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    _touch(home / "vhdl_ls.toml")
+    project = _touch(home / "proj" / "vhdl_ls.toml")
+    (home / "proj" / "sub").mkdir()
+    assert find_config(home / "proj" / "sub") == project.resolve()
+
+
+def test_find_config_explicit_catch_all_is_allowed(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    catch_all = _touch(home / "vhdl_ls.toml")
+    assert find_config(tmp_path, str(catch_all)) == catch_all.resolve()
+
+
+def test_init_refuses_home(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    _touch(home / "rtl" / "top.vhd")
+    with pytest.raises(NavError, match="home directory"):
+        write_init(home)
+    assert not (home / "vhdl_ls.toml").exists()
