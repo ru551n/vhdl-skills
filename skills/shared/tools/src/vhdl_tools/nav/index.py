@@ -53,6 +53,16 @@ def declared_text(line: str, col: int) -> str:
     return " ".join("".join(out).split())
 
 
+def declaration_text(lines: list[str], node: Node) -> str:
+    """``declared_text`` over every line of a declaration that spans several."""
+    if not 0 <= node.line < len(lines):
+        return ""
+    last = min(max(node.end_line, node.line), len(lines) - 1)
+    parts = [lines[node.line][node.col :], *lines[node.line + 1 : last + 1]]
+    text = declared_text(" ".join(part.split("--", 1)[0] for part in parts), 0)
+    return re.sub(r"\s+\)", ")", re.sub(r"\(\s+", "(", text))
+
+
 def instance_target(instance: Node, lines: list[str]) -> tuple[str, str, int, int] | None:
     """``(how, unit, line, col)`` for an instance: how it instantiates, the unit
     name as written, and where that name's last segment is (0-based)."""
@@ -128,7 +138,7 @@ def _body(node: Node, lines: list[str], indent: int) -> list[str]:
             continue
         out.append(f"{pad}{_plural(kind)}:")
         for member in members:
-            text = declared_text(lines[member.line], member.col) if member.line < len(lines) else ""
+            text = declaration_text(lines, member)
             if kind == "port":
                 text = text.split(":=")[0].strip()
             where = span(member.start_line, member.end_line)

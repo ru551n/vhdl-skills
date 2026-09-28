@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pathlib
+
 from vhdl_tools import cli
 
 
@@ -323,3 +325,14 @@ def test_pos_with_column_adds_no_note(nav, fixture_dir, monkeypatch):
     code, out = nav("refs", "--pos", "lib_b/top.vhd:17:30")
     assert code == 0
     assert "Note:" not in out
+
+
+def test_index_declarations_spanning_lines(nav, tmp_path, monkeypatch):
+    import shutil
+
+    shutil.copy(pathlib.Path(__file__).parent / "multi_line.vhd", tmp_path / "multi.vhd")
+    monkeypatch.chdir(tmp_path)
+    code, out = nav("index", "--file", "multi.vhd", config=None)
+    assert code == 0
+    assert "    widths : integer_vector := (8, 16, 32) [6-8]" in out.splitlines()
+    assert "    data : out std_ulogic_vector(15 downto 0) [12-14]" in out.splitlines()

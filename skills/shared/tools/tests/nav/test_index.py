@@ -100,3 +100,35 @@ def test_long_declaration_groups_are_capped():
     assert build_index("p.vhd", [package], lines).splitlines()[-1] == (
         f"  constants: {names}, ... (+10 more) [2-31]"
     )
+
+
+def test_declarations_spanning_lines():
+    lines = [
+        "entity m is",
+        "  generic (",
+        "    widths : integer_vector := (",
+        "      8, 16, 32",
+        "    )",
+        "  );",
+        "  port (",
+        "    data : out std_ulogic_vector(",
+        "      15 downto 0",
+        "    ); -- trailing comment",
+        "    a, b : in std_ulogic",
+        "  );",
+        "end entity;",
+    ]
+    entity = N("entity", "m", 0, 7, 0, 12, [
+        N("generic", "widths", 2, 4, 2, 4),
+        N("port", "data", 7, 4, 7, 9, detail=": out"),
+        N("port", "a", 10, 4, 10, 10, detail=": in"),
+        N("port", "b", 10, 7, 10, 10, detail=": in"),
+    ])
+    assert build_index("m.vhd", [entity], lines).splitlines()[2:] == [
+        "  generics:",
+        "    widths : integer_vector := (8, 16, 32) [3-5]",
+        "  ports:",
+        "    data : out std_ulogic_vector(15 downto 0) [8-10]",
+        "    a : in std_ulogic [11]",
+        "    b : in std_ulogic [11]",
+    ]
