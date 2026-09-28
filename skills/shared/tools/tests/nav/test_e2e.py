@@ -295,3 +295,31 @@ def test_init_refuses_to_overwrite(nav_cli, fixture_dir):
     code, out = nav_cli("init", "--directory", str(fixture_dir), config=None)
     assert code == 1
     assert "already exists" in out
+
+
+def test_pos_without_column_says_what_it_looked_up(nav, fixture_dir, monkeypatch):
+    monkeypatch.chdir(fixture_dir)
+    code, out = nav("refs", "--pos", "lib_b/top.vhd:17")
+    assert code == 0
+    assert out.splitlines()[0] == (
+        "Note: --pos lib_b/top.vhd:17 has no column, so it looked up leaf_inst "
+        "(column 3), the first name on that line; add :COL for another name."
+    )
+
+
+def test_pos_note_also_on_errors(nav, fixture_dir, monkeypatch):
+    monkeypatch.chdir(fixture_dir)
+    code, out = nav("def", "--pos", "lib_b/top.vhd:2")
+    assert code == 1
+    assert out.splitlines() == [
+        "Error: vhdl_ls found no declaration for ieee at lib_b/top.vhd:2",
+        "Note: --pos lib_b/top.vhd:2 has no column, so it looked up ieee "
+        "(column 5), the first name on that line; add :COL for another name.",
+    ]
+
+
+def test_pos_with_column_adds_no_note(nav, fixture_dir, monkeypatch):
+    monkeypatch.chdir(fixture_dir)
+    code, out = nav("refs", "--pos", "lib_b/top.vhd:17:30")
+    assert code == 0
+    assert "Note:" not in out

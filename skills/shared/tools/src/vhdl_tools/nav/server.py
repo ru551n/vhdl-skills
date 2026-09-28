@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
@@ -62,6 +62,8 @@ class Project:
     config: Path
     root: Path
     libraries: dict[str, list[str]]
+    #: Lines shown with the answer (or under the error) about how input was read.
+    notes: list[str] = field(default_factory=list)
 
     @property
     def library_names(self) -> list[str]:
@@ -69,6 +71,7 @@ class Project:
 
 
 def _run(config: str | None, body: Callable[[Project, LspSession], str]) -> str:
+    project: Project | None = None
     try:
         path = find_config(Path.cwd(), config)
         project = Project(path, path.parent, read_libraries(path))
@@ -82,9 +85,11 @@ def _run(config: str | None, body: Callable[[Project, LspSession], str]) -> str:
         vhdl_ls = find_vhdl_ls()
         command = vhdl_ls_command(vhdl_ls, find_std_libraries(vhdl_ls))
         with LspSession(project.root, command) as session:
-            return warning + body(project, session)
+            text = body(project, session)
+        return warning + "".join(f"{note}\n" for note in project.notes) + text
     except NavError as exc:
-        return ToolError(f"Error: {exc}")
+        notes = "".join(f"\n{note}" for note in project.notes) if project else ""
+        return ToolError(f"Error: {exc}{notes}")
 
 
 def _target(
@@ -99,7 +104,15 @@ def _target(
     if name is not None:
         hit = resolve_one(session, name, project.root, project.library_names, kind)
         return Position(hit.path, hit.line, hit.col), hit
-    return parse_pos(pos, project.root), None
+    position = parse_pos(pos, project.root)
+    if position.guessed:
+        word = identifier_at(position.path, position.line, position.col)
+        project.notes.append(
+            f"Note: --pos {pos} has no column, so it looked up {word} "
+            f"(column {position.col + 1}), the first name on that line; "
+            "add :COL for another name."
+        )
+    return position, None
 
 
 def _definitions(session: LspSession, position: Position) -> list[tuple[Path, int, int]]:

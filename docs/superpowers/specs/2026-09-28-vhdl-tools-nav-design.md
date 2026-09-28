@@ -122,7 +122,8 @@ exact on the identifier (vhdl_ls's `workspace/symbol` is a fuzzy match;
 wins; likewise an entity wins over same-named components only when `--kind
 entity` is given (otherwise it is ambiguous). A `POS` is `FILE:LINE[:COL]`, 1-based as displayed by
 editors and grep; `nav` converts to LSP's 0-based positions. Without COL, the
-first identifier on the line is used.
+first identifier on the line is used, and a `Note:` line (above the answer,
+or under an error) names it and its column.
 
 Arguments are options, as for every vhdl-tools group (the CLI is generated
 from the tool signatures): `--name NAME`, `--pos POS`, `--config PATH`. The
@@ -135,7 +136,7 @@ Line numbers in output are 1-based.
 | Command | LSP | Output |
 |---|---|---|
 | `nav find NAME [--kind K] [--substring]` | `workspace/symbol` | One line per hit: `entity fifo  [fifo]  modules/fifo/src/fifo.vhd:65`. `--substring` keeps names containing NAME instead of equal to it, from the project's own libraries only. Reports when the 200-hit cap was reached. |
-| `nav def NAME\|POS [-C N]` | `workspace/symbol` or `definition` | Declaration location plus N (default 3) lines of context after it. |
+| `nav def NAME\|POS [--context N]` | `workspace/symbol` or `definition` | Declaration location plus N (default 3) lines of context after it. |
 | `nav refs NAME\|POS [--with-decl]` | `references` | Grouped by file: `  98:28  fifo_inst : entity fifo.fifo`. Summary line with the hit and file counts. Without `--with-decl`, the declaration itself and `end`/`architecture ... of` lines are dropped. |
 | `nav show NAME\|POS` | `hover`, `documentSymbol` for packages | The declaration text vhdl_ls returns (entity/component with generics and ports, subprogram signature, type). For a package: one line per declaration in it (types, constants, subprograms with signatures), since hover has only its name. |
 | `nav index FILE` | `documentSymbol` | Maki-style skeleton with `[start-end]` ranges; see Per-file index. Needs no `vhdl_ls.toml`. |

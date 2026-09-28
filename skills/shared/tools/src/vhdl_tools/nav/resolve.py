@@ -52,11 +52,13 @@ class Found:
 
 @dataclass(frozen=True)
 class Position:
-    """A place in a file, 0-based like LSP."""
+    """A place in a file, 0-based like LSP. ``guessed``: no column was given,
+    so ``col`` is the first name on the line."""
 
     path: Path
     line: int
     col: int
+    guessed: bool = False
 
 
 def find_hits(
@@ -159,7 +161,7 @@ def parse_pos(pos: str, root: Path) -> Position:
     code = text.split("--", 1)[0]
     for token in _IDENT.finditer(code):
         if token.group().lower() not in _KEYWORDS:
-            return Position(path, line, token.start())
+            return Position(path, line, token.start(), guessed=True)
     raise NavError(f"--pos {pos}: no identifier on that line: {text.strip()}")
 
 
