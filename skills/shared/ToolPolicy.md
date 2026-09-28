@@ -12,7 +12,7 @@ Use the purpose-built tool before the manual equivalent:
 - `vhdl-tools nav` for VHDL structure and exact lookups. `nav index --file F`
   is a compact skeleton of a file with `[start-end]` line ranges: look at it
   first, then read only the ranges you need. With the Claude Code plugin, a
-  message naming a VHDL file of 400+ lines gets its index attached, and a
+  message naming a VHDL file of 2000+ lines gets its index attached, and a
   full Read of one is answered with the index; both quote the source of
   the processes, subprograms or instances the message names. `find`/`def`/`refs`/`show`/`tree` answer "where is X
   declared, who uses it, what are its ports, what instantiates what" through
@@ -322,10 +322,11 @@ library-qualified (`fifo.fifo`); `--pos` is `FILE:LINE[:COL]`, 1-based.
 | `tree --top E [--depth D]` | Instantiation tree below an entity |
 | `init [--layout auto\|tsfpga\|flat]` | Write `vhdl_ls.toml` |
 
-The Claude Code plugin's hooks work on `.vhd`/`.vhdl` files of 400+ lines
-(`VHDL_NAV_INDEX_MIN_LINES`, 0 = off): a message naming one gets its index
-attached, and a full Read of one (no offset, or a limit covering 80%+ of
-the file) is denied with the index instead. Both quote the source of the
+The Claude Code plugin's hooks work on `.vhd`/`.vhdl` files of 2000+ lines,
+which one Read cannot return whole (`VHDL_NAV_INDEX_MIN_LINES`, 0 = off;
+smaller files are cheaper to read once): a message naming one gets its
+index attached, and a full Read of one (no offset, or a limit covering 80%+
+of what a Read returns) is denied with the index instead. Both quote the source of the
 regions the message names. Read ranges with offset/limit, or use
 `offset=1, limit=<lines>` for the whole file. An ambiguous name lists the candidates and exits 1: pass
 `lib.name`, `--kind` or `--pos`. "No declaration named X in the library map"

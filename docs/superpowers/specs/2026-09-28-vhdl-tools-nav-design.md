@@ -198,7 +198,7 @@ The plugin registers a `PreToolUse` hook for Claude Code's `Read` tool
 `"${CLAUDE_PLUGIN_ROOT}/skills/shared/bin/vhdl-read-hook"`). When a Read has
 no `offset` (and no `limit`, or one covering 80%+ of the file), targets a
 `.vhd`/`.vhdl` file, and the file has at least `VHDL_NAV_INDEX_MIN_LINES`
-lines (default 400, raised from 150 after the benchmark; 0 disables the hooks),
+lines (default 2000, the most one Read returns; 0 disables the hooks),
 the hook denies the Read (`permissionDecision: "deny"`) and the reason
 Claude sees is the file's index plus how to continue: read the needed
 ranges with `offset`/`limit`, or pass `offset=1, limit=<lines>` to read
@@ -352,6 +352,27 @@ Every error names the next step. Exit code is non-zero; the text starts with
 - One manual measurement on `hdl-modules`: output characters for
   `nav index` of `fifo.vhd`, `nav show fifo.fifo` and `nav refs fifo.fifo`
   versus reading `fifo.vhd` and grepping.
+
+## Benchmark (2026-09-28)
+
+Four-question Claude Code conversations about one file (`claude -p` then
+`--continue`, Sonnet, plugin from the branch), hooks on vs off, order
+alternated so neither mode inherits the other's warm cache, two runs each:
+
+| File | Index | Hooks on | Hooks off |
+|---|---|---|---|
+| fifo.vhd, 470 lines | 2.5 KB | $0.23, 7 turns | $0.155, 5 turns |
+| RandomPkg.vhd, 2000 lines | 7-17 KB | $0.50-0.58 | $0.29-0.38 |
+| ScoreboardGenericPkg.vhd, 3433 lines | 14 KB | $0.55-0.59, 43-48 s | $0.90-0.95, 49-52 s |
+| AlertLogPkg.vhd, 6607 lines | 37 KB | $0.71-0.91 | $0.65-0.67 |
+
+Below the 2000 lines one Read returns, Claude reads the file once and
+answers every follow-up from context, which no index beats: each ranged
+read is an extra turn re-reading the whole context. Above it the index
+pays off when it is compact (Scoreboard, -40%); a large one (AlertLog)
+costs more than it saves. Answers were equally correct in both modes.
+Hence the 2000-line default, overloads on one index line, and all start
+lines listed (an answer about "all overloads" must not stop at "...").
 
 ## Open risks
 
