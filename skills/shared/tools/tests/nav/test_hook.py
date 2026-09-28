@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -35,7 +37,7 @@ def _vhdl(tmp_path: Path, lines: int, name: str = "big.vhd") -> Path:
 @pytest.fixture
 def fake_index(monkeypatch):
     monkeypatch.delenv(hook.MIN_LINES_ENV, raising=False)
-    monkeypatch.setattr(hook, "nav_index", lambda file: INDEX)
+    monkeypatch.setattr(hook, "nav_index", lambda file, **_: INDEX)
 
 
 def test_decide_denies_big_full_read(tmp_path, fake_index):
@@ -81,7 +83,7 @@ def test_env_threshold(tmp_path, fake_index, monkeypatch):
 
 def test_decide_allows_when_index_fails(tmp_path, monkeypatch):
     monkeypatch.delenv(hook.MIN_LINES_ENV, raising=False)
-    monkeypatch.setattr(hook, "nav_index", lambda file: ToolError("Error: vhdl_ls not found"))
+    monkeypatch.setattr(hook, "nav_index", lambda file, **_: ToolError("Error: vhdl_ls not found"))
     assert hook.decide(_event(_vhdl(tmp_path, 200))) is None
 
 
@@ -165,16 +167,16 @@ def test_decide_allows_when_nothing_parsed(tmp_path, monkeypatch):
     """vhdl_ls lists no units for a file it cannot parse; an index of just
     the title line is no reason to refuse the Read."""
     monkeypatch.delenv(hook.MIN_LINES_ENV, raising=False)
-    monkeypatch.setattr(hook, "nav_index", lambda file: "big.vhd  200 lines")
+    monkeypatch.setattr(hook, "nav_index", lambda file, **_: "big.vhd  200 lines")
     assert hook.decide(_event(_vhdl(tmp_path, 200))) is None
-    monkeypatch.setattr(hook, "nav_index", lambda file: "big.vhd  200 lines\ncontext [1-2]: ieee.std_logic_1164.all")
+    monkeypatch.setattr(hook, "nav_index", lambda file, **_: "big.vhd  200 lines\ncontext [1-2]: ieee.std_logic_1164.all")
     assert hook.decide(_event(_vhdl(tmp_path, 200))) is None
 
 
 def test_decide_allows_when_index_is_not_much_smaller(tmp_path, monkeypatch):
     monkeypatch.delenv(hook.MIN_LINES_ENV, raising=False)
     big = _vhdl(tmp_path, 200)  # 1600 bytes
-    monkeypatch.setattr(hook, "nav_index", lambda file: INDEX + "\n" + "x" * 900)
+    monkeypatch.setattr(hook, "nav_index", lambda file, **_: INDEX + "\n" + "x" * 900)
     assert hook.decide(_event(big)) is None
 
 
@@ -187,3 +189,43 @@ def test_hook_allows_a_file_that_does_not_parse(nav, tmp_path, monkeypatch):
         + "-- filler\n" * 200
     )
     assert hook.decide(_event(broken)) is None
+
+
+def test_decide_gives_the_index_the_hook_budget(tmp_path, monkeypatch):
+    seen = {}
+
+    def fake(file, timeout):
+        seen["timeout"] = timeout
+        return INDEX
+
+    monkeypatch.delenv(hook.MIN_LINES_ENV, raising=False)
+    monkeypatch.setenv(hook.TIMEOUT_ENV, "3")
+    monkeypatch.setattr(hook, "nav_index", fake)
+    assert hook.decide(_event(_vhdl(tmp_path, 200))) is not None
+    assert seen["timeout"] == 3.0
+    monkeypatch.delenv(hook.TIMEOUT_ENV)
+    assert hook.hook_timeout() == hook.DEFAULT_TIMEOUT < 60
+
+
+@pytest.mark.skipif(shutil.which("uv") is None, reason="uv is not installed")
+def test_launcher_allows_when_vhdl_ls_never_answers(tmp_path):
+    stuck = tmp_path / "vhdl_ls"
+    stuck.write_text("#!/bin/sh\nexec sleep 60\n")
+    stuck.chmod(0o755)
+    libraries = tmp_path / "libs"
+    libraries.mkdir()
+    (libraries / "vhdl_ls.toml").write_text("[libraries]\n")
+    env = {**os.environ, "VHDL_LS": str(stuck), "VHDL_LS_LIBRARIES": str(libraries),
+           hook.TIMEOUT_ENV: "1"}
+    env.pop(hook.MIN_LINES_ENV, None)
+    start = time.monotonic()
+    result = subprocess.run(
+        [str(LAUNCHER)],
+        input=json.dumps(_event(_vhdl(tmp_path, 200))),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=env,
+    )
+    assert (result.returncode, result.stdout) == (0, "")
+    assert time.monotonic() - start < 10

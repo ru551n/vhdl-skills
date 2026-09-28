@@ -23,7 +23,7 @@ from vhdl_tools.nav.formatting import (
     source_lines,
 )
 from vhdl_tools.nav.index import build_index
-from vhdl_tools.nav.lsp import LspSession, find_std_libraries, find_vhdl_ls, vhdl_ls_command
+from vhdl_tools.nav.lsp import DEFAULT_TIMEOUT, LspSession, find_std_libraries, find_vhdl_ls, vhdl_ls_command
 from vhdl_tools.nav.resolve import (
     Position,
     find_hits,
@@ -271,14 +271,14 @@ def nav_show(
 
 
 @tools.tool()
-def nav_index(file: str, config: str | None = None) -> str:
+def nav_index(file: str, config: str | None = None, timeout: float = DEFAULT_TIMEOUT) -> str:
     """A compact skeleton of one VHDL file with [start-end] line ranges: context
     clauses, units, generics and ports with their types, declarations,
     subprograms, processes, generates and instances. Use it before reading a
     VHDL file, then read only the ranges you need.
 
     Needs no vhdl_ls.toml; the nearest one above the file (or --config) is
-    used when present, so types resolve."""
+    used when present, so types resolve. --timeout is in seconds."""
     try:
         path = Path(file).expanduser()
         if not path.is_file():
@@ -292,7 +292,7 @@ def nav_index(file: str, config: str | None = None) -> str:
             root = path.parent
         vhdl_ls = find_vhdl_ls()
         command = vhdl_ls_command(vhdl_ls, find_std_libraries(vhdl_ls))
-        with LspSession(root, command) as session:
+        with LspSession(root, command, timeout) as session:
             nodes = _document_symbols(session, path)
         return build_index(file, nodes, source_lines(path, {}))
     except NavError as exc:

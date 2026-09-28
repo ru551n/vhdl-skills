@@ -8,5 +8,9 @@ input="$(cat)"
 pattern='\.[vV][hH][dD]([lL])?"'
 [[ $input =~ $pattern ]] || exit 0
 command -v uv >/dev/null 2>&1 || exit 0
-printf '%s' "$input" | uv run --quiet --frozen --project "$here/../tools" python -m vhdl_tools.nav.hook 2>/dev/null
+# The hook bounds its own work (VHDL_NAV_HOOK_TIMEOUT); this bounds uv itself,
+# e.g. a first-run venv build, well inside Claude Code's 60 s hook timeout.
+limit=()
+command -v timeout >/dev/null 2>&1 && limit=(timeout 30)
+printf '%s' "$input" | "${limit[@]}" uv run --quiet --frozen --project "$here/../tools" python -m vhdl_tools.nav.hook 2>/dev/null
 exit 0

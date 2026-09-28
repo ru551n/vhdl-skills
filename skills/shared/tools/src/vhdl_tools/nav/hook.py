@@ -22,6 +22,10 @@ from vhdl_tools.registry import ToolError
 
 MIN_LINES_ENV = "VHDL_NAV_INDEX_MIN_LINES"
 DEFAULT_MIN_LINES = 150
+#: Seconds the index may take; past that the Read is allowed. Well under
+#: Claude Code's 60 s hook timeout, so the hook always decides for itself.
+TIMEOUT_ENV = "VHDL_NAV_HOOK_TIMEOUT"
+DEFAULT_TIMEOUT = 10.0
 VHDL_SUFFIXES = frozenset({".vhd", ".vhdl"})
 
 
@@ -30,6 +34,13 @@ def min_lines() -> int:
         return int(os.environ.get(MIN_LINES_ENV, DEFAULT_MIN_LINES))
     except ValueError:
         return DEFAULT_MIN_LINES
+
+
+def hook_timeout() -> float:
+    try:
+        return float(os.environ.get(TIMEOUT_ENV, DEFAULT_TIMEOUT))
+    except ValueError:
+        return DEFAULT_TIMEOUT
 
 
 def decide(event: dict[str, Any]) -> dict[str, Any] | None:
@@ -49,7 +60,7 @@ def decide(event: dict[str, Any]) -> dict[str, Any] | None:
         lines = sum(1 for _ in handle)
     if lines < threshold:
         return None
-    index = nav_index(str(path))
+    index = nav_index(str(path), timeout=hook_timeout())
     if isinstance(index, ToolError) or index.startswith("Error:"):
         return None
     # No design units means vhdl_ls could not parse the file (e.g. mid-edit),
