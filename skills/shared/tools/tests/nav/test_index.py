@@ -250,6 +250,7 @@ def test_overloads_share_one_line():
         *subprograms[1:],
     ])
     assert build_index("p.vhd", [package], lines).splitlines()[2:] == [
-        "  function f[T1 return INTEGER] [2] +8 overloads at 3, 4, 5, 6, 7, 8, ...",
+        # every start line: an answer about "all overloads" must not stop at a "..."
+        "  function f[T1 return INTEGER] [2] +8 overloads at 3, 4, 5, 6, 7, 8, 9, 10",
         "  function g[BIT return BIT] [12-14]",
     ]

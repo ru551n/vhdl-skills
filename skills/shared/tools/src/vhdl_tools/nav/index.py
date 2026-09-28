@@ -37,8 +37,6 @@ _SENSITIVITY = re.compile(r"\bprocess\s*\(([^)]*)\)", re.IGNORECASE)
 _GENERIC_MAP = re.compile(r"\bgeneric\s+map\s*\(", re.IGNORECASE)
 #: Characters of an instance's generic map shown in the index.
 _GENERIC_MAP_CAP = 120
-#: Start lines listed for the other overloads of a subprogram.
-_OVERLOAD_STARTS_SHOWN = 6
 
 
 def span(start: int, end: int) -> str:
@@ -215,10 +213,9 @@ def _body(node: Node, lines: list[str], indent: int) -> list[str]:
             if item is not same[0]:
                 continue  # listed on the first overload's line
             others = ""
-            if len(same) > 1:
-                starts = [str(o.start_line + 1) for o in same[1 : 1 + _OVERLOAD_STARTS_SHOWN]]
-                more = ", ..." if len(same) - 1 > _OVERLOAD_STARTS_SHOWN else ""
-                others = f" +{len(same) - 1} overloads at {', '.join(starts)}{more}"
+            if len(same) > 1:  # every start: "all overloads" must not end at a "..."
+                starts = ", ".join(str(o.start_line + 1) for o in same[1:])
+                others = f" +{len(same) - 1} overloads at {starts}"
             out.append(f"{pad}{label}{item.detail} {where}{others}")
         elif item.kind == "instance":
             target = instance_target(item, lines)
