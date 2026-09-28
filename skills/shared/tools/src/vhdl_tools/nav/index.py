@@ -30,6 +30,12 @@ _NESTED = frozenset({"generate", "block", "protected type", "protected type body
 _HIDDEN = frozenset({"parameter", "literal"})
 #: Names shown per declaration kind; generated register packages hold thousands.
 _GROUP_NAME_CAP = 20
+#: Declaration kinds shown with their type (``count : natural [3]``).
+_TYPED = frozenset({"signal", "constant", "variable", "shared variable", "file"})
+_SENSITIVITY = re.compile(r"\bprocess\s*\(([^)]*)\)", re.IGNORECASE)
+_GENERIC_MAP = re.compile(r"\bgeneric\s+map\s*\(", re.IGNORECASE)
+#: Characters of an instance's generic map shown in the index.
+_GENERIC_MAP_CAP = 120
 
 
 def span(start: int, end: int) -> str:
@@ -85,6 +91,34 @@ def instance_target(instance: Node, lines: list[str]) -> tuple[str, str, int, in
     line = instance.start_line + statement.count("\n", 0, index)
     col = index - (statement.rfind("\n", 0, index) + 1)
     return (match["how"] or "component").lower(), unit, line, col
+
+
+def _code(lines: list[str], start: int, end: int) -> str:
+    """Lines ``start``..``end`` without comments, whitespace collapsed."""
+    return " ".join(" ".join(line.split("--", 1)[0] for line in lines[start : end + 1]).split())
+
+
+def _sensitivity(process: Node, lines: list[str]) -> str:
+    match = _SENSITIVITY.search(_code(lines, process.start_line, min(process.end_line, process.start_line + 2)))
+    if not match:
+        return ""
+    return " (" + ", ".join(name.strip() for name in match[1].split(",")) + ")"
+
+
+def _generic_map(instance: Node, lines: list[str]) -> str:
+    text = _code(lines, instance.start_line, instance.end_line)
+    match = _GENERIC_MAP.search(text)
+    if not match:
+        return ""
+    depth = 1
+    for end in range(match.end(), len(text)):
+        depth += {"(": 1, ")": -1}.get(text[end], 0)
+        if depth == 0:
+            break
+    inner = text[match.end() : end].strip()
+    if len(inner) > _GENERIC_MAP_CAP:
+        inner = inner[:_GENERIC_MAP_CAP].rstrip(" ,") + " ..."
+    return f" generic map ({inner})"
 
 
 def _plural(kind: str) -> str:
@@ -160,8 +194,12 @@ def _body(node: Node, lines: list[str], indent: int) -> list[str]:
             where = span(runs[0][0], runs[-1][1])
             out.append(f"{pad}{_plural(kind)}: {shown}, ... (+{total - _GROUP_NAME_CAP} more) {where}")
         else:
-            parts = "; ".join(f"{', '.join(names)} {span(a, b)}" for a, b, names in runs)
-            out.append(f"{pad}{_plural(kind)}: {parts}")
+            parts = []
+            for a, b, names in runs:
+                first = next(m for m in members if m.name == names[0] and m.start_line == a)
+                of_type = declaration_text(lines, first).split(":=")[0].strip() if kind in _TYPED else ""
+                parts.append(f"{', '.join(names)}{f' : {of_type}' if of_type else ''} {span(a, b)}")
+            out.append(f"{pad}{_plural(kind)}: {'; '.join(parts)}")
     for item in items:
         where = span(item.start_line, item.end_line)
         label = " ".join(part for part in (item.kind, item.name) if part)
@@ -170,7 +208,9 @@ def _body(node: Node, lines: list[str], indent: int) -> list[str]:
         elif item.kind == "instance":
             target = instance_target(item, lines)
             via = f" : {target[0]} {target[1]}" if target else ""
-            out.append(f"{pad}{label}{via} {where}")
+            out.append(f"{pad}{label}{via}{_generic_map(item, lines)} {where}")
+        elif item.kind == "process":
+            out.append(f"{pad}{label}{_sensitivity(item, lines)} {where}")
         else:
             out.append(f"{pad}{label} {where}")
             if item.kind in _NESTED:

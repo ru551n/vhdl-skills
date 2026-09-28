@@ -123,7 +123,7 @@ def test_hook_with_real_index(nav, fixture_dir, tmp_path, monkeypatch):
     leaf = _big_leaf(fixture_dir, tmp_path)
     reason = hook.decide(_event(leaf))["hookSpecificOutput"]["permissionDecisionReason"]
     assert "entity leaf [6-15]" in reason
-    assert "  process [20-26]" in reason
+    assert "  process (clk) [20-26]" in reason
 
 
 @pytest.mark.skipif(shutil.which("uv") is None, reason="uv is not installed")

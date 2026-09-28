@@ -85,10 +85,10 @@ def test_build_index():
         "    clk : in std_ulogic [5]",
         "    q : out std_ulogic [6]",
         "architecture a of e [8-16]",
-        "  signals: x, y [9]; z [10]",
+        "  signals: x, y : bit [9]; z : bit [10]",
         "  generate g [12-14]",
         "    instance u : entity work.leaf [13]",
-        "  process [15]",
+        "  process [15]",  # no sensitivity list: it waits
     ])
 
 
@@ -148,3 +148,41 @@ def test_protected_types_list_their_methods():
         "    procedure seed[INTEGER] [3]",
         "    function next[return INTEGER] [4]",
     ]
+
+
+def test_richer_items():
+    long_map = ", ".join(f"g{i} => {i}" for i in range(40))
+    lines = [
+        "architecture a of e is",
+        "  constant depth : positive := 16;",
+        "  signal count : natural range 0 to depth := 0; -- note",
+        "begin",
+        "  counter : process (clk, rst)",
+        "  begin",
+        "  end process;",
+        "  u1 : entity work.leaf",
+        "    generic map (",
+        "      width => 8, -- bits",
+        "      depth => depth",
+        "    )",
+        "    port map (clk => clk);",
+        f"  u2 : entity work.leaf generic map ({long_map}) port map (clk => clk);",
+        "end architecture;",
+    ]
+    arch = N("architecture", "a", 0, 13, 0, 14, [
+        N("constant", "depth", 1, 11, 1, 1),
+        N("signal", "count", 2, 9, 2, 2),
+        N("process", "counter", 4, 2, 4, 6),
+        N("instance", "u1", 7, 2, 7, 12),
+        N("instance", "u2", 13, 2, 13, 13),
+    ])
+    out = build_index("a.vhd", [arch], lines).splitlines()
+    assert out[2:6] == [
+        "  constants: depth : positive [2]",
+        "  signals: count : natural range 0 to depth [3]",
+        "  process counter (clk, rst) [5-7]",
+        "  instance u1 : entity work.leaf generic map (width => 8, depth => depth) [8-13]",
+    ]
+    assert out[6].startswith("  instance u2 : entity work.leaf generic map (g0 => 0, g1 => 1")
+    assert out[6].endswith("...) [14]")
+    assert len(out[6]) < 220

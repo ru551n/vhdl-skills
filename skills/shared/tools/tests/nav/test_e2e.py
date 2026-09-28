@@ -174,8 +174,8 @@ def test_index_top(nav, fixture_dir, monkeypatch):
         "    d : in std_ulogic_vector(7 downto 0) [9]",
         "    q : out std_ulogic_vector(7 downto 0) [10]",
         "architecture rtl of top [14-35]",
-        "  signals: mid_q [15]",
-        "  instance leaf_inst : entity lib_a.leaf [17-25]",
+        "  signals: mid_q : std_ulogic_vector(7 downto 0) [15]",
+        "  instance leaf_inst : entity lib_a.leaf generic map (width => 8) [17-25]",
         "  generate gen_mid [27-34]",
         "    instance mid_inst : entity work.mid [28-33]",
     ]
@@ -196,8 +196,8 @@ def test_index_generics_and_unlabelled_process(nav, fixture_dir, monkeypatch):
         "    d : in std_ulogic_vector(width - 1 downto 0) [12]",
         "    q : out std_ulogic_vector(width - 1 downto 0) [13]",
         "architecture rtl of leaf [17-27]",
-        "  signals: state [18]",
-        "  process [20-26]",
+        "  signals: state : state_t [18]",
+        "  process (clk) [20-26]",
     ]
 
 
@@ -222,7 +222,7 @@ def test_index_component_declaration(nav, fixture_dir, monkeypatch):
     assert code == 0
     assert out.splitlines()[-3:] == [
         "  components: leaf [11-20]",
-        "  signals: d, q [22]",
+        "  signals: d, q : std_ulogic_vector(7 downto 0) [22]",
         "  instance leaf_comp_inst : component leaf [24-29]",
     ]
 
@@ -237,7 +237,7 @@ def test_index_without_any_config(nav, fixture_dir, tmp_path, monkeypatch):
     code, out = nav("index", "--file", "leaf.vhd", config=None)
     assert code == 0
     assert "entity leaf [6-15]" in out
-    assert "  process [20-26]" in out
+    assert "  process (clk) [20-26]" in out
 
 
 def test_index_missing_file(nav_cli, tmp_path, monkeypatch):
