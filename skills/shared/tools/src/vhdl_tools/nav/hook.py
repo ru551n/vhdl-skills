@@ -1,8 +1,10 @@
 """Claude Code hooks that put the VHDL index in front of large files.
 
 ``PreToolUse`` on ``Read``: a full read (no offset and no limit, or a limit
-covering most of the file) of a VHDL file with at least
-``VHDL_NAV_INDEX_MIN_LINES`` lines (default 400; 0 turns the hooks off) is
+covering most of what a Read returns) of a VHDL file with at least
+``VHDL_NAV_INDEX_MIN_LINES`` lines (default 2000, the most a Read returns:
+below that, reading once and answering from context measured cheaper; 0
+turns the hooks off) is
 denied, and the reason Claude sees is the file's ``vhdl-tools nav index`` plus
 the source of any regions the user's last message names.
 
@@ -28,14 +30,19 @@ from vhdl_tools.nav import NavError
 from vhdl_tools.nav.index import FileIndex, excerpt
 from vhdl_tools.nav.server import file_index
 
+#: Lines a Claude Code Read returns at most without a limit.
+READ_LINE_CAP = 2000
 MIN_LINES_ENV = "VHDL_NAV_INDEX_MIN_LINES"
-DEFAULT_MIN_LINES = 400
+#: Measured: below this, reading the file once and answering from context is
+#: cheaper than any index, so the hooks only act where a Read truncates anyway.
+DEFAULT_MIN_LINES = READ_LINE_CAP
 #: Seconds the index may take; past that the Read is allowed. Well under
 #: Claude Code's 60 s hook timeout, so the hook always decides for itself.
 TIMEOUT_ENV = "VHDL_NAV_HOOK_TIMEOUT"
 DEFAULT_TIMEOUT = 10.0
 VHDL_SUFFIXES = frozenset({".vhd", ".vhdl"})
-#: A limit covering this share of the file, without an offset, is a full read.
+#: A limit covering this share of what a Read can return, without an offset,
+#: is a full read.
 NEAR_WHOLE = 0.8
 MAX_PROMPT_FILES = 3
 #: Characters attached to one prompt at most.
@@ -130,7 +137,7 @@ def decide(event: dict[str, Any]) -> dict[str, Any] | None:
     if lines < threshold:
         return None
     offset, limit = tool_input.get("offset"), tool_input.get("limit")
-    if offset is not None or (limit is not None and limit < NEAR_WHOLE * lines):
+    if offset is not None or (limit is not None and limit < NEAR_WHOLE * min(lines, READ_LINE_CAP)):
         return None  # a range; offset=1 with a full limit is the deliberate whole read
     index = _useful_index(path)
     if index is None:

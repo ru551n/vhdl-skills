@@ -58,7 +58,9 @@ def _stub(monkeypatch, text: str = INDEX, found: list[Region] | None = None) -> 
 
 @pytest.fixture(autouse=True)
 def _defaults(monkeypatch):
-    monkeypatch.delenv(hook.MIN_LINES_ENV, raising=False)
+    """Most tests use 500-line files with a 400-line threshold; the default
+    (2000) is tested on its own."""
+    monkeypatch.setenv(hook.MIN_LINES_ENV, "400")
     monkeypatch.delenv(hook.TIMEOUT_ENV, raising=False)
 
 
@@ -83,9 +85,26 @@ def test_decide_denies_big_full_read(tmp_path, monkeypatch):
 
 def test_decide_threshold_is_inclusive(tmp_path, monkeypatch):
     _stub(monkeypatch)
-    assert hook.DEFAULT_MIN_LINES == 400
     assert hook.decide(_event(_vhdl(tmp_path, 399, "a.vhd"))) is None
     assert hook.decide(_event(_vhdl(tmp_path, 400, "b.vhdl"))) is not None
+
+
+def test_default_threshold_is_what_a_read_can_return(tmp_path, monkeypatch):
+    """Below 2000 lines Claude reads the file once and answers from context,
+    which measured cheaper than any index; past it a Read truncates anyway."""
+    monkeypatch.delenv(hook.MIN_LINES_ENV)
+    _stub(monkeypatch)
+    assert hook.DEFAULT_MIN_LINES == hook.READ_LINE_CAP == 2000
+    assert hook.decide(_event(_vhdl(tmp_path, 1999, "a.vhd"))) is None
+    assert hook.decide(_event(_vhdl(tmp_path, 2000, "b.vhd"))) is not None
+
+
+def test_near_whole_is_measured_against_what_a_read_returns(tmp_path, monkeypatch):
+    _stub(monkeypatch)
+    huge = _vhdl(tmp_path, 3000, "huge.vhd")
+    assert hook.decide(_event(huge, limit=2000)) is not None  # the most a Read returns
+    assert hook.decide(_event(huge, limit=1600)) is not None  # 80% of that
+    assert hook.decide(_event(huge, limit=1599)) is None
 
 
 def test_decide_allows_ranged_reads(tmp_path, monkeypatch):
@@ -352,7 +371,6 @@ def test_launcher_allows_when_vhdl_ls_never_answers(tmp_path):
     libraries.mkdir()
     (libraries / "vhdl_ls.toml").write_text("[libraries]\n")
     env = {**os.environ, "VHDL_LS": str(stuck), "VHDL_LS_LIBRARIES": str(libraries), hook.TIMEOUT_ENV: "1"}
-    env.pop(hook.MIN_LINES_ENV, None)
     start = time.monotonic()
     result = _launch(_event(_vhdl(tmp_path, 500)), env=env, timeout=30)
     assert (result.returncode, result.stdout) == (0, "")
