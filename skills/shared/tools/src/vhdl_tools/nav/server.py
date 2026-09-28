@@ -14,6 +14,7 @@ from vhdl_tools.nav.formatting import (
     format_hits,
     format_outline,
     format_refs,
+    format_tree,
     header,
     hover_text,
     rel,
@@ -32,6 +33,7 @@ from vhdl_tools.nav.resolve import (
     resolve_one,
 )
 from vhdl_tools.nav.symbols import Hit, Node, locations, nodes_from_document_symbols
+from vhdl_tools.nav.tree import build_tree
 from vhdl_tools.registry import ToolError, ToolRegistry
 
 tools = ToolRegistry(
@@ -280,3 +282,19 @@ def nav_index(file: str, config: str | None = None) -> str:
         return build_index(file, nodes, source_lines(path, {}))
     except NavError as exc:
         return ToolError(f"Error: {exc}")
+
+
+@tools.tool()
+def nav_tree(top: str, depth: int = 0, config: str | None = None) -> str:
+    """The instantiation tree below an entity: one line per instance (label,
+    instantiated entity, file:line), indented by level.
+
+    --top is an entity name (fifo, fifo.fifo); --depth limits the levels shown
+    (0 = all). Component instantiations are matched to the one entity of that
+    name; notes in parentheses mark components, cycles and unresolved units."""
+
+    def body(project: Project, session: LspSession) -> str:
+        hit = resolve_one(session, top, project.root, project.library_names, kind="entity")
+        return "\n".join(format_tree(build_tree(session, hit, depth), project.root))
+
+    return _run(config, body)

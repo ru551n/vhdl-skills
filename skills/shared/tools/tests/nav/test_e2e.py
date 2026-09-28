@@ -243,3 +243,35 @@ def test_index_missing_file(nav_cli, tmp_path, monkeypatch):
     code, out = nav_cli("index", "--file", "nope.vhd", config=None)
     assert code == 1
     assert out.strip() == "Error: no file nope.vhd"
+
+
+def test_tree(nav):
+    code, out = nav("tree", "--top", "top")
+    assert code == 0
+    assert out.splitlines() == [
+        "entity top  [lib_b]  lib_b/top.vhd:6",
+        "  leaf_inst : entity leaf  [lib_a]  lib_a/leaf.vhd:6",
+        "  mid_inst : entity mid  [lib_b]  lib_b/mid.vhd:6",
+        "    leaf_inst : entity leaf  [lib_a]  lib_a/leaf.vhd:6",
+    ]
+
+
+def test_tree_depth(nav):
+    code, out = nav("tree", "--top", "top", "--depth", "1")
+    assert code == 0
+    assert len(out.splitlines()) == 3
+
+
+def test_tree_component_instantiation(nav):
+    code, out = nav("tree", "--top", "comp_user")
+    assert code == 0
+    assert out.splitlines() == [
+        "entity comp_user  [lib_b]  lib_b/comp_user.vhd:4",
+        "  leaf_comp_inst : entity leaf  [lib_a]  lib_a/leaf.vhd:6  (component)",
+    ]
+
+
+def test_tree_unknown_entity(nav):
+    code, out = nav("tree", "--top", "nope")
+    assert code == 1
+    assert out.startswith("Error: No entity named nope")
