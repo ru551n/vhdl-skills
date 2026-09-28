@@ -327,7 +327,13 @@ index instead: read ranges with offset/limit, or `offset=1, limit=<lines>`
 for the whole file. An ambiguous name lists the candidates and exits 1: pass
 `lib.name`, `--kind` or `--pos`. "No declaration named X in the library map"
 means the map does not cover it, not that it does not exist. A leading
-`Warning:` line names libraries whose globs match no files. Fallback: grep,
+`Warning:` line names libraries whose globs match no files. Past vhdl_ls's
+200-symbol cap the project's own files are searched directly. A
+`vhdl_ls.toml` in your home directory or `/` is ignored (it would map every
+VHDL file below it); pass `--config` to use one anyway. The hook gives the
+index `VHDL_NAV_HOOK_TIMEOUT` seconds (default 10), then lets the Read
+through. `tree` notes the generate branch of instance labels that repeat.
+Fallback: grep,
 then read the file.
 
 ### Multi-library designs

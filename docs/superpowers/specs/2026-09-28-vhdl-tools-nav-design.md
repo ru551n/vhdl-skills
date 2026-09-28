@@ -348,11 +348,19 @@ Every error names the next step. Exit code is non-zero; the text starts with
 
 ## Open risks
 
-- `workspace/symbol` hit cap (200): `nav find` with a short prefix can be
-  truncated; the output says so. Exact lookups filter after the cap, so a
-  very common substring could push an exact match out. Mitigation: when the
-  cap is hit and no exact match is present, retry with the full
-  library-qualified name if given, else report truncation explicitly.
+- `workspace/symbol` hit cap (200): resolved. Past the cap, lookups outline
+  the project files that mention the name (documentSymbol) and merge their
+  declarations; the note then says only standard-library matches can be
+  missing. Verified: vhdl_ls's 200 hits for `s` miss a project `signal s`,
+  which `nav find --name s` still finds.
+- Hook time: the index gets `VHDL_NAV_HOOK_TIMEOUT` (default 10 s) and uv
+  30 s, so the hook always decides (allow) before Claude Code's 60 s timeout.
+- Catch-all maps: a `vhdl_ls.toml` found upward in `$HOME` or `/` is skipped
+  (it maps every VHDL file below it); `--config` still uses it, and `nav init`
+  refuses to write one there.
+- Generate branches: `if/elsif/else` and `case` generate alternatives have no
+  documentSymbol node of their own, so `nav tree` reads the nearest branch
+  header above an instance and notes it when a label repeats.
 - vhdl_ls symbol-name format (`entity 'fifo'`) is not a stable API; parsing is
   isolated in `formatting.py` and covered by recorded-response tests, pinned
   to the vhdl_ls version recorded in the fixture.

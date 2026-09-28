@@ -121,7 +121,9 @@ Names are identifiers, optionally library-qualified (`fifo`, `fifo.fifo`), match
 
 Each command starts vhdl_ls (`--silent --no-lint`, `-l <std library dir>`), asks, and stops it: ~0.1 s, no daemon or cache. Binary: `$VHDL_LS`, else PATH, else `~/.cargo/bin/vhdl_ls`.
 
-The plugin's `hooks/hooks.json` runs `skills/shared/bin/vhdl-read-hook` before every Claude Code Read. A Read without offset/limit of a `.vhd`/`.vhdl` file with at least `VHDL_NAV_INDEX_MIN_LINES` lines (default 150, `0` = off) is denied with the file's `nav index` as the reason. Non-VHDL Reads exit in the bash pre-filter without starting uv; any failure allows the Read.
+The plugin's `hooks/hooks.json` runs `skills/shared/bin/vhdl-read-hook` before every Claude Code Read. A Read without offset/limit of a `.vhd`/`.vhdl` file with at least `VHDL_NAV_INDEX_MIN_LINES` lines (default 150, `0` = off) is denied with the file's `nav index` as the reason. Non-VHDL Reads exit in the bash pre-filter without starting uv; any failure allows the Read, and so does an index that takes longer than `VHDL_NAV_HOOK_TIMEOUT` seconds (default 10; uv itself gets 30 s), well inside Claude Code's 60 s hook timeout.
+
+When vhdl_ls's `workspace/symbol` stops at its 200-result cap, lookups search the project's own files directly (only standard-library matches can then be missing). A `vhdl_ls.toml` found upward in your home directory or `/` is ignored, because it would map every VHDL file below it; `--config` still uses it. `nav init` refuses to write one there.
 
 ## Development
 
