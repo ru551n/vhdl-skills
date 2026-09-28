@@ -52,6 +52,12 @@ def decide(event: dict[str, Any]) -> dict[str, Any] | None:
     index = nav_index(str(path))
     if isinstance(index, ToolError) or index.startswith("Error:"):
         return None
+    # No design units means vhdl_ls could not parse the file (e.g. mid-edit),
+    # and an index not much smaller than the file saves nothing: allow both.
+    if not any(not line.startswith("context ") for line in index.splitlines()[1:]):
+        return None
+    if len(index) * 2 > path.stat().st_size:
+        return None
     reason = (
         f"{path} has {lines} lines, so the vhdl-tools nav hook shows its index "
         "instead of the full text. Read the ranges you need with offset and limit "

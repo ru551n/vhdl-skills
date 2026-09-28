@@ -90,3 +90,13 @@ def test_build_index():
         "    instance u : entity work.leaf [13]",
         "  process [15]",
     ])
+
+
+def test_long_declaration_groups_are_capped():
+    lines = ["package p is"] + [f"  constant c{i} : natural := {i};" for i in range(30)] + ["end package;"]
+    constants = [N("constant", f"c{i}", i + 1, 11, i + 1, i + 1) for i in range(30)]
+    package = N("package", "p", 0, 8, 0, 31, constants)
+    names = ", ".join(f"c{i}" for i in range(20))
+    assert build_index("p.vhd", [package], lines).splitlines()[-1] == (
+        f"  constants: {names}, ... (+10 more) [2-31]"
+    )

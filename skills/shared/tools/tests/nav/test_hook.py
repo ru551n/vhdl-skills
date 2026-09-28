@@ -13,6 +13,7 @@ import pytest
 from vhdl_tools.nav import hook
 from vhdl_tools.registry import ToolError
 
+INDEX = "big.vhd  200 lines\nentity e [1-200]"
 LAUNCHER = Path(__file__).parents[3] / "bin" / "vhdl-read-hook"
 HOOKS_JSON = Path(__file__).parents[5] / "hooks" / "hooks.json"
 
@@ -34,7 +35,7 @@ def _vhdl(tmp_path: Path, lines: int, name: str = "big.vhd") -> Path:
 @pytest.fixture
 def fake_index(monkeypatch):
     monkeypatch.delenv(hook.MIN_LINES_ENV, raising=False)
-    monkeypatch.setattr(hook, "nav_index", lambda file: "INDEX")
+    monkeypatch.setattr(hook, "nav_index", lambda file: INDEX)
 
 
 def test_decide_denies_big_full_read(tmp_path, fake_index):
@@ -45,7 +46,7 @@ def test_decide_denies_big_full_read(tmp_path, fake_index):
     reason = output["permissionDecisionReason"]
     assert reason.startswith(f"{big} has 200 lines")
     assert "offset=1, limit=200" in reason
-    assert reason.endswith("\n\nINDEX")
+    assert reason.endswith("\n\n" + INDEX)
 
 
 def test_decide_threshold_is_inclusive(tmp_path, fake_index):
@@ -107,10 +108,17 @@ def test_main_allows_when_decide_raises(tmp_path, monkeypatch, capsys):
     assert capsys.readouterr().out == ""
 
 
-def test_hook_with_real_index(nav, fixture_dir, monkeypatch):
+def _big_leaf(fixture_dir: Path, tmp_path: Path) -> Path:
+    """The fixture's leaf.vhd plus 200 comment lines: a file worth indexing."""
+    big = tmp_path / "leaf.vhd"
+    big.write_text((fixture_dir / "lib_a" / "leaf.vhd").read_text() + "-- filler comment line\n" * 200)
+    return big
+
+
+def test_hook_with_real_index(nav, fixture_dir, tmp_path, monkeypatch):
     """``nav`` only supplies the skip when vhdl_ls is missing."""
-    monkeypatch.setenv(hook.MIN_LINES_ENV, "10")
-    leaf = fixture_dir / "lib_a" / "leaf.vhd"
+    monkeypatch.delenv(hook.MIN_LINES_ENV, raising=False)
+    leaf = _big_leaf(fixture_dir, tmp_path)
     reason = hook.decide(_event(leaf))["hookSpecificOutput"]["permissionDecisionReason"]
     assert "entity leaf [6-15]" in reason
     assert "  process [20-26]" in reason
@@ -129,11 +137,11 @@ def test_launcher_skips_non_vhdl_quickly(tmp_path):
 
 
 @pytest.mark.skipif(shutil.which("uv") is None, reason="uv is not installed")
-def test_launcher_denies_big_vhdl(nav, fixture_dir, monkeypatch):
-    monkeypatch.setenv(hook.MIN_LINES_ENV, "10")
+def test_launcher_denies_big_vhdl(nav, fixture_dir, tmp_path, monkeypatch):
+    monkeypatch.delenv(hook.MIN_LINES_ENV, raising=False)
     result = subprocess.run(
         [str(LAUNCHER)],
-        input=json.dumps(_event(fixture_dir / "lib_a" / "leaf.vhd")),
+        input=json.dumps(_event(_big_leaf(fixture_dir, tmp_path))),
         capture_output=True,
         text=True,
         timeout=120,
@@ -151,3 +159,31 @@ def test_hooks_json_points_at_the_launcher():
     assert command["type"] == "command"
     assert command["command"] == '"${CLAUDE_PLUGIN_ROOT}/skills/shared/bin/vhdl-read-hook"'
     assert LAUNCHER.is_file()
+
+
+def test_decide_allows_when_nothing_parsed(tmp_path, monkeypatch):
+    """vhdl_ls lists no units for a file it cannot parse; an index of just
+    the title line is no reason to refuse the Read."""
+    monkeypatch.delenv(hook.MIN_LINES_ENV, raising=False)
+    monkeypatch.setattr(hook, "nav_index", lambda file: "big.vhd  200 lines")
+    assert hook.decide(_event(_vhdl(tmp_path, 200))) is None
+    monkeypatch.setattr(hook, "nav_index", lambda file: "big.vhd  200 lines\ncontext [1-2]: ieee.std_logic_1164.all")
+    assert hook.decide(_event(_vhdl(tmp_path, 200))) is None
+
+
+def test_decide_allows_when_index_is_not_much_smaller(tmp_path, monkeypatch):
+    monkeypatch.delenv(hook.MIN_LINES_ENV, raising=False)
+    big = _vhdl(tmp_path, 200)  # 1600 bytes
+    monkeypatch.setattr(hook, "nav_index", lambda file: INDEX + "\n" + "x" * 900)
+    assert hook.decide(_event(big)) is None
+
+
+def test_hook_allows_a_file_that_does_not_parse(nav, tmp_path, monkeypatch):
+    """``nav`` only supplies the skip when vhdl_ls is missing."""
+    monkeypatch.delenv(hook.MIN_LINES_ENV, raising=False)
+    broken = tmp_path / "broken.vhd"
+    broken.write_text(
+        "entity broken is\n  port (\n    clk : in bit;\n    q : out bit\n;\nend entity;\n"
+        + "-- filler\n" * 200
+    )
+    assert hook.decide(_event(broken)) is None

@@ -24,6 +24,8 @@ _INTERFACE = ("generic", "port")
 _ITEMS = frozenset({"process", "function", "procedure", "instance", "generate", "block"})
 _NESTED = frozenset({"generate", "block"})
 _HIDDEN = frozenset({"parameter", "literal"})
+#: Names shown per declaration kind; generated register packages hold thousands.
+_GROUP_NAME_CAP = 20
 
 
 def span(start: int, end: int) -> str:
@@ -138,8 +140,14 @@ def _body(node: Node, lines: list[str], indent: int) -> list[str]:
                 runs[-1][2].append(member.name)
             else:
                 runs.append((member.start_line, member.end_line, [member.name]))
-        parts = "; ".join(f"{', '.join(names)} {span(a, b)}" for a, b, names in runs)
-        out.append(f"{pad}{_plural(kind)}: {parts}")
+        total = sum(len(names) for _, _, names in runs)
+        if total > _GROUP_NAME_CAP:
+            shown = ", ".join([name for _, _, names in runs for name in names][:_GROUP_NAME_CAP])
+            where = span(runs[0][0], runs[-1][1])
+            out.append(f"{pad}{_plural(kind)}: {shown}, ... (+{total - _GROUP_NAME_CAP} more) {where}")
+        else:
+            parts = "; ".join(f"{', '.join(names)} {span(a, b)}" for a, b, names in runs)
+            out.append(f"{pad}{_plural(kind)}: {parts}")
     for item in items:
         where = span(item.start_line, item.end_line)
         label = " ".join(part for part in (item.kind, item.name) if part)
