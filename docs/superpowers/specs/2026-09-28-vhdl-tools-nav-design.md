@@ -34,11 +34,8 @@ map lists.
 
 Division of labour after this change: `nav` for exact lookups, corvidex for
 semantic/concept search. corvidex's navigation tools are left as they are
-here; retiring them is a separate decision.
-
-A separate change (not part of this spec) keeps corvidex from indexing
-unrelated trees: a scope guard on its zero-config auto-indexing and
-making it opt-in in this plugin's `.mcp.json`.
+here; retiring them is a separate decision. corvidex's configuration and
+the plugin's `.mcp.json` are out of scope.
 
 ## Evidence (spike, 2026-09-28, vhdl_ls 0.88.0)
 
