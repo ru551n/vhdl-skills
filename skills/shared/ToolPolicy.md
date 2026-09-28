@@ -9,6 +9,14 @@ Use the purpose-built tool before the manual equivalent:
   scripts and returns compact summaries, so prefer it over calling
   `run.py`, `ghdl`, `yosys` or Vivado by hand and over reading raw logs,
   reports or waveform files.
+- `vhdl-tools nav` for VHDL structure and exact lookups. `nav index --file F`
+  is a compact skeleton of a file with `[start-end]` line ranges: look at it
+  first, then read only the ranges you need. With the Claude Code plugin, a
+  message naming a VHDL file of 2000+ lines gets its index attached, and a
+  full Read of one is answered with the index; both quote the source of
+  the processes, subprograms or instances the message names. `find`/`def`/`refs`/`show`/`tree` answer "where is X
+  declared, who uses it, what are its ports, what instantiates what" through
+  vhdl_ls in a few lines, with no index to build.
 - `corvidex-mcp`, when the host has it connected, for semantic search and
   exact code navigation. "Prefer" is a routing decision there, not a
   blanket "never grep" rule; see its section below.
@@ -86,9 +94,10 @@ file:line:col). Route like this:
 
 - **Exact identifier already known** (you have the name and want its
   declaration, its callers, its type, or "does this exist") →
-  `find_symbol` / `find_definition` / `find_references` / `hover_info`
-  first. Cheapest and exact. Never run a `search_*` query for a name you
-  already know.
+  `vhdl-tools nav find`/`def`/`refs`/`show` first: local, exact, no index.
+  corvidex's `find_symbol` / `find_definition` / `find_references` /
+  `hover_info` are the fallback when nav cannot run. Never run a
+  `search_*` query for a name you already know.
 - **Concept, pattern, or "where/how does X happen"** (no exact name yet) →
   `search_hdl`/`search_knowledge`. This is what the semantic index is for;
   `grep` genuinely cannot answer this kind of question.
@@ -293,6 +302,46 @@ Fallback: Yosys with the GHDL plugin by hand, or the project's
 To query a design that is already built (paths, logic depth, fanout,
 structure) without rebuilding it, use `vhdl-tools vivado` on its checkpoint;
 the `vivado` skill has the commands and rules.
+
+### 6. `vhdl-tools nav`
+
+VHDL structure and exact lookups through vhdl_ls, the VHDL language server.
+Needs `vhdl_ls` (`cargo install vhdl_ls`) and its standard libraries (found
+automatically in speja's cache, else set `VHDL_LS_LIBRARIES`). `index` works
+on any file; the other commands need a `vhdl_ls.toml` in the project
+(`vhdl-tools nav init` writes one; it never overwrites). Names may be
+library-qualified (`fifo.fifo`); `--pos` is `FILE:LINE[:COL]`, 1-based.
+
+| Command | Use |
+|---|---|
+| `index --file F` | Skeleton of one file with line ranges; read the ranges you need after it |
+| `find --name N [--kind K] [--substring]` | Declarations with that name, one line each |
+| `def --name N \| --pos P [--context C]` | Where it is declared, with source lines |
+| `refs --name N \| --pos P [--with-decl]` | Every use, grouped by file |
+| `show --name N \| --pos P` | Ports/generics, a signature, or a package's declarations |
+| `tree --top E [--depth D]` | Instantiation tree below an entity |
+| `init [--layout auto\|tsfpga\|flat]` | Write `vhdl_ls.toml` |
+
+In a directory that holds VHDL, the plugin's `SessionStart` hook names
+`vhdl-tools nav` in one line of context (`VHDL_NAV_SESSION_HINT=0` turns it
+off); without it Claude does not find nav on its own. The plugin's other
+hooks work on `.vhd`/`.vhdl` files of 2000+ lines,
+which one Read cannot return whole (`VHDL_NAV_INDEX_MIN_LINES`, 0 = off;
+smaller files are cheaper to read once): a message naming one gets its
+index attached, and a full Read of one (no offset, or a limit covering 80%+
+of what a Read returns) is denied with the index instead. Both quote the source of the
+regions the message names. Read ranges with offset/limit, or use
+`offset=1, limit=<lines>` for the whole file. An ambiguous name lists the candidates and exits 1: pass
+`lib.name`, `--kind` or `--pos`. "No declaration named X in the library map"
+means the map does not cover it, not that it does not exist. A leading
+`Warning:` line names libraries whose globs match no files. Past vhdl_ls's
+200-symbol cap the project's own files are searched directly. A
+`vhdl_ls.toml` in your home directory or `/` is ignored (it would map every
+VHDL file below it); pass `--config` to use one anyway. The hook gives the
+index `VHDL_NAV_HOOK_TIMEOUT` seconds (default 10), then lets the Read
+through. `tree` notes the generate branch of instance labels that repeat.
+Fallback: grep,
+then read the file.
 
 ### Multi-library designs
 

@@ -7,6 +7,7 @@
 - VUnit, installed in the HDL project's own environment. `vhdl-tools` uses the project's VUnit and Python, not a bundled copy.
 - Waveform recording from VUnit needs the `--wave` flag (VUnit PR #1101) in the project's VUnit. Without it GHDL still records but NVC does not.
 - Waveform measurements use pywellen, which ships Linux and macOS wheels only.
+- For `vhdl-tools nav` (VHDL index and exact lookups) and the plugin's Read hook: `vhdl_ls` (`cargo install vhdl_ls`) and its VHDL standard libraries (picked up from speja's cache when present; otherwise `git clone --depth 1 https://github.com/VHDL-LS/rust_hdl ~/.local/share/rust_hdl` and `export VHDL_LS_LIBRARIES=~/.local/share/rust_hdl/vhdl_libraries`). Lookups other than `index` need a `vhdl_ls.toml` in the project (`vhdl-tools nav init`). Without vhdl_ls the hook simply lets reads through.
 
 `skills/shared/tools/README.md` has the full command reference and configuration.
 

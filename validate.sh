@@ -32,7 +32,7 @@ done
 
 # Documented `vhdl-tools <group> <command>` invocations must exist in the CLI.
 if command -v uv >/dev/null 2>&1; then
-  for group in vunit synth wave; do
+  for group in vunit synth wave nav; do
     known="$("$ROOT/skills/shared/bin/vhdl-tools" "$group" --help 2>/dev/null | sed -n 's/^    \([a-z][a-z-]*\).*/\1/p')"
     [[ -n "$known" ]] || { err "could not list vhdl-tools $group commands"; continue; }
     while IFS= read -r cmd; do

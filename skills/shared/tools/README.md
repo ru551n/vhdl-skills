@@ -9,6 +9,7 @@ One CLI, `vhdl-tools <group> <command> [options]`. Three groups replace MCP serv
 | `wave` | [ru551n/peeper-mcp](https://github.com/ru551n/peeper-mcp) (`peeper_mcp`) | `d468acf` |
 
 The fourth group, `vivado`, is native: it queries a built Vivado checkpoint through a persistent Vivado session.
+The `nav` group is native, not a port: a per-file VHDL index and exact lookups through vhdl_ls (see below).
 
 Command = MCP tool name without its prefix, `_` -> `-` (`vunit_run_tests` -> `vunit run-tests`).
 Run it through `skills/shared/bin/vhdl-tools`, which calls `uv run --project` on this directory and keeps your working directory.
@@ -18,6 +19,7 @@ Run it through `skills/shared/bin/vhdl-tools`, which calls `uv run --project` on
 - [uv](https://docs.astral.sh/uv/). It builds `.venv` here on the first call from `uv.lock`: pydantic, tsfpga (git), pywellen, numpy, matplotlib.
 - System tools, as needed: GHDL and/or NVC (vunit), Yosys + ghdl-yosys-plugin + GHDL (synth), Vivado (only the `synth project-get-*-report` commands and the `vivado` group; `TSFPGA_MCP_VIVADO` or `vivado` on PATH).
 - VUnit comes from the HDL project, not from here. `vunit` commands run the project's own `run.py` with the project's interpreter. That is its `.venv`/`venv`, which is created with uv from `pyproject.toml`/`requirements.txt` if missing, else `python3` on PATH. `synth project-*` does the same with `build.py`/`build_fpga.py`.
+- `nav`: `vhdl_ls` (`cargo install vhdl_ls`) and its standard libraries: `$VHDL_LS_LIBRARIES`, else vhdl_ls's own install locations, else `~/.cache/speja/vhdl_libraries-*`. All commands but `index` need a `vhdl_ls.toml` (`vhdl-tools nav init`).
 
 ## Conventions
 
@@ -31,7 +33,7 @@ Run it through `skills/shared/bin/vhdl-tools`, which calls `uv run --project` on
 - Output is the tool's text on stdout.
 - Exit codes:
   - `0`: success.
-  - `1`: the tool reported a failure. For vunit that is `Error: ...`, `Run FAILED.` or `Elaboration FAILED.`. For synth it is `Error: ...`, `Configuration error: ...`, `Timeout: ...`, `Synthesis FAILED`, `Listing failed` or `Build failed`. For wave it is any error message (not found, unknown/ambiguous signal, bad time, empty window).
+  - `1`: the tool reported a failure. For vunit that is `Error: ...`, `Run FAILED.` or `Elaboration FAILED.`. For synth it is `Error: ...`, `Configuration error: ...`, `Timeout: ...`, `Synthesis FAILED`, `Listing failed` or `Build failed`. For wave it is any error message (not found, unknown/ambiguous signal, bad time, empty window). For nav it is `Error: ...`.
   - `2`: invalid input.
   - `127`: uv is not installed.
 - Serialization:
@@ -102,6 +104,26 @@ Every command names a checkpoint. The first command for a checkpoint starts a ba
 | `tcl` | `--dcp F` (required), `--script TCL` (required, `-` reads stdin) | Run Tcl against the design: what it `puts`, then its result, cut at 200 lines. A Tcl error exits 1 |
 | `hierarchy` | `--dcp F` (required), `--node INST`, `--depth N` (default 2) | `report_utilization -hierarchical` table: LUT, FF, SRL, RAMB, DSP per instance |
 | `stop` | `--dcp F` (default: all) | Shut down sessions |
+
+### nav
+
+Names are identifiers, optionally library-qualified (`fifo`, `fifo.fifo`), matched exactly and case-insensitively. `--pos` is `FILE:LINE[:COL]`, 1-based, relative to the current directory or the project root. Every command except `init` takes `--config` (a `vhdl_ls.toml` or its directory; default: the nearest one upward). Output paths are relative to that file's directory.
+
+| Command | Options | Purpose |
+|---|---|---|
+| `index` | `--file F` (required) | Skeleton with `[start-end]` ranges: context clauses, units, generics/ports with types, declarations, subprograms, processes, generates, instances. No `vhdl_ls.toml` needed |
+| `find` | `--name N` (required), `--kind K`, `--substring` | Declarations with that name: kind, name, [library], file:line |
+| `def` | `--name N` or `--pos P`, `--kind K`, `--context C` (default 3) | Declaration location plus source lines |
+| `refs` | `--name N` or `--pos P`, `--kind K`, `--with-decl` | Uses, grouped by file |
+| `show` | `--name N` or `--pos P`, `--kind K` | Declaration text (entity ports/generics, signature); a package's declarations |
+| `tree` | `--top E` (required), `--depth D` (default 0 = all) | Instantiation tree below an entity |
+| `init` | `--layout {auto,tsfpga,flat}`, `--directory D` (default `.`) | Write `vhdl_ls.toml`; never overwrites |
+
+Each command starts vhdl_ls (`--silent --no-lint`, `-l <std library dir>`), asks, and stops it: ~0.1 s, no daemon or cache. Binary: `$VHDL_LS`, else PATH, else `~/.cargo/bin/vhdl_ls`.
+
+The plugin's `hooks/hooks.json` runs `skills/shared/bin/vhdl-read-hook` at session start (`SessionStart`), on every prompt (`UserPromptSubmit`) and before every Read (`PreToolUse`). At session start, in a directory holding VHDL (a bounded search that skips hidden and tool directories), one line of context names `vhdl-tools nav` and its commands, plus `nav init` when there is no `vhdl_ls.toml`; `VHDL_NAV_SESSION_HINT=0` turns it off. Both act on `.vhd`/`.vhdl` files with at least `VHDL_NAV_INDEX_MIN_LINES` lines (default 2000, the most one Read returns: a four-question benchmark found smaller files cheaper to read once and keep in context; `0` = off). A prompt naming such a file (up to 3, 40 KB in all) gets its `nav index` attached. A Read of one without an offset, and with no limit or a limit covering 80% or more of what a Read returns, is denied with the index as the reason; `offset=1, limit=<lines>` still reads everything. Both add the source of the regions (processes, subprograms, instances, generates, blocks) the user's message names, up to 150 lines in 3 regions; the Read hook takes that message from the transcript. Non-VHDL Reads exit in the bash pre-filter without starting uv; any failure allows the Read, and so does an index that takes longer than `VHDL_NAV_HOOK_TIMEOUT` seconds (default 10; uv itself gets 30 s), well inside Claude Code's 60 s hook timeout.
+
+When vhdl_ls's `workspace/symbol` stops at its 200-result cap, lookups search the project's own files directly (only standard-library matches can then be missing). A `vhdl_ls.toml` found upward in your home directory or `/` is ignored, because it would map every VHDL file below it; `--config` still uses it. `nav init` refuses to write one there.
 
 ## Development
 

@@ -31,11 +31,12 @@ driving.
 ```text
 vhdl-skills/
 ├── .claude-plugin/            # plugin.json and marketplace.json
+├── hooks/hooks.json           # Read hook: large VHDL reads get the nav index
 ├── skills/
 │   ├── vh*/                   # the seven vendor-neutral skills
 │   ├── vivado/                # AMD/Xilinx with Vivado: the vendor layer
 │   └── shared/                # reference docs, plus:
-│       ├── bin/vhdl-tools     #   VUnit, synthesis, waveform and Vivado query command-line tool
+│       ├── bin/vhdl-tools     #   VUnit, synthesis, waveform, Vivado query and VHDL index/lookup tool
 │       ├── speja.yaml         #   house layout for speja, the optional formatter
 │       └── tools/             #   its Python source, tests and command reference
 ├── agents/                    # designer, coder, tester, debugger, synthesizer, documentation, orchestrator
@@ -49,7 +50,10 @@ runs VUnit compiles, tests and reports, Yosys/GHDL synthesis and tsfpga
 Vivado builds and reports, and VCD/FST waveform measurements. It also queries
 a built Vivado design (paths, logic depth, fanout, hierarchy) through a
 persistent Vivado session. The command reference is in
-`skills/shared/tools/README.md`.
+`skills/shared/tools/README.md`. Its `nav` group gives a per-file VHDL
+index with line ranges (served automatically by the plugin's Read hook for
+large files) and exact lookups (declarations, references, ports,
+instantiation trees) through vhdl_ls.
 
 ## Install
 

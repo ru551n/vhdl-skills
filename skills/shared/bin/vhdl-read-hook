@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Claude Code hooks, registered in hooks/hooks.json: a full Read of a large
+# VHDL file gets its `vhdl-tools nav index` instead, and a prompt naming one
+# gets the index attached (see vhdl_tools/nav/hook.py). Exits 0 with no
+# output, which allows the read and attaches nothing, whenever the input is not
+# about a VHDL file or anything is missing or fails.
+here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+input="$(cat)"
+# A .vhd/.vhdl path in a Read's file_path or in a prompt's text.
+pattern='\.[vV][hH][dD]([lL])?([^A-Za-z0-9_]|$)'
+session='"hook_event_name" *: *"SessionStart"'
+[[ $input =~ $pattern || $input =~ $session ]] || exit 0
+command -v uv >/dev/null 2>&1 || exit 0
+# The hook bounds its own work (VHDL_NAV_HOOK_TIMEOUT); this bounds uv itself,
+# e.g. a first-run venv build, well inside Claude Code's 60 s hook timeout.
+limit=()
+command -v timeout >/dev/null 2>&1 && limit=(timeout 30)
+printf '%s' "$input" | "${limit[@]}" uv run --quiet --frozen --project "$here/../tools" python -m vhdl_tools.nav.hook 2>/dev/null
+exit 0
