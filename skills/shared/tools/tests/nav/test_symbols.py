@@ -146,3 +146,19 @@ def test_prefer_declarations_drops_matching_bodies_only():
     assert prefer_declarations([pkg, body]) == [pkg]
     assert prefer_declarations([body]) == [body]
     assert prefer_declarations([pkg, other_body]) == [pkg, other_body]
+
+
+def test_matches_name_with_package_but_no_library():
+    const = _hit("constant", "ram_style_auto", "common.types_pkg")
+    assert matches_name(const, "types_pkg.ram_style_auto")
+    assert matches_name(const, "Types_Pkg.ram_style_auto")
+    assert not matches_name(const, "other_pkg.ram_style_auto")
+    assert not matches_name(const, "pkg.ram_style_auto")
+
+
+def test_matches_name_with_qualifier_in_the_middle_of_the_container():
+    literal = _hit("literal", "ram_style_auto", "common.attribute_pkg.ram_style_t")
+    assert matches_name(literal, "attribute_pkg.ram_style_auto")
+    assert matches_name(literal, "common.attribute_pkg.ram_style_auto")
+    assert matches_name(literal, "ram_style_t.ram_style_auto")
+    assert not matches_name(literal, "attribute.ram_style_auto")

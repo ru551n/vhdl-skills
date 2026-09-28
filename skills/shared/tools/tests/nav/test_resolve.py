@@ -172,3 +172,9 @@ def test_existing_file_and_identifier_at(project):
 def test_position_params():
     params = position_params(Position(Path("/proj/a.vhd"), 3, 4))
     assert params == {"textDocument": {"uri": "file:///proj/a.vhd"}, "position": {"line": 3, "character": 4}}
+
+
+def test_find_hits_substring_accepts_package_qualifier():
+    symbols = [sym("constant 'ram_style_auto'", "common.types_pkg", "common/types_pkg.vhd", 9)]
+    found = find_hits(FakeSession(symbols), "types_pkg.ram_style", substring=True, libraries=["common"])
+    assert [h.name for h in found.hits] == ["ram_style_auto"]

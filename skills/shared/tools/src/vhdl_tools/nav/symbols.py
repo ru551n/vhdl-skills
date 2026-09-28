@@ -132,12 +132,19 @@ def kind_matches(kind: str, wanted: str) -> bool:
     return kind == wanted or kind.endswith(" " + wanted)
 
 
+def qualifier_matches(hit: Hit, prefix: str | None) -> bool:
+    """A qualifier is any run of whole dotted parts of the container: the
+    library, a package (``types_pkg`` in ``common.types_pkg``), a package and
+    type, and so on. Case-insensitive."""
+    if prefix is None:
+        return True
+    return f".{prefix.lower()}." in f".{hit.container.lower()}."
+
+
 def matches_name(hit: Hit, name: str) -> bool:
-    """Exact, case-insensitive; a qualifier must equal the container or library."""
+    """Exact and case-insensitive, qualified as ``qualifier_matches`` allows."""
     prefix, ident = split_name(name)
-    if hit.name.lower() != ident.lower():
-        return False
-    return prefix is None or prefix.lower() in (hit.container.lower(), hit.library.lower())
+    return hit.name.lower() == ident.lower() and qualifier_matches(hit, prefix)
 
 
 def prefer_declarations(hits: list[Hit]) -> list[Hit]:

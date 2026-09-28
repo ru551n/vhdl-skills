@@ -20,6 +20,7 @@ from vhdl_tools.nav.symbols import (
     kind_matches,
     matches_name,
     prefer_declarations,
+    qualifier_matches,
     split_name,
 )
 
@@ -77,7 +78,7 @@ def find_hits(
             for h in hits
             if ident.lower() in h.name.lower()
             and h.library.lower() in own
-            and (prefix is None or prefix.lower() in (h.container.lower(), h.library.lower()))
+            and qualifier_matches(h, prefix)
         ]
     else:
         hits = [h for h in hits if matches_name(h, name)]
