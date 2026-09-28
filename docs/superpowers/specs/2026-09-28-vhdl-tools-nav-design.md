@@ -5,7 +5,13 @@ Status: approved design, awaiting spec review
 
 ## Goal
 
-Answer "where is X declared", "who uses X", "what are X's ports" and "what does
+Give Claude Code for VHDL what tree-sitter's `index` tool gives the Maki
+harness: a compact skeleton of a file with line ranges, looked at *before*
+reading, so only the needed ranges get read (Maki quotes 70-90% savings;
+Maki's `index` does not support VHDL). A Read hook makes this automatic.
+Beyond that single-file view, answer
+
+"where is X declared", "who uses X", "what are X's ports" and "what does
 this design look like" for a VHDL project in a few hundred tokens instead of
 reading whole files, with the same semantics as the editor's language server.
 
@@ -96,9 +102,13 @@ skills/shared/tools/src/vhdl_tools/nav/
   config.py       # locate, validate and generate vhdl_ls.toml
   symbols.py      # parse vhdl_ls symbol names and locations into Hit records
   resolve.py      # NAME / lib.NAME / FILE:LINE[:COL] -> declaration or position
+  index.py        # per-file skeleton with line ranges (the Maki-style index)
   tree.py         # instantiation tree from an entity
   formatting.py   # Hit / reference / outline / tree -> compact text
   server.py       # ToolRegistry + @tools.tool() commands
+  hook.py         # Claude Code PreToolUse hook for Read
+skills/shared/bin/vhdl-read-hook   # launcher for hook.py (cheap pre-filter, then uv)
+hooks/hooks.json                   # registers the hook with the plugin
 ```
 
 It registers in `cli.py` like the other groups. No new Python dependencies.
@@ -128,13 +138,79 @@ Line numbers in output are 1-based.
 | `nav def NAME\|POS [-C N]` | `workspace/symbol` or `definition` | Declaration location plus N (default 3) lines of context after it. |
 | `nav refs NAME\|POS [--with-decl]` | `references` | Grouped by file: `  98:28  fifo_inst : entity fifo.fifo`. Summary line with the hit and file counts. Without `--with-decl`, the declaration itself and `end`/`architecture ... of` lines are dropped. |
 | `nav show NAME\|POS` | `hover`, `documentSymbol` for packages | The declaration text vhdl_ls returns (entity/component with generics and ports, subprogram signature, type). For a package: one line per declaration in it (types, constants, subprograms with signatures), since hover has only its name. |
-| `nav outline FILE\|LIB` | `documentSymbol` | Indented tree: design units, then generics, ports (with mode), signals, constants, processes, instances. `LIB` outlines every file in that library, units only. |
+| `nav index FILE` | `documentSymbol` | Maki-style skeleton with `[start-end]` ranges; see Per-file index. Needs no `vhdl_ls.toml`. |
 | `nav tree TOP [--depth N]` | `workspace/symbol` + `documentSymbol` + `definition` | Instantiation tree: `fifo_inst : fifo.fifo  modules/fifo/src/fifo.vhd:65`, children indented. Default depth unlimited; cycles and unresolved instances are marked. |
 | `nav init [--layout auto\|tsfpga\|flat] [--directory D]` | none | Writes `vhdl_ls.toml` (see Configuration). |
 
 `--kind` takes `entity`, `architecture`, `package`, `component`, `function`,
 `procedure`, `type`, `signal`, `constant`, `port`, `generic`; it filters on the
 kind word in vhdl_ls's symbol name (`entity 'fifo'`).
+
+### Per-file index
+
+`nav index --file F` works on any VHDL file. It uses the nearest
+`vhdl_ls.toml` above the file when there is one (so types resolve) and
+otherwise runs vhdl_ls with no project libraries: documentSymbol is
+syntactic, and the spike showed it returns full ranges for a file outside
+any library map. Output (abridged; 1-based ranges, `[a]` for one line):
+
+```
+modules/fifo/src/fifo.vhd  470 lines
+context [18-31]: ieee.std_logic_1164.all, ieee.numeric_std.all, common.types_pkg.all
+entity fifo [65-127]
+  generics:
+    width : positive [67]
+    almost_full_level : natural range 0 to depth := depth [70]
+  ports:
+    clk : in std_ulogic [94]
+    write_data : in std_ulogic_vector(width - 1 downto 0) [105]
+architecture a of fifo [129-470]
+  constants: memory_depth [131]
+  subtypes: fifo_addr_t [135]; bram_addr_range [141]
+  signals: read_addr_next, read_addr, read_addr_peek [136]; write_addr_next, ... [137-138]
+  process assertions [179-188]
+  generate assign_almost_full [201-205]
+  process status [221-335]
+```
+
+Rules:
+- Context clauses (`library`/`use`/`context`) before each unit: one line with
+  the `use`d names and the range they span.
+- Units: `kind name [range]`; an architecture adds `of <entity>`.
+- Generics and ports: one per line with mode, type and (generics only)
+  default, taken from the source text of the declaration. A `signal` among an
+  entity's children before its first port is a generic whose type did not
+  resolve (seen in the spike) and is shown as one.
+- Other declarations (signals, constants, types, subtypes, aliases,
+  components, variables, attributes, files): one line per kind, names grouped
+  by the line range they are declared on.
+- Subprograms: one line each, `function name[signature] [range]`.
+- Processes, blocks, generates, instances: one line each with their range;
+  generate and block bodies are shown nested; instances name their target
+  (`entity lib.x`, `component x`). Statements inside processes and
+  subprograms, parameters and enumeration literals are left out.
+
+### Read hook
+
+The plugin registers a `PreToolUse` hook for Claude Code's `Read` tool
+(`hooks/hooks.json`, matcher `Read`, command
+`"${CLAUDE_PLUGIN_ROOT}/skills/shared/bin/vhdl-read-hook"`). When a Read has
+no `offset` and no `limit`, targets a `.vhd`/`.vhdl` file, and the file has
+at least `VHDL_NAV_INDEX_MIN_LINES` lines (default 150; 0 disables the hook),
+the hook denies the Read (`permissionDecision: "deny"`) and the reason
+Claude sees is the file's index plus how to continue: read the needed
+ranges with `offset`/`limit`, or pass `offset=1, limit=<lines>` to read
+the whole file on purpose. Ranged reads and small files pass untouched.
+
+- A ranged Read satisfies Claude Code's read-before-Edit check (verified
+  2026-09-28: after reading 3 lines of a 300-line file, edits inside and
+  outside that range succeeded), so denying full reads does not block edits.
+- The hook never blocks on its own failure: no uv, no vhdl_ls, no standard
+  libraries, a crash or a timeout all mean "allow" (exit 0, no output).
+- The launcher is a bash script that exits at once unless the hook input
+  mentions a `.vhd`/`.vhdl` path, so non-VHDL Reads pay no `uv` start-up.
+- Only the plugin install gets the hook; `install.sh --target claude`
+  (project-local copies) does not, and says so.
 
 ### Ambiguity
 
@@ -240,7 +316,7 @@ Every error names the next step. Exit code is non-zero; the text starts with
   already known" goes to `vhdl-tools nav find/def/refs/show` first (local,
   ~0.1 s, no MCP); corvidex's `find_symbol` etc. remain valid when that server
   is connected. "Orienting in an unfamiliar project" goes to
-  `nav outline`/`nav tree` before reading files. Keep the existing corvidex
+  `nav index`/`nav tree` before reading files. Keep the existing corvidex
   guidance for concept search.
 - `skills/shared/tools/README.md`: a `nav` section with the commands, the
   vhdl_ls install line and `nav init`.
@@ -258,12 +334,16 @@ Every error names the next step. Exit code is non-zero; the text starts with
   (for ambiguity), and a `vhdl_ls.toml`.
 - End-to-end pytest per command against the fixture, marked skip when vhdl_ls
   is not installed.
+- Hook tests: `decide()` on hook events (small file, ranged read, non-VHDL,
+  disabled by env, index failure -> allow) and the launcher's JSON output on a
+  large fixture file; `claude plugin validate --strict` accepts
+  `hooks/hooks.json`.
 - Unit tests without vhdl_ls: `formatting.py` and `symbols.py` against LSP JSON
   responses (captured from the fixture), `resolve.py` position conversion,
   `config.py` validation and `init` generation on temporary directories.
-- One manual measurement on `hdl-modules`, recorded in the PR description:
-  output characters for `nav show fifo.fifo` and `nav refs fifo.fifo` versus
-  reading `fifo.vhd` and grepping.
+- One manual measurement on `hdl-modules`: output characters for
+  `nav index` of `fifo.vhd`, `nav show fifo.fifo` and `nav refs fifo.fifo`
+  versus reading `fifo.vhd` and grepping.
 
 ## Open risks
 
