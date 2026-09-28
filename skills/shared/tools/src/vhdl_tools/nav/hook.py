@@ -46,7 +46,7 @@ VHDL_SUFFIXES = frozenset({".vhd", ".vhdl"})
 NEAR_WHOLE = 0.8
 MAX_PROMPT_FILES = 3
 #: Characters attached to one prompt at most.
-PROMPT_CONTEXT_CAP = 20_000
+PROMPT_CONTEXT_CAP = 40_000
 #: Bytes of the transcript read from its end to find the last user message.
 TRANSCRIPT_TAIL = 1_000_000
 

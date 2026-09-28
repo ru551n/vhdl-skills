@@ -205,7 +205,7 @@ ranges with `offset`/`limit`, or pass `offset=1, limit=<lines>` to read
 the whole file on purpose. Ranged reads and small files pass untouched.
 
 - A `UserPromptSubmit` hook (same launcher) attaches the index of large VHDL
-  files the message names (up to 3, 20 KB), so Claude's first read is
+  files the message names (up to 3, 40 KB), so Claude's first read is
   already a range instead of a denied full read: one turn fewer.
 - Both hooks quote the source of the regions (processes, subprograms,
   instances, generates, blocks) the user's message names, up to 150 lines

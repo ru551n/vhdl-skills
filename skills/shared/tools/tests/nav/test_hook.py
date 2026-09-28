@@ -259,7 +259,7 @@ def test_prompt_takes_at_most_three_files_within_the_cap(tmp_path, monkeypatch):
     context = _context(hook.prompt_context(_prompt("a.vhd b.vhd c.vhd d.vhd", tmp_path)))
     assert context.count("vhdl-tools nav index of") == 3
     for name in "ab":  # big enough that a ~20 KB index is still under half the file
-        (tmp_path / f"{name}.vhd").write_text(("-- " + "x" * 100 + "\n") * 500)
+        (tmp_path / f"{name}.vhd").write_text(("-- " + "x" * 200 + "\n") * 500)
     _stub(monkeypatch, INDEX + "\n" + "y" * (hook.PROMPT_CONTEXT_CAP - 1000))
     context = _context(hook.prompt_context(_prompt("a.vhd b.vhd", tmp_path)))
     assert context.count("vhdl-tools nav index of") == 1
