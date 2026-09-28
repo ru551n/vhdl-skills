@@ -55,8 +55,34 @@ Measured over LSP on `hdl-modules` (181 files, one library per module) and
   `port 'clk' : in`, with ranges.
 - Raw LSP JSON is verbose (48 symbol hits = 14k chars); compression is the
   tool's job.
-- vhdl_ls panics (`vhdl_lang/src/analysis/standard.rs`) when the config does
-  not define `std` and `ieee`; `-l <libraries toml>` did not prevent it.
+- A `cargo install vhdl_ls` binary ships no standard libraries. Without them
+  it panics at startup (`vhdl_lang/src/config.rs`: "Couldn't find installed
+  libraries") or, when the path given is wrong, during analysis
+  (`analysis/standard.rs`). `-l` takes the *directory* holding the libraries'
+  `vhdl_ls.toml` (vhdl_ls appends the file name); passing the file itself
+  silently loads nothing. With `-l <dir>` the 887-file project analyses in
+  0.10 s with no `std`/`ieee` in the project config.
+- `documentSymbol` lists instances as `instance '<label>'` (kind 2), nested
+  under `generate` blocks where they sit, so the instantiation tree needs no
+  text scanning.
+- Symbol names follow `<kind words> '<identifier>'` (`entity 'fifo'`,
+  `package body 'axi_pkg'`, `record type 'axi_m2s_r_t'`,
+  `port 'clk' : in`); subprograms are `function <name>[<signature>]`.
+  `containerName` is the library for design units and `lib.unit` for
+  declarations inside a unit (an architecture's container is
+  `lib.<entity>`). Enumeration literals have no kind word
+  (`idle[return state_t]`).
+- `workspace/symbol` matching is fuzzy (subsequence), not substring: the
+  query `leaf` also returns `VitalDefaultPortFlag` from ieee. Every mode
+  filters vhdl_ls's hits itself.
+- `textDocument/references` ignores `includeDeclaration`: the result always
+  holds the declaration and, for an entity, the `architecture <a> of <e>`
+  line(s), which is how `nav tree` finds an entity's architectures.
+- `hover` on an entity or subprogram returns the full declaration; on a
+  package only `package <name>`.
+- Fixture probe (planned `tests/nav/fixture`): no diagnostics; definition
+  resolves `entity lib_a.leaf`, `entity work.mid` (inside a `generate`) and a
+  component instantiation (to the component declaration).
 
 ## Placement
 
@@ -68,8 +94,10 @@ skills/shared/tools/src/vhdl_tools/nav/
   __init__.py
   lsp.py          # minimal stdio JSON-RPC/LSP client, stdlib only
   config.py       # locate, validate and generate vhdl_ls.toml
-  resolve.py      # NAME / lib.NAME / FILE:LINE:COL -> LSP position
-  formatting.py   # LSP results -> compact text
+  symbols.py      # parse vhdl_ls symbol names and locations into Hit records
+  resolve.py      # NAME / lib.NAME / FILE:LINE[:COL] -> declaration or position
+  tree.py         # instantiation tree from an entity
+  formatting.py   # Hit / reference / outline / tree -> compact text
   server.py       # ToolRegistry + @tools.tool() commands
 ```
 
@@ -79,23 +107,30 @@ It registers in `cli.py` like the other groups. No new Python dependencies.
 
 `NAME` is a design-unit or declaration name, optionally library-qualified
 (`fifo`, `fifo.fifo`, `common.types_pkg`). Matching is case-insensitive and
-exact on the identifier (vhdl_ls's `workspace/symbol` is a substring match;
-`nav` filters it). A `POS` is `FILE:LINE[:COL]`, 1-based as displayed by
+exact on the identifier (vhdl_ls's `workspace/symbol` is a fuzzy match;
+`nav` filters it). When both a package and its body match, the package
+wins; likewise an entity wins over same-named components only when `--kind
+entity` is given (otherwise it is ambiguous). A `POS` is `FILE:LINE[:COL]`, 1-based as displayed by
 editors and grep; `nav` converts to LSP's 0-based positions. Without COL, the
 first identifier on the line is used.
+
+Arguments are options, as for every vhdl-tools group (the CLI is generated
+from the tool signatures): `--name NAME`, `--pos POS`, `--config PATH`. The
+table below writes them positionally for brevity; `nav find NAME` means
+`vhdl-tools nav find --name NAME`.
 
 Paths in output are relative to the directory holding `vhdl_ls.toml`.
 Line numbers in output are 1-based.
 
 | Command | LSP | Output |
 |---|---|---|
-| `nav find NAME [--kind K] [--prefix]` | `workspace/symbol` | One line per hit: `entity fifo  [fifo]  modules/fifo/src/fifo.vhd:65`. `--prefix` keeps substring hits instead of exact ones. Reports when the 200-hit cap was reached. |
+| `nav find NAME [--kind K] [--substring]` | `workspace/symbol` | One line per hit: `entity fifo  [fifo]  modules/fifo/src/fifo.vhd:65`. `--substring` keeps names containing NAME instead of equal to it, from the project's own libraries only. Reports when the 200-hit cap was reached. |
 | `nav def NAME\|POS [-C N]` | `workspace/symbol` or `definition` | Declaration location plus N (default 3) lines of context after it. |
-| `nav refs NAME\|POS [--with-decl]` | `references` | Grouped by file: `  98:28  fifo_inst : entity fifo.fifo`. Summary line with the hit and file counts. |
-| `nav show NAME\|POS` | `hover` | The declaration text vhdl_ls returns (entity/component with generics and ports, package header, subprogram signature, type). |
+| `nav refs NAME\|POS [--with-decl]` | `references` | Grouped by file: `  98:28  fifo_inst : entity fifo.fifo`. Summary line with the hit and file counts. Without `--with-decl`, the declaration itself and `end`/`architecture ... of` lines are dropped. |
+| `nav show NAME\|POS` | `hover`, `documentSymbol` for packages | The declaration text vhdl_ls returns (entity/component with generics and ports, subprogram signature, type). For a package: one line per declaration in it (types, constants, subprograms with signatures), since hover has only its name. |
 | `nav outline FILE\|LIB` | `documentSymbol` | Indented tree: design units, then generics, ports (with mode), signals, constants, processes, instances. `LIB` outlines every file in that library, units only. |
-| `nav tree TOP [--depth N]` | `documentSymbol` + `definition` | Instantiation tree: `fifo_inst : fifo.fifo  modules/fifo/src/fifo.vhd:65`, children indented. Default depth unlimited; cycles and unresolved instances are marked. |
-| `nav init [--layout tsfpga\|flat] [--dir D]` | none | Writes `vhdl_ls.toml` (see Configuration). |
+| `nav tree TOP [--depth N]` | `workspace/symbol` + `documentSymbol` + `definition` | Instantiation tree: `fifo_inst : fifo.fifo  modules/fifo/src/fifo.vhd:65`, children indented. Default depth unlimited; cycles and unresolved instances are marked. |
+| `nav init [--layout auto\|tsfpga\|flat] [--directory D]` | none | Writes `vhdl_ls.toml` (see Configuration). |
 
 `--kind` takes `entity`, `architecture`, `package`, `component`, `function`,
 `procedure`, `type`, `signal`, `constant`, `port`, `generic`; it filters on the
@@ -134,13 +169,15 @@ modules/fifo/src/fifo_wrapper.vhd
 2. Validate it (see Configuration).
 3. Locate the binary: `$VHDL_LS`, else `vhdl_ls` on `PATH`, else
    `~/.cargo/bin/vhdl_ls`.
-4. Spawn `vhdl_ls --silent --no-lint` with cwd = project root; send
+4. Locate the standard libraries (see Configuration).
+5. Spawn `vhdl_ls --silent --no-lint [-l <stdlib dir>]` with cwd = project
+   root; send
    `initialize` (rootUri = project root, hierarchical documentSymbol support)
    and `initialized`.
-5. For file-scoped requests, `didOpen` the file first.
-6. Issue the request(s), answer any server-to-client requests with `null`,
+6. For file-scoped requests, `didOpen` the file first.
+7. Issue the request(s), answer any server-to-client requests with `null`,
    ignore notifications.
-7. Format, print, send `shutdown`/`exit`, kill after 1 s if still alive.
+8. Format, print, send `shutdown`/`exit`, kill after 1 s if still alive.
 
 A command has a 30 s timeout covering all its LSP calls. No cache and no daemon:
 the spike measured ~0.1 s per cold call. Revisit only if a real project
@@ -150,32 +187,35 @@ measures above ~1 s.
 
 `nav` uses the project's own `vhdl_ls.toml`; it never edits one.
 
-Validation before spawning:
+Standard libraries (`std`, `ieee`, …): vhdl_ls needs a directory holding a
+`vhdl_ls.toml` that maps them. `nav` looks, in order, for:
 
-- Both `std` and `ieee` libraries must be defined. If not: exit with an error
-  naming the missing libraries and showing the lines to add (paths from the
-  vhdl_ls standard library directory found on the machine, if any). This
-  avoids the vhdl_lang panic seen in the spike.
-- Every other library's globs must match at least one file. Libraries whose
-  globs match nothing are listed as a warning on stderr (the spike's `**` map
-  silently matched nothing and every query returned 0 hits).
+1. `$VHDL_LS_LIBRARIES` (a directory);
+2. the places vhdl_ls searches itself (`../vhdl_libraries`,
+   `../../vhdl_libraries` and `../share/vhdl_libraries` relative to the
+   binary, `/usr/lib/rust_hdl/vhdl_libraries`,
+   `/usr/local/lib/rust_hdl/vhdl_libraries`); if found there, `-l` is not
+   passed;
+3. speja's cache, `~/.cache/speja/vhdl_libraries-*` (highest version).
 
-`nav init` writes `vhdl_ls.toml` in `--dir` (default current directory) and
-refuses if one exists:
+If none exists it stops with an error explaining how to get them (a shallow
+clone of `rust_hdl`, then `VHDL_LS_LIBRARIES`).
 
-- `--layout tsfpga` (default when `modules/*/src` exists): one library per
-  `modules/<name>/`, files `src/*.vhd`, `test/*.vhd`, `sim/*.vhd`, plus any
-  `*.vhdl` equivalents present.
-- `--layout flat`: one library `work` listing each directory that contains
-  VHDL files, as explicit per-directory globs.
-- `std`/`ieee`: pointed at the standard-library directory found next to the
-  vhdl_ls installation or in a known location (e.g. speja's
-  `~/.cache/speja/vhdl_libraries-*`), marked `is_third_party = true`. If none
-  is found, `init` says so and writes the file without them, and the error
-  from validation will tell the user what is missing.
-- `vunit_lib`/`osvvm`: added as third-party libraries when a VUnit install is
-  found through the project's Python (`python -c "import vunit"`); skipped
-  silently otherwise.
+Validation before spawning: every library's globs (resolved relative to the
+`vhdl_ls.toml`, `**` recursive as in vhdl_lang) must match at least one file.
+Libraries matching nothing are listed as a warning line at the top of the
+output, since every lookup in them will come back empty.
+
+`nav init` writes `vhdl_ls.toml` in `--directory` (default current
+directory) and refuses if one exists. It lists project libraries only; the
+standard libraries come from the lookup above, and third-party libraries
+(VUnit, OSVVM) are added by hand when wanted.
+
+- `--layout tsfpga` (`auto` picks it when `modules/*/` holds VHDL): one
+  library per `modules/<name>/`, files `modules/<name>/**/*.vhd` and
+  `**/*.vhdl`, the same shape tsfpga's own generator writes.
+- `--layout flat`: one library `lib` with `**/*.vhd` and `**/*.vhdl`.
+  (`work` is not a legal library name in vhdl_ls.)
 
 ## Errors
 
@@ -186,7 +226,8 @@ Every error names the next step. Exit code is non-zero; the text starts with
 |---|---|
 | vhdl_ls not found | `vhdl_ls not found (checked $VHDL_LS, PATH, ~/.cargo/bin). Install: cargo install vhdl_ls` |
 | no `vhdl_ls.toml` | `No vhdl_ls.toml above <cwd>. Create one: vhdl-tools nav init` |
-| std/ieee missing | names the missing libraries and prints the lines to add |
+| no standard libraries found | lists the places searched and how to get them |
+| library globs match nothing | warning line naming the libraries |
 | vhdl_ls exits or crashes | exit code and last 20 lines of its stderr |
 | timeout | which request timed out, after how long |
 | no hits | `No declaration named X in the library map (<n> libraries: a, b, ...). The file may be outside the map.` Never "X does not exist". |
@@ -217,7 +258,7 @@ Every error names the next step. Exit code is non-zero; the text starts with
   (for ambiguity), and a `vhdl_ls.toml`.
 - End-to-end pytest per command against the fixture, marked skip when vhdl_ls
   is not installed.
-- Unit tests without vhdl_ls: `formatting.py` against recorded LSP JSON
+- Unit tests without vhdl_ls: `formatting.py` and `symbols.py` against LSP JSON
   responses (captured from the fixture), `resolve.py` position conversion,
   `config.py` validation and `init` generation on temporary directories.
 - One manual measurement on `hdl-modules`, recorded in the PR description:
@@ -234,6 +275,8 @@ Every error names the next step. Exit code is non-zero; the text starts with
 - vhdl_ls symbol-name format (`entity 'fifo'`) is not a stable API; parsing is
   isolated in `formatting.py` and covered by recorded-response tests, pinned
   to the vhdl_ls version recorded in the fixture.
-- `nav tree` depends on `documentSymbol` exposing instances; if 0.88.0 does not,
-  fall back to scanning instantiation statements in the architecture range and
-  resolving each with `definition`. Checked first during implementation.
+- `nav tree` resolves each instance by calling `definition` on the unit name
+  inside the instantiation statement, found by a regex over the statement's
+  source range. Component instantiations resolve to the component
+  declaration; `nav` then looks for a unique entity of that name and marks
+  the instance unresolved otherwise.
