@@ -196,13 +196,20 @@ Rules:
 The plugin registers a `PreToolUse` hook for Claude Code's `Read` tool
 (`hooks/hooks.json`, matcher `Read`, command
 `"${CLAUDE_PLUGIN_ROOT}/skills/shared/bin/vhdl-read-hook"`). When a Read has
-no `offset` and no `limit`, targets a `.vhd`/`.vhdl` file, and the file has
-at least `VHDL_NAV_INDEX_MIN_LINES` lines (default 150; 0 disables the hook),
+no `offset` (and no `limit`, or one covering 80%+ of the file), targets a
+`.vhd`/`.vhdl` file, and the file has at least `VHDL_NAV_INDEX_MIN_LINES`
+lines (default 400, raised from 150 after the benchmark; 0 disables the hooks),
 the hook denies the Read (`permissionDecision: "deny"`) and the reason
 Claude sees is the file's index plus how to continue: read the needed
 ranges with `offset`/`limit`, or pass `offset=1, limit=<lines>` to read
 the whole file on purpose. Ranged reads and small files pass untouched.
 
+- A `UserPromptSubmit` hook (same launcher) attaches the index of large VHDL
+  files the message names (up to 3, 20 KB), so Claude's first read is
+  already a range instead of a denied full read: one turn fewer.
+- Both hooks quote the source of the regions (processes, subprograms,
+  instances, generates, blocks) the user's message names, up to 150 lines
+  in 3 regions; the Read hook reads that message from `transcript_path`.
 - A ranged Read satisfies Claude Code's read-before-Edit check (verified
   2026-09-28: after reading 3 lines of a 300-line file, edits inside and
   outside that range succeeded), so denying full reads does not block edits.
