@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Claude Code PreToolUse hook for Read, registered in hooks/hooks.json: a full
+# read of a large VHDL file gets its `vhdl-tools nav index` instead (see
+# vhdl_tools/nav/hook.py). Exits 0 with no output, which allows the read,
+# whenever the input is not about a VHDL file or anything is missing or fails.
+here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+input="$(cat)"
+pattern='\.[vV][hH][dD]([lL])?"'
+[[ $input =~ $pattern ]] || exit 0
+command -v uv >/dev/null 2>&1 || exit 0
+printf '%s' "$input" | uv run --quiet --frozen --project "$here/../tools" python -m vhdl_tools.nav.hook 2>/dev/null
+exit 0
