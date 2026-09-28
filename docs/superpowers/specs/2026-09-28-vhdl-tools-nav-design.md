@@ -22,6 +22,24 @@ Success criteria:
 Non-goals: semantic or concept search (corvidex covers that), editing or
 renaming code, linting (speja covers that), diagnostics.
 
+## Relationship to corvidex
+
+corvidex also wraps vhdl_ls (`find_symbol`, `find_definition`,
+`find_references`, `hover_info`), but its navigation is coupled to its
+embedding index: it only opens files the index holds (capped at
+`MAX_SESSION_FILES = 200` per call) and generates its own `vhdl_ls.toml`
+with libraries inferred from the directory layout. `nav` needs no index and
+uses the project's own library map, so its scope is exactly the files that
+map lists.
+
+Division of labour after this change: `nav` for exact lookups, corvidex for
+semantic/concept search. corvidex's navigation tools are left as they are
+here; retiring them is a separate decision.
+
+A separate change (not part of this spec) keeps corvidex from indexing
+unrelated trees: a scope guard on its zero-config auto-indexing and
+making it opt-in in this plugin's `.mcp.json`.
+
 ## Evidence (spike, 2026-09-28, vhdl_ls 0.88.0)
 
 Measured over LSP on `hdl-modules` (181 files, one library per module) and
