@@ -28,12 +28,34 @@ from vhdl_tools.nav.symbols import (
 )
 
 
-def _instances(nodes: list[Node]) -> Iterator[Node]:
+#: A branch header inside a generate: ``[label :] if/elsif ... generate``,
+#: ``else generate`` or ``when choice =>``.
+_BRANCH = re.compile(
+    r"\s*(?:\w+\s*:\s*)?(?:(?P<cond>(?:if|elsif)\b.*?|else)\s*generate\b|when\s+(?P<choice>.*?)=>)",
+    re.IGNORECASE,
+)
+
+
+def _instances(nodes: list[Node], parent: Node | None = None) -> Iterator[tuple[Node, Node | None]]:
+    """Instances with the generate (or block) directly around them, if any."""
     for node in nodes:
         if node.kind == "instance":
-            yield node
+            yield node, parent
         else:
-            yield from _instances(node.children)
+            yield from _instances(node.children, node if node.kind == "generate" else parent)
+
+
+def _branch(lines: list[str], instance: Node, generate: Node | None) -> str:
+    """The generate branch an instance sits in, from the nearest header above it."""
+    if generate is None:
+        return ""
+    for n in range(instance.start_line - 1, generate.start_line - 1, -1):
+        match = _BRANCH.match(lines[n]) if n < len(lines) else None
+        if match:
+            if match["cond"]:
+                return "branch: " + " ".join(match["cond"].split())
+            return "branch: when " + " ".join(match["choice"].split())
+    return ""
 
 
 def _key(hit: Hit) -> tuple[str, str]:
@@ -57,8 +79,14 @@ class _TreeBuilder:
             names = ", ".join(arch.name for _, arch in architectures)
             node.note = _add_note(node.note, f"{len(architectures)} architectures: {names}")
         for path, arch in architectures:
-            for instance in _instances(arch.children):
+            instances = list(_instances(arch.children))
+            labels = [instance.name.lower() for instance, _ in instances]
+            for instance, generate in instances:
                 child = self.resolve_instance(path, instance)
+                if labels.count(instance.name.lower()) > 1:
+                    branch = _branch(source_lines(path, self.cache), instance, generate)
+                    if branch:
+                        child.note = _add_note(child.note, branch)
                 node.children.append(child)
                 if child.unit is None or child.unit.kind != "entity":
                     continue

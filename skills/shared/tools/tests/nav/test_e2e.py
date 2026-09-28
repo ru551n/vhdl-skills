@@ -336,3 +336,44 @@ def test_index_declarations_spanning_lines(nav, tmp_path, monkeypatch):
     assert code == 0
     assert "    widths : integer_vector := (8, 16, 32) [6-8]" in out.splitlines()
     assert "    data : out std_ulogic_vector(15 downto 0) [12-14]" in out.splitlines()
+
+
+BRANCHY = """\
+entity branchy is
+  generic (
+    sel : natural := 0
+  );
+end entity;
+
+architecture rtl of branchy is
+begin
+  g : if sel = 0 generate
+    u : entity work.dup;
+  elsif sel = 1 generate
+    u : entity work.dup;
+  else generate
+    u : entity work.dup;
+  end generate;
+
+  c : case sel generate
+    when 0 =>
+      v : entity work.dup;
+    when others =>
+      v : entity work.dup;
+  end generate;
+end architecture;
+"""
+
+
+def test_tree_names_the_branch_of_repeated_labels(nav, fixture_copy):
+    (fixture_copy / "lib_b" / "branchy.vhd").write_text(BRANCHY)
+    code, out = nav("tree", "--top", "branchy", config=fixture_copy)
+    assert code == 0
+    assert out.splitlines() == [
+        "entity branchy  [lib_b]  lib_b/branchy.vhd:1",
+        "  u : entity dup  [lib_b]  lib_b/dup.vhd:1  (branch: if sel = 0)",
+        "  u : entity dup  [lib_b]  lib_b/dup.vhd:1  (branch: elsif sel = 1)",
+        "  u : entity dup  [lib_b]  lib_b/dup.vhd:1  (branch: else)",
+        "  v : entity dup  [lib_b]  lib_b/dup.vhd:1  (branch: when 0)",
+        "  v : entity dup  [lib_b]  lib_b/dup.vhd:1  (branch: when others)",
+    ]
