@@ -374,6 +374,26 @@ costs more than it saves. Answers were equally correct in both modes.
 Hence the 2000-line default, overloads on one index line, and all start
 lines listed (an answer about "all overloads" must not stop at "...").
 
+### Lookups and the session hint
+
+Four cross-file questions in an hdl-modules copy (who instantiates
+fifo.fifo; handshake_pipeline's ports; the tree below fifo_wrapper; where
+ram_style_t is declared), hooks for large files off. With one line naming
+`vhdl-tools nav` (as a system prompt or through the `SessionStart` hook,
+which cost the same) vs without (Claude used grep and Read):
+
+| | with the hint (n=6) | without (n=5) |
+|---|---|---|
+| cost | $0.38 mean ($0.20-0.47) | $0.55 mean ($0.38-0.75) |
+| wall | 43 s | 53 s |
+| turns | 8.8 | 14.2 |
+| tool calls | 4.8 | 10.2 |
+
+All answers were correct in both modes. Without the hint Claude never used
+nav even with the plugin loaded (ToolPolicy loads only with a VHDL skill),
+hence the `SessionStart` hook. Cost varies a lot between runs with prompt
+cache state and how much the grep route explores.
+
 ## Open risks
 
 - `workspace/symbol` hit cap (200): resolved. Past the cap, lookups outline

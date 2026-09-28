@@ -322,7 +322,10 @@ library-qualified (`fifo.fifo`); `--pos` is `FILE:LINE[:COL]`, 1-based.
 | `tree --top E [--depth D]` | Instantiation tree below an entity |
 | `init [--layout auto\|tsfpga\|flat]` | Write `vhdl_ls.toml` |
 
-The Claude Code plugin's hooks work on `.vhd`/`.vhdl` files of 2000+ lines,
+In a directory that holds VHDL, the plugin's `SessionStart` hook names
+`vhdl-tools nav` in one line of context (`VHDL_NAV_SESSION_HINT=0` turns it
+off); without it Claude does not find nav on its own. The plugin's other
+hooks work on `.vhd`/`.vhdl` files of 2000+ lines,
 which one Read cannot return whole (`VHDL_NAV_INDEX_MIN_LINES`, 0 = off;
 smaller files are cheaper to read once): a message naming one gets its
 index attached, and a full Read of one (no offset, or a limit covering 80%+
